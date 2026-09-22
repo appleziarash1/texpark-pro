@@ -56,7 +56,7 @@ eq(m.cogs, 660, 'cogs 4 x 165');
 eq(m.grandTotal, 940, 'grand = 880 - 40 + 100');
 eq(m.advance, 500, 'advance honoured');
 eq(m.due, 440, 'due = 940 - 500');
-eq(m.profit, 180, 'profit = 880 - 40 - 660');
+eq(m.profit, 280, 'profit = 880 - 40 discount + 100 delivery - 660 cogs');
 ok(m.profit !== m.grandTotal, 'profit is not just the sale value');
 
 console.log('\n--- apply sale moves stock once ---');
@@ -64,7 +64,7 @@ const memo = {
   memoNo: 'TXP/SM/TEST-001', date: today(), customerName: 'Test Customer',
   items: [{ productId: p1.id, qty: 4, rate: 220, cost: 165, amount: 880 }],
   totalQty: 4, subtotal: 880, discount: 40, deliveryCharge: 100, vat: 0,
-  grandTotal: 940, advance: 500, due: 440, cogs: 660, profit: 180
+  grandTotal: 940, advance: 500, due: 440, cogs: 660, profit: 280
 };
 db.memos.push(memo);
 applySaleToStock(memo);
@@ -118,7 +118,7 @@ db.expenses.push({ id: id(), date: today(), head: 'Rent', amount: 300, note: '' 
 const pl = plSummary('', '');
 eq(pl.cogs, 660, 'P&L picks up COGS from memo');
 eq(pl.expense, 300, 'P&L picks up expense');
-eq(pl.netProfit, -20, 'net = 180 gross - 300 expense + 100 delivery income');
+eq(pl.netProfit, -20, 'net = 280 gross profit - 300 expense (delivery already inside gross)');
 ok(pl.netProfit < pl.grossProfit, 'expenses pull net profit below gross profit');
 
 console.log('\n--- stock ledger is append-only ---');

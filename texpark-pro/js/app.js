@@ -21,10 +21,10 @@ const PAGES = [
   { id: 'backup',     label: 'Backup / Data',  ic: '\u2913', group: 'Admin' }
 ];
 
-let memoDraft = { items: [] };
-let editingMemoId = null;
-let purchaseDraft = { items: [] };
-let currentPage = 'dashboard';
+var memoDraft = { items: [] };
+var editingMemoId = null;
+var purchaseDraft = { items: [] };
+var currentPage = "dashboard";
 
 function set(elId, v) { const e = document.getElementById(elId); if (e) e.textContent = v; }
 function statBox(label, value, sub) {
@@ -228,7 +228,7 @@ function renderMemoLines() {
     const p = productById(it.productId);
     const s = p ? db.stock.find(x => x.productId === p.id) : null;
     const avail = num(s?.available);
-    const short = it.productId && num(it.qty) > avail && !db.settings.allowNegativeStock;
+    const notEntered = it.productId && num(it.qty) > avail && db.settings.warnOnShortStock !== false;
     const margin = num(it.qty) * (num(it.rate) - num(it.cost));
     return '<tr>' +
       '<td class="right">' + String(i + 1).padStart(2, '0') + '</td>' +
@@ -239,8 +239,8 @@ function renderMemoLines() {
       '</select></td>' +
       '<td class="right"><span class="pill ' + (avail <= 0 ? 'danger' : avail <= num(p?.reorderLevel) ? 'warn' : 'ok') + '">' +
         (it.productId ? avail : '-') + '</span></td>' +
-      '<td><input class="' + (short ? 'err' : '') + '" type="number" step="0.01" value="' + num(it.rate) + '" oninput="memoSet(' + i + ',\'rate\',this.value)"></td>' +
-      '<td><input class="' + (short ? 'err' : '') + '" type="number" min="0" step="1" value="' + num(it.qty) + '" oninput="memoSet(' + i + ',\'qty\',this.value)"></td>' +
+      '<td><input class="' + (notEntered ? 'warn-field' : '') + '" type="number" step="0.01" value="' + num(it.rate) + '" oninput="memoSet(' + i + ',\'rate\',this.value)"></td>' +
+      '<td><input class="' + (notEntered ? 'warn-field' : '') + '" type="number" min="0" step="1" value="' + num(it.qty) + '" oninput="memoSet(' + i + ',\'qty\',this.value)"></td>' +
       '<td class="right">' + money(num(it.qty) * num(it.rate)) + '</td>' +
       '<td class="right">' + money(num(it.qty) * num(it.cost)) + '</td>' +
       '<td class="right"><b class="' + (margin >= 0 ? 'green' : 'red') + '">' + money(margin) + '</b></td>' +
@@ -297,20 +297,22 @@ function calcMemo() {
 
   const box = document.getElementById('memoStockWarn');
   const saveBtn = document.getElementById('memoSaveBtn');
-  const problems = db.settings.allowNegativeStock ? [] : checkStockForItems(valid);
+  const short = db.settings.warnOnShortStock === false ? [] : checkStockForItems(valid);
 
-  if (problems.length) {
-    box.innerHTML = '<div class="note bad"><b>Stock japt nei - ei memo save hobe na:</b>' +
-      '<div class="shortlist"><table><thead><tr><th>Product</th><th class="right">Dorkar</th>' +
-      '<th class="right">Available</th><th class="right">Short</th></tr></thead><tbody>' +
-      problems.map(p => '<tr><td>' + esc(p.name) + '</td><td class="right">' + p.requested +
-        '</td><td class="right">' + p.available + '</td><td class="right"><b class="red">' + p.short +
+  /* Memo save ALWAYS works. This is just a heads-up that the stock book for these
+     products has not been filled in yet - not a reason to block the sale. */
+  if (short.length) {
+    box.innerHTML = '<div class="note warn"><b>Ei product gulor stock ekhono tola hoy ni:</b>' +
+      '<div class="shortlist"><table><thead><tr><th>Product</th><th class="right">Memo te uthche</th>' +
+      '<th class="right">Stock-e ache</th><th class="right">Stock-e tola baki</th></tr></thead><tbody>' +
+      short.map(p => '<tr><td>' + esc(p.name) + '</td><td class="right">' + p.requested +
+        '</td><td class="right">' + p.available + '</td><td class="right"><b>' + p.short +
         '</b></td></tr>').join('') + '</tbody></table></div>' +
-      '<div class="hint">Age Purchase kore stock baran, othoba Stock page theke Adjust din. ' +
-      'Settings-e "negative stock onumoti" chalu korle hobe.</div></div>';
-    if (saveBtn) saveBtn.disabled = true;
+      '<div class="hint">Memo save hobe — ar ei product gulo Stock page-e nijei bose jabe. ' +
+      'Pore <b>Stock</b> page-e giye "Received / Opening" tole din. Memo kokhono atkabe na.</div></div>';
+    if (saveBtn) saveBtn.disabled = false;
   } else {
-    box.innerHTML = valid.length ? '<div class="note good">Stock thik ache - ei memo save kora jabe.</div>' : '';
+    box.innerHTML = valid.length ? '<div class="note good">Stock mil ache - memo save korte paren.</div>' : '';
     if (saveBtn) saveBtn.disabled = false;
   }
 
@@ -334,15 +336,10 @@ function saveMemo() {
   if (!name) return alert('Customer name din.');
   if (!valid.length) return alert('Antoto ekta product o quantity din.');
 
-  /* THE FIX: block the sale instead of pushing stock negative */
-  if (!db.settings.allowNegativeStock) {
-    const problems = checkStockForItems(valid);
-    if (problems.length) {
-      alert('Stock japt nei, tai memo save kora holo na:\n\n' +
-        problems.map(p => '- ' + p.name + ': dorkar ' + p.requested + ', ache ' + p.available).join('\n'));
-      return;
-    }
-  }
+  /* Memo is the source of truth. Stock na thakleo memo save hobe - ar jei product
+     memo-te uthche seta stock book-e nijei bose jabe (0 received diye), jate pore
+     apni received qty tulte paren. Memo kokhono atkabe na. */
+  valid.forEach(it => ensureStockCard(it.productId));
 
   const fin = memoMath(valid, memoCharges());
   const date = document.getElementById('memoDate').value || today();
@@ -397,7 +394,8 @@ function saveMemo() {
     cogs: memo.cogs, profit: memo.profit, status: prev ? 'Updated' : 'Saved'
   }, 'Memo ' + memo.memoNo);
 
-  alert('Memo ' + memo.memoNo + ' save hoyeche. Stock theke biyog kora hoyeche.');
+  alert('Memo ' + memo.memoNo + ' save hoyeche.\n' +
+    'Ei product gulor stock card banano hoyeche. Received/Opening qty Stock page theke tole nin.');
   newMemo();
 }
 
@@ -1379,7 +1377,7 @@ function renderSettings() {
   document.getElementById('stSyncUrl').value = db.settings.syncUrl || '';
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
   document.getElementById('stLowStock').value = db.settings.lowStockLevel || 10;
-  document.getElementById('stNegStock').checked = !!db.settings.allowNegativeStock;
+  document.getElementById('stShortWarn').checked = db.settings.warnOnShortStock !== false;
   document.getElementById('stAutoBackup').checked = db.settings.autoBackup !== false;
   syncStatusRender();
 }
@@ -1403,14 +1401,10 @@ function saveSyncUrl() {
   alert('Sync URL save hoyeche.');
 }
 
-function toggleNegStock(on) {
-  db.settings.allowNegativeStock = !!on;
+function toggleShortStockWarn(on) {
+  db.settings.warnOnShortStock = !!on;
   commit();
-  if (on && !confirm('Sotti negative stock onumoti diben? Stock na thakleo memo save hobe, ar stock minus dekhabe.')) {
-    db.settings.allowNegativeStock = false;
-    document.getElementById('stNegStock').checked = false;
-    commit();
-  }
+  calcMemo();
 }
 
 async function testSync() {

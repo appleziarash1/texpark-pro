@@ -17,7 +17,7 @@ const DEFAULT_SETTINGS = {
     vatReg: ''
   },
   memoPrefix: 'TXP/SM/',
-  allowNegativeStock: false,   // default: block selling more than available
+  warnOnShortStock: true,      // show a reminder when stock is not entered yet
   lowStockLevel: 10,
   vatPercent: 0,
   autoBackup: true
@@ -45,7 +45,7 @@ function blankDB() {
   };
 }
 
-let db;
+var db;
 
 /* ============================ helpers ============================ */
 function id() { return Math.random().toString(36).slice(2, 10); }
@@ -179,13 +179,38 @@ function stockAvailable(s) {
   return num(s.opening) + num(s.purchased) - num(s.sold);
 }
 
+/* Read-only stock lookup - never creates a card, so callers that only want to
+   *look* at stock (reports, warnings) cannot accidentally mask a fresh product. */
+function findStock(productId) {
+  return db.stock.find(x => x.productId === productId) || null;
+}
+
 function stockOf(productId) {
-  let s = db.stock.find(x => x.productId === productId);
+  let s = findStock(productId);
   if (!s) {
     s = { id: id(), productId, opening: 0, purchased: 0, sold: 0, cost: 0, available: 0 };
     db.stock.push(s);
   }
   s.available = stockAvailable(s);
+  return s;
+}
+
+/* A product that shows up in a memo must also show up in the Stock book, even when
+   nobody has entered opening stock yet. Creates the card with 0 received so the
+   sale has somewhere to land; the user tops up the received qty whenever it suits. */
+function ensureStockCard(productId) {
+  const p = productById(productId);
+  if (!p) return null;
+  const existed = findStock(productId);
+  const s = stockOf(productId);
+  if (!existed) {
+    s.cost = num(p.cost);
+    db.ledger.push({
+      id: id(), at: new Date().toISOString(), date: today(), productId,
+      type: 'AutoAdd', qty: 0, balance: s.available, ref: 'Memo',
+      note: 'Stock card created from a sales memo - received qty ekhono deya hoy ni'
+    });
+  }
   return s;
 }
 
@@ -212,7 +237,8 @@ function logStock(productId, type, qty, ref, note) {
   });
 }
 
-/* THE FIX: a sale is rejected when stock is short (unless the user opts in). */
+/* Stock report only - tells you what is still to be entered. A short line never
+   blocks a memo: the memo is the source of truth, the stock book is topped up after. */
 function checkStockForItems(items, opts) {
   opts = opts || {};
   const problems = [];
@@ -220,9 +246,9 @@ function checkStockForItems(items, opts) {
   items.forEach(it => { need[it.productId] = (need[it.productId] || 0) + num(it.qty); });
   Object.keys(need).forEach(pid => {
     const p = productById(pid);
-    const s = stockOf(pid);
+    const card = findStock(pid);
     const req = need[pid];
-    const avail = s.available + num(opts.allowFor || 0);
+    const avail = num(card ? card.available : 0) + num(opts.allowFor || 0);
     if (avail < req) {
       problems.push({
         productId: pid,
@@ -291,7 +317,7 @@ function memoMath(items, charges) {
   const due = round2(grandTotal - advance);
   return {
     subtotal, discount, deliveryCharge, vat, grandTotal, advance, due,
-    cogs, profit: round2(subtotal - discount - cogs)   // profit ignores delivery/VAT
+    cogs, profit: round2(subtotal - discount + deliveryCharge - cogs)
   };
 }
 
@@ -318,7 +344,7 @@ function plSummary(from, to) {
     .reduce((a, e) => round2(a + num(e.amount)), 0);
   return {
     sales, discount, cogs, grossProfit, deliveryIncome, vatCollected, expense,
-    netProfit: round2(grossProfit - expense + deliveryIncome)
+    netProfit: round2(grossProfit - expense)
   };
 }
 
@@ -372,7 +398,7 @@ function defaultUsers() {
   return [{ id: id(), username: 'admin', name: 'Administrator', pass: hash('admin123'), role: 'admin', active: true, createdAt: new Date().toISOString() }];
 }
 
-let session = null;   // {userId, username, name, role}
+var session = null;   // {userId, username, name, role}
 
 function can(page) {
   if (!session) return false;

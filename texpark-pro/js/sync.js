@@ -4,7 +4,7 @@
 
 const SYNC_KEY = 'texpark_pro_syncq';
 
-let syncQueue = [];
+var syncQueue = [];
 let syncTimer = null;
 
 function syncLoad() {

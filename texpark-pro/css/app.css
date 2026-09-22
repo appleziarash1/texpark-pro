@@ -73,6 +73,8 @@ input[readonly]{background:#f4f7fb;color:var(--muted)}
 .wide{grid-column:1/-1}
 .hint{font-size:11.5px;color:var(--muted);margin-top:4px}
 .err{border-color:var(--red)!important;background:#fff5f8!important}
+/* soal field: stock ekhono tola hoy ni - mone koriye dey, kintu memo atkay na */
+.warn-field{border-color:var(--orange,#f59e0b)!important;background:#fffbf0!important}
 
 /* ---------- tables ---------- */
 .tablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px}

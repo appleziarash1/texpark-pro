@@ -77,7 +77,7 @@
       <!-- ===== MEMO ===== -->
       <section id="page-memo" class="page">
         <h1>New Sales Memo</h1>
-        <div class="muted">Memo save korle stock theke automatic biyog hobe. Stock na thakle memo save hobe na.</div>
+        <div class="muted">Memo-i ashol. Stock na thakleo memo save hobe — product gulo Stock page-e nijei bose jabe.</div>
         <div id="memoEditingBanner" class="note warn" style="display:none"></div>
 
         <div class="card" style="margin-top:13px">
@@ -280,16 +280,16 @@
       <!-- ===== STOCK ===== -->
       <section id="page-stock" class="page">
         <h1>Stock</h1>
-        <div class="muted">Available = Opening + Purchased − Sold</div>
+        <div class="muted">Available = Received/Opening + Purchased − Sold. Memo theke product nijei ekhane bose jay.</div>
         <div class="card" style="margin-top:13px">
-          <div class="note">Purchase kore stock baran, othoba <b>Adjust</b> diye damage/correction din. Sales memo save korle sold automatic barbe.</div>
+          <div class="note">Memo save korle product nijei ei list-e chole ashe. Ekhane <b>Received / Opening</b> qty tulun, othoba <b>Adjust</b> diye damage/correction din.</div>
           <div class="formgrid">
             <div><label>Product</label><select id="stockProduct"></select></div>
-            <div><label>Opening Qty to Add</label><input id="stockAddQty" type="number" min="1"></div>
+            <div><label>Received / Opening Qty to Add</label><input id="stockAddQty" type="number" min="1"></div>
             <div><label>Unit Cost (৳)</label><input id="stockCost" type="number" step="0.01"></div>
           </div>
           <div class="row" style="margin-top:11px">
-            <button class="btn-green" onclick="addStockPurchase()">+ Add Opening Stock</button>
+            <button class="btn-green" onclick="addStockPurchase()">+ Received / Opening Stock</button>
             <input id="stockSearch" oninput="renderStock()" placeholder="Search stock...">
           </div>
           <div id="stockTable"></div>
@@ -446,12 +446,14 @@
 
         <div class="card">
           <h2>Stock Rule</h2>
-          <div class="note bad">
-            <b>Default (recommended):</b> Stock na thakle memo save hobe na. Ei karone purono app-er moto stock minus e jabe na.
+          <div class="note good">
+            <b>Memo-i ashol.</b> Stock na thakleo memo save hobe — ar jei product memo-te uthbe
+            seta <b>Stock page-e nijei bose jabe</b>. Apni pore shudhu received/opening qty tole din.
+            Memo kokhono atkabe na.
           </div>
           <label style="display:flex;gap:9px;align-items:center;font-weight:600">
-            <input id="stNegStock" type="checkbox" style="width:auto" onchange="toggleNegStock(this.checked)">
-            Negative stock onumoti din (stock na thakleo memo save hobe)
+            <input id="stShortWarn" type="checkbox" style="width:auto" onchange="toggleShortStockWarn(this.checked)">
+            Stock na thakle memo-te mone koriye din (shudhu reminder, save atkabe na)
           </label>
         </div>
 
@@ -590,7 +592,7 @@
     <h2>Edit Stock Card</h2>
     <div class="muted" id="seProduct"></div>
     <div class="formgrid4" style="margin-top:12px">
-      <div><label>Opening Qty</label><input id="seOpening" type="number" min="0"></div>
+      <div><label>Received / Opening Qty</label><input id="seOpening" type="number" min="0"></div>
       <div><label>Purchased Qty</label><input id="sePurchased" type="number" min="0"></div>
       <div><label>Sold Qty</label><input id="seSold" type="number" min="0"></div>
       <div><label>Unit Cost (৳)</label><input id="seCost" type="number" min="0" step="0.01"></div>
