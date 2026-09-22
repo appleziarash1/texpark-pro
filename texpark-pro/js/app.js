@@ -92,8 +92,13 @@ function nav(page) {
   const el = document.getElementById('page-' + page);
   if (el) el.classList.add('active');
   document.getElementById('topTitle').textContent = (PAGES.find(p => p.id === page) || {}).label || '';
+  closeNav();          // on phones the drawer should close once you pick a page
   renderAll();
 }
+
+/* ---------- mobile drawer ---------- */
+function toggleNav() { document.body.classList.toggle('nav-open'); }
+function closeNav() { document.body.classList.remove('nav-open'); }
 
 function renderAll() {
   if (!session) return;

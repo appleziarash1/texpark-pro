@@ -36,6 +36,7 @@ global.window = {
   addEventListener() {}, print() {}, location: { reload() {} }
 };
 global.document = {
+  body: makeEl('body'),
   getElementById: id => (id ? el(id) : null),
   querySelectorAll: () => [],
   createElement: () => makeEl('tmp'),
@@ -59,6 +60,7 @@ global.localStorage = {
 /* Load the real app source into this global scope. */
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'db.js'), 'utf8'), { filename: 'db.js' });
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'sync.js'), 'utf8'), { filename: 'sync.js' });
+vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'voice.js'), 'utf8'), { filename: 'voice.js' });
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'app.js'), 'utf8'), { filename: 'app.js' });
 
 /* app.js waits for DOMContentLoaded to boot; the shim never fires it, so boot here
@@ -380,9 +382,129 @@ try {
 } catch (e) { renderErr = e.message; }
 eq(renderErr, '', 'all pages rendered cleanly');
 
+console.log('\n--- phone drawer opens, closes, and shuts on nav ---');
+eq(document.body.classList.contains('nav-open'), false, 'drawer starts closed');
+toggleNav();
+eq(document.body.classList.contains('nav-open'), true, 'tapping the hamburger opens the drawer');
+closeNav();
+eq(document.body.classList.contains('nav-open'), false, 'tapping the scrim closes it');
+toggleNav();
+eq(document.body.classList.contains('nav-open'), true, 'opened again');
+nav('stock');
+eq(document.body.classList.contains('nav-open'), false, 'picking a page closes the drawer');
+eq(document.getElementById('topTitle').textContent, 'Stock', 'and the page actually changed');
+nav('memo');
+eq(document.getElementById('topTitle').textContent, 'New Sales Memo', 'nav still works after drawer use');
+
+console.log('\n--- voice entry: speaking a received product ---');
+nav('stock');
+const voiceProductsBefore = db.products.length;
+// the sentence the boss would actually say
+const heard = 'ajke ei product ta in hoise naam eita Mouse Pad, quantity 20, price porche 150';
+let parsed = parseVoiceCommand(heard, { defaultKind: 'in' });
+eq(parsed.actions.length, 1, 'one action was understood');
+eq(parsed.actions[0].kind, 'in', 'understood as a stock-in');
+eq(parsed.actions[0].matched, undefined, 'not resolved until it is applied');
+applyVoiceActions(parsed.actions);
+const mousePad = db.products.find(p => /mouse pad/i.test(p.name));
+ok(!!mousePad, 'the new product was created on the spot');
+eq(findStock(mousePad.id).available, 20, 'received 20 landed in stock');
+eq(num(findStock(mousePad.id).cost), 150, 'purchase price 150 became the cost');
+ok(db.products.length > voiceProductsBefore, 'product list grew');
+ok(db.ledger.some(l => l.productId === mousePad.id && l.type === 'Opening'), 'ledger recorded the receipt');
+
+console.log('\n--- voice entry: the same sentence reuses the existing product ---');
+const heard2 = 'Mouse Pad in hoise 5 pcs, price porche 160';
+parsed = parseVoiceCommand(heard2, { defaultKind: 'in' });
+applyVoiceActions(parsed.actions);
+eq(db.products.filter(p => /mouse pad/i.test(p.name)).length, 1, 'no duplicate product created');
+eq(findStock(mousePad.id).available, 25, 'available is now 25');
+eq(num(findStock(mousePad.id).cost), 160, 'cost updated to the latest price');
+
+console.log('\n--- voice entry: Bangla digits and spoken numbers ---');
+parsed = parseVoiceCommand('naam eita Cable Clip, quantity ৫০, price porche ek shoto', { defaultKind: 'in' });
+eq(parsed.actions[0].qty, 50, 'Bangla digit 50 understood');
+eq(parsed.actions[0].cost, 100, 'spoken "ek shoto" became 100');
+
+console.log('\n--- voice entry: a sale goes onto the memo ---');
+nav('memo');
+newMemo();
+const beforeMemoItems = memoDraft.items.length;
+parsed = parseVoiceCommand('Rahim ke Mouse Pad sell holo quantity 3, sell price 250', { defaultKind: 'out' });
+applyVoiceActions(parsed.actions);
+eq(memoDraft.items.length, beforeMemoItems + 1, 'a memo line was added');
+const vline = memoDraft.items[memoDraft.items.length - 1];
+eq(vline.productId, mousePad.id, 'the line points at the spoken product');
+eq(vline.qty, 3, 'qty 3');
+eq(vline.rate, 250, 'rate 250');
+eq(vline.cost, 160, 'cost came from the stock card automatically');
+ok(memoDraft.items.some(x => num(x.qty) > 0), 'memo can be saved right away');
+
+console.log('\n--- voice entry: two products in one breath ---');
+nav('stock');
+parsed = parseVoiceCommand('aras Power Strip in hoise 10, price porche 320', { defaultKind: 'in' });
+parsed = parseVoiceCommand('Power Strip ar HDMI Cable in hoise, quantity 10 ar quantity 6', { defaultKind: 'in' });
+eq(parsed.actions.length, 2, 'two actions split from one sentence');
+eq(parsed.actions[0].qty, 10, 'first product qty 10');
+eq(parsed.actions[1].qty, 6, 'second product qty 6');
+
+console.log('\n--- voice entry: names that contain numbers ---');
+parsed = parseVoiceCommand('ajke ei product ta in hoise naam eita Kids 3pcs Set, quantity 12, price porche 250', { defaultKind: 'in' });
+eq(parsed.actions[0].name, 'kids set', 'the number inside the name is not mistaken for the quantity');
+eq(parsed.actions[0].qty, 12, 'qty is still the spoken quantity');
+eq(parsed.actions[0].cost, 250, 'cost is still the spoken price');
+
+console.log('\n--- voice entry: the customer is not part of the product name ---');
+parsed = parseVoiceCommand('Karim ke Mouse Pad sell holo quantity 2, sell price 260', { defaultKind: 'out' });
+eq(parsed.actions[0].name, 'mouse pad', 'the "<name> ke" customer prefix is dropped');
+eq(parsed.actions[0].rate, 260, 'sell price understood');
+
+console.log('\n--- voice entry: nonsense never writes anything ---');
+const before = db.ledger.length;
+parsed = parseVoiceCommand('', { defaultKind: 'in' });
+eq(parsed.actions.length, 0, 'empty speech yields no action');
+const junk = parseVoiceCommand('hmm', { defaultKind: 'in' });
+const junkDone = applyVoiceActions(junk.actions);
+eq(junkDone.length, 0, 'a half-sentence writes nothing');
+eq(db.ledger.length, before, 'ledger untouched by the junk attempt');
+
+console.log('\n--- phone install / offline wiring ---');
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
+const swSrc = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+eq(manifest.name, 'Texpark Pro - Business Manager', 'manifest names the app');
+eq(manifest.display, 'standalone', 'installs as a standalone app, not a browser tab');
+eq(manifest.start_url, './index.html', 'opens the app on launch');
+ok(manifest.icons.length >= 2, 'manifest ships icons for the home screen');
+manifest.icons.forEach(ic => {
+  ok(fs.existsSync(path.join(root, ic.src)), 'icon exists: ' + ic.src);
+  // the sizes field must match the file we actually generated
+  const buf = fs.readFileSync(path.join(root, ic.src));
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
+  eq(ic.sizes, w + 'x' + h, ic.src + ' is really ' + ic.sizes);
+});
+ok(/rel="manifest" href="manifest.webmanifest"/.test(html), 'index.html links the manifest');
+ok(/apple-touch-icon/.test(html), 'iOS gets a home-screen icon');
+ok(/name="theme-color"/.test(html), 'theme colour set for the status bar');
+
+// every file the service worker promises to cache must actually be there
+const assets = (swSrc.match(/ASSETS = \[([\s\S]*?)\]/) || [])[1] || '';
+const listed = [...assets.matchAll(/'(\.\/[^']*)'/g)].map(m => m[1]);
+ok(listed.length >= 8, 'service worker caches the whole app');
+listed.forEach(a => {
+  const rel = a === './' ? 'index.html' : a.replace(/^\.\//, '');
+  ok(fs.existsSync(path.join(root, rel)), 'offline cache asset exists: ' + a);
+});
+// anything index.html loads must be in that list, or it breaks offline
+[...html.matchAll(/(?:src|href)="((?:js|css)\/[^"]+)"/g)].forEach(m => {
+  ok(listed.indexOf('./' + m[1]) !== -1, 'index.html loads ' + m[1] + ' and the SW caches it');
+});
+ok(/serviceWorker/.test(html) && /register\('sw\.js'\)/.test(html), 'index.html registers the service worker');
+ok(/location\.protocol/.test(html), 'service worker is skipped on file:// so the desktop app still opens');
+
 console.log('\n--- data survives a reload ---');
 eq(db.memos.length, 1, 'memos persisted');
-eq(db.products.length, 4, 'products persisted');
+eq(db.products.length, 5, 'products persisted - incl. the voice-created one');
 ok(!!fakeStore['texpark_pro_v2'], 'data stored under the v2 key');
 ok(!fakeStore['texpark_biz_v1'], 'old v1 key not mixed in');
 eq(loadDB().memos.length, 1, 'reload reads the same memos back');

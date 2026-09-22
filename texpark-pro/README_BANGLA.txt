@@ -5,12 +5,15 @@
 Ki notun (v1 theke ki thik hoyeche)
 ----------------------------------
 
-1. STOCK MINUS SOMOSSA THIK HOYECHE  <-- apnar bola main problem
+1. MEMO-I ASHOL  <-- apnar bola main problem
    Age: stock na thakleo memo save hoto, ar available stock
-        minus (-) hoye jeto.
-   Ekhon: stock japt na thakle memo save-i hobe na. Ki ki kom
-          shetar list dekhabe. Chailে Settings theke negative
-          stock onumoti dite paren.
+        minus (-) hoye jeto - kintu product Stock page-e ashTO na.
+   Ekhon: memo save korte stock lage NA. Stock japt na thakleo
+          memo save hobe. Memo-te jei product uthbe seta
+          Stock page-e nijei bose jabe - apni pore shudhu
+          received/opening qty tole din.
+          Memo kokhono atkabe na. Stock kom hole shudhu ekta
+          mone koriye deoya hobe (reminder), save atkabe na.
 
 2. PROFIT / LABH  <-- apnar bola ei ta chilo na
    Prottek product-er Cost Price track hoy. Memo save korar
@@ -44,7 +47,29 @@ Ki notun (v1 theke ki thik hoyeche)
           jay, internet firlo automatic pathay. Badge-e dekhbe:
           "All synced" / "3 pending" / "2 failed".
 
-9. ARO
+9. PHONE-E CHOLBE (responsive)
+   Phone/mobile-e sidebar drawer hoye jay - upore hamburger (☰)
+   menu. Menu theke page select korle drawer nijei bondho hoy.
+   Memo, stock, ledger - sob table phone-e scroll kore dekha jay.
+
+10. VOICE DIYE ENTRY  <-- notun
+   Upore "🎤 Voice" button. Mic chepe bolun, app nijei bujhe
+   stock o memo-te boshay. Mic na thakle type koreo kora jay.
+   Bolar dhoron:
+     "naam eita Kids 3pcs Set, quantity 50, price porche 120"   -> stock barbe
+     "Rahim ke Mouse Pad sell holo quantity 3, sell price 250"  -> memo te uthbe
+     "Power Strip ar HDMI Cable in hoise, quantity 10 ar quantity 6"
+   Bangla sonkha (৫০) ar kotha ("ek shoto" = 100) duitai bujhe.
+   Ki bujhlo seta bole dey, tarpor sob kichu save kore dey.
+   Bhul hole page theke edit kore nin.
+
+11. PHONE-E INSTALL (offline)
+   App ta ekhon PWA - phone-er browser theke "Add to Home screen"
+   korle ekta app er moto install hobe. Internet na thakleo
+   khulbe (service worker cache kore rakhe). Sync queue te
+   thakbe, internet firlo automatic chole jabe.
+
+12. ARO
    - Auto snapshot (prottek save-er age backup, ek click-e ferot)
    - Memo te driver/vehicle/receiver info + delivery tracking
    - Barcode-ready product SKU, VAT %, reorder level
@@ -93,8 +118,12 @@ Test chalate
 ------------
   npm test
 
-Ei test ta asol business logic check kore - stock validation,
-profit hishab, COGS, ageing, P&L. 42 ta check ache.
+Duita suite chole:
+  - test/logic.test.js : business logic (profit, COGS, ageing, P&L)
+  - test/e2e.test.js   : pura user journey - login, memo save,
+                         stock auto-create, phone drawer, voice entry
+
+Sob porikkha pass korle-i app thik ache mone korben.
 
 
 Guruttopurno

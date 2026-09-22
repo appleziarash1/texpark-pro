@@ -18,9 +18,22 @@
   "build": {
     "appId": "com.texpark.businessmanager.pro",
     "productName": "Texpark Pro Business Manager",
-    "files": ["index.html", "main.js", "package.json", "css/**/*", "js/**/*"],
+    "files": [
+      "index.html",
+      "main.js",
+      "package.json",
+      "sw.js",
+      "manifest.webmanifest",
+      "icon-192.png",
+      "icon-512.png",
+      "css/**/*",
+      "js/**/*"
+    ],
     "win": {
-      "target": ["portable", "nsis"],
+      "target": [
+        "portable",
+        "nsis"
+      ],
       "artifactName": "Texpark-Pro-${version}-${arch}.${ext}"
     },
     "nsis": {
