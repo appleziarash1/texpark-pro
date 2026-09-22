@@ -1,0 +1,127 @@
+# Texpark Pro — Android app (install + update niyom)
+
+## Ei app ta ki
+
+Ei app ta apnar Texpark Pro website ta ke ekta **Android app**-er moto kholay —
+icon, fullscreen, back button, sob. Eta ekta **shell** (kholos), bhitore kono
+alada code nei.
+
+**Ei karon-e sobcheye boro subidha:** app-er code ek jaygay thake — apnar
+**hosted site-e**. TAI:
+
+> Site-e ekbar edit kore upload korle, **shob phone-e automatic update hoye jay**.
+> Notun APK banate hoy na, notun kore install korte hoy na.
+
+App khollar somoy Netlify theke taaza code ta niye ashe. Mane jei phone-e app
+ta ache, sob khanei ek-i version — purono-boruno mishti nei.
+
+Duita jinis **alada** rakha bhalo:
+
+| Ja bodlabe | Notun APK lagbe? |
+|---|---|
+| App-er kono feature, design, memo, stock, profit er hisheb | **Na** — site-e upload korlei hobe |
+| App-er icon, app-er nam, URL bar-er moto shell-er kono jinis | **Hae** — notun APK banate hobe |
+
+Mane 99% kaj site-e, tai notun APK ar lagbe na.
+
+---
+
+## Install korar niyom
+
+1. `TexparkPro.apk` file ta phone-e nin (WhatsApp / email / USB / download link).
+2. Phone-e file ta tap korun.
+3. Android bolbe **"Unknown apps"** ba **"Install unknown apps"** permission
+   chaibe — `Settings` e giye **Allow** korun. (Play Store chara app install
+   korle ei permission lage; ei ta normal.)
+4. **Install** chepun.
+5. App khulbe — **apnar site-er address ta bosan** (ekbar-i), tarpor
+   **"Shuru korun"**.
+
+Address ta jodi nah lekha thake, `https://` lage na — app nijei boshiye ney.
+Company-r name-er sathe address guliye fellen na — `https://apnar-site.netlify.app`
+emon kichu bosate hobe.
+
+### Address ta pore bodlate chan?
+
+App-er bhitore, **Back button ta chhere dhore rakhun** (long press) — setup
+screen ta abar ashbe, notun address bosate parben. Apnar **data harabe na** —
+data site-e (browser-er storage-e) thake, app-er bhitore na.
+
+### Internet chhara chalbe?
+
+Ekhon na. App ta site theke code ane, tai internet lage. Kintu **memo/stock
+er data phone-e-i thake** (offline-o), ar internet ashle **auto sync** hoye jay.
+Net na thakleo memo kaaj korbe — jemon browser-e kore.
+
+---
+
+## Data kothay thake?
+
+Bhoyer kichu nei — **data apnar phone-e-i thake**, WebView-er localStorage-e
+(`texpark_pro_v2`). Site ta update korleo data **thake na hariye** — karon app
+khollar somoy Netlify theke shudhu **code** ashe, apnar data na.
+
+Kintu ei kotha gulo mone rakhben:
+
+- **Niyomito backup nin:** Settings → Backup / Data → Export. File ta
+  Google Drive / email-e rakhen.
+- **App uninstall korle data jabe** — tai age backup nin.
+- **Play Store na, sideload** — tai "Unknown apps" permission ta lage. Eta
+  nirapod jodi apni nijei APK ta install koren.
+
+---
+
+## Ekbar install, sob phone-e update
+
+Ei ta-i asol subidha. Dhora hoy, apni site-e ekta notun feature add korlen:
+
+1. Notun code ta Netlify-te **abar drop korun** (ba GitHub-e push korun).
+2. Bas. Apnar phone, MD-saheb-er phone, dokaner PC — sob jaygay **porer
+   bar app khollar somoy** notun ta chole ashbe.
+
+Karor kichu korte hoy na. Notun APK pathate hoy na, "update koro" bolte hoy na.
+
+**Kenota thik kaaj kore?** App-er bhitore code-er ekta copy-o nei, tai purono
+code boshie rakhar kono upay nei — je address ta bosano, sheta khulei taaza ta
+ashe. Ei jinis ta jene rakhben, karon ei tare-i apni cheyechilen.
+
+---
+
+## Jodi jhamela lage
+
+| Somossa | Karon / Samadhan |
+|---|---|
+| "Site ta khola gelo na" message | Address-e bhul ache ba internet nei. **Address bodlun** chepun, ar thik address bosan. |
+| Site khule 404 ashe | Netlify-te drop kora file ta thik noy. `texpark-hosting.zip` abar drop korun (tar root-e `index.html` thake). |
+| Password prompt ashe | Age free account khule, tarpor drop korun. Detail `HOSTING_BANGLA.txt`-e. |
+| App khubshat khulche na | Phone-er internet dekhen. Ba site ta ki browser-e khulche, ta age porikkha korun. |
+| Address bodlate chai | Back button **chhere dhore rakhun** (long press). |
+| App uninstall korlam, data gelo | Data app-er bhitore chilo, tai gelo. Backup thakle Restore korun. |
+
+---
+
+## Technical kotha (ja ja kora hoyeche)
+
+- **minSdk 21** (Android 5.0+) — purono phone-o cholbe.
+- **targetSdk 34** — notun Android-er niyom mane chole.
+- **Permissions:** Internet, Network state, Record audio (voice entry-r jonno).
+  Camera optional — na thakleo app install hoy.
+- **Signed** — v1 + v2 + v3 signature soho, tai phone-e install hoy.
+- **Voice entry** kaj korbe: app mic-er permission nijei dey, ar
+  WebView-e `SpeechRecognition` support kore.
+- **Print** kaj korbe: `window.print()` WebView-e print dialog kholay —
+  sekhan theke **Save as PDF** o kora jay.
+- **Backup export** kaj korbe: file gulo Downloads-e jome.
+
+### Nijer APK ta notun kore banate chan?
+
+Source code `android-src/` folder-e ache. Build korte:
+
+```
+ANDROID_HOME=/path/to/android-sdk python3 build-apk.py
+```
+
+Eta `TexparkPro.apk` toiri korbe (root-e), ar `android-keystore.jks` diye sign
+korbe. **Keystore file ta hariye fellen na** — ek-i keystore diye sign korle
+purono app-er upore update install hoy; notun keystore hoile app ta notun app
+hisebe dhore (purono ta uninstall korte hoy).

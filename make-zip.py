@@ -23,6 +23,9 @@ for extra in ['OPEN_APP.bat', 'START_APP.bat', 'CREATE_DESKTOP_SHORTCUT.bat', 'm
 # the single file for the phone, and the offline catalog
 z.write(os.path.join(root, 'texpark-pro.html'), 'texpark-pro.html')
 z.write(os.path.join(root, 'catalog', 'catalog-pro-v1.html'), 'catalog-pro-v1.html')
+# the Android app and its install guide
+z.write(os.path.join(root, 'TexparkPro.apk'), 'TexparkPro.apk')
+z.write(os.path.join(root, 'ANDROID_BANGLA.txt'), 'ANDROID_BANGLA.txt')
 z.close()
 
 names = zipfile.ZipFile(out).namelist()

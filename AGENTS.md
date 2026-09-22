@@ -107,7 +107,33 @@ built bundle themselves. `HOSTING_BANGLA.txt` is the guide, `texpark-deploy/` is
 - `node build.js` (in `texpark-pro/`) regenerates **both** `../texpark-deploy/` and
   `../texpark-pro.html`. Always run this after changing source, or the shipped files drift.
   The script asserts the new cloud/device functions are present in the single file.
-- `npm test` runs `test/logic.test.js` (78), `test/sheet.test.js` (20), `test/e2e.test.js` (196).
+- `npm test` runs `test/logic.test.js` (78), `test/sheet.test.js` (20), `test/e2e.test.js` (196),
+  then `node --test test/android.test.js` (12). Total 306.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
 - Current version: `2026-09-22.5` in both `sw.js` and `js/app.js` (bump both, then rebuild).
+
+## Android app (added 2026-09-22)
+`TexparkPro.apk` — a WebView **shell**, deliberately not a copy of the app. The owner types his
+Netlify address once; `MainActivity` stores it and loads it live, so **one edit on the host
+updates every installed phone** with no new APK. This is the user's explicit requirement.
+
+- Source: `android-src/` (`MainActivity.java`, `SiteUrl.java`, `AndroidManifest.xml`).
+  `MainActivity` uses only plain framework APIs — no AndroidX, so there is no dependency
+  resolution and no Gradle download.
+- Build: `ANDROID_HOME=/opt/android-sdk python3 build-apk.py` → `TexparkPro.apk` (21 KB),
+  signed with `android-keystore.jks`. **Keep that keystore** — a different one makes the new
+  APK a different app, so it will not install over the old one.
+- `SiteUrl.normalise()` is deliberately Android-free so it can be compiled and tested on a
+  plain JVM; `test/android.test.js` runs the shipped class for real. There is no emulator here
+  (no `/dev/kvm`), so this is the honest limit of what can be verified locally. The APK itself
+  is verified with `apksigner verify` + `androguard`.
+- Two gotchas already hit, do not rediscover them:
+  1. build-tools **34.0.0**'s `d8` crashes with an internal NPE on anonymous inner classes.
+     `build-apk.py` auto-picks the newest installed build-tools (35.0.0 works).
+  2. `d8` needs `*.class` found **recursively** under `-d` output; a flat `os.listdir` silently
+     produces an empty `obj/`.
+- Recovery paths that exist on purpose: load failure → dialog offering retry / change address;
+  long-press Back → change the stored address without losing data (data lives in WebView
+  localStorage, not in the APK, so changing the address never wipes business data).
+- Guide: `ANDROID_BANGLA.txt`. Download page: `download.html` (APK button + explanation).
