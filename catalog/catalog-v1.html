@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Company Manager PC App — Catalog / ক্যাটালগ</title>
+<style>
+  :root{
+    --bg:#0b0f19; --panel:#121826; --panel2:#171f31; --line:#232d44;
+    --txt:#e6ecf7; --muted:#93a1bd; --accent:#4f8cff; --accent2:#22c55e;
+    --warn:#f59e0b; --danger:#ef4444; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:"Segoe UI","Noto Sans Bengali",system-ui,-apple-system,sans-serif;
+    line-height:1.6}
+  a{color:inherit}
+  .wrap{max-width:1240px;margin:0 auto;padding:32px 20px 80px}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:34px}
+  .kicker{color:var(--accent);font-size:13px;letter-spacing:.16em;text-transform:uppercase;font-weight:700}
+  h1{font-size:38px;margin:8px 0 10px;line-height:1.2}
+  .sub{color:var(--muted);max-width:800px;font-size:16px}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .badge{background:var(--panel2);border:1px solid var(--line);padding:5px 12px;border-radius:99px;font-size:12.5px;color:var(--muted)}
+
+  h2.section{font-size:22px;margin:46px 0 6px;padding-left:12px;border-left:4px solid var(--accent)}
+  .section-hint{color:var(--muted);font-size:14px;margin:0 0 20px;padding-left:16px}
+
+  .grid{display:grid;gap:22px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;display:flex;flex-direction:column;transition:.2s transform,.2s border-color}
+  .card:hover{transform:translateY(-4px);border-color:#33507f}
+  .card .head{padding:18px 18px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .card h3{margin:0;font-size:19px}
+  .tag{font-size:11px;font-weight:700;padding:4px 9px;border-radius:99px;white-space:nowrap;letter-spacing:.04em}
+  .tag.rec{background:rgba(34,197,94,.16);color:#5ee09a;border:1px solid rgba(34,197,94,.35)}
+  .tag.pro{background:rgba(79,140,255,.16);color:#8cb6ff;border:1px solid rgba(79,140,255,.35)}
+  .tag.lite{background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.35)}
+  .tag.web{background:rgba(168,85,247,.16);color:#c9a2ff;border:1px solid rgba(168,85,247,.35)}
+  .card .body{padding:14px 18px 18px;flex:1;display:flex;flex-direction:column}
+  .desc{color:var(--muted);font-size:14px;margin:0 0 14px}
+  .shot{border:1px solid var(--line);border-radius:10px;background:#0d1424;margin:0 18px 14px;overflow:hidden}
+  .shot .bar{height:26px;background:#1b2540;display:flex;align-items:center;gap:6px;padding:0 10px}
+  .dot{width:9px;height:9px;border-radius:50%}
+  .shot .mini{padding:12px;display:grid;gap:8px}
+  .mini .row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .mini .kpi{background:#141d31;border:1px solid #22304d;border-radius:8px;padding:8px}
+  .mini .kpi b{display:block;font-size:15px}
+  .mini .kpi s{text-decoration:none;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .mini .line{height:9px;border-radius:5px;background:#1d2942}
+  .mini .line.w70{width:70%}.mini .line.w45{width:45%}.mini .line.w88{width:88%}
+  .mini .line.hi{background:linear-gradient(90deg,#2b7fff,#22c55e)}
+  ul.feat{list-style:none;padding:0;margin:0 0 16px;font-size:13.5px}
+  ul.feat li{padding-left:22px;position:relative;margin-bottom:6px;color:#cfd9ea}
+  ul.feat li:before{content:"✓";position:absolute;left:0;color:var(--accent2);font-weight:700}
+  ul.feat li.no:before{content:"✕";color:#6b7280}
+  ul.feat li.no{color:#7b879e}
+  .meta{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);
+    border-top:1px dashed var(--line);padding-top:12px;margin-top:auto}
+  .meta span{background:#0f1626;border:1px solid var(--line);padding:3px 9px;border-radius:7px}
+  .price{color:#5ee09a;font-weight:700}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+  th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:#a8b6d1}
+  tr:nth-child(even) td{background:#0f1626}
+  td strong{color:#fff}
+
+  .panelbox{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;margin-top:14px}
+  .steps{counter-reset:s;list-style:none;padding:0;margin:0}
+  .steps li{counter-increment:s;position:relative;padding-left:44px;margin-bottom:16px}
+  .steps li:before{content:counter(s);position:absolute;left:0;top:0;width:28px;height:28px;border-radius:50%;
+    background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+  .note{background:rgba(79,140,255,.08);border:1px solid rgba(79,140,255,.3);border-radius:10px;padding:14px 16px;font-size:14px;color:#c8d8f5}
+  .card{cursor:pointer}
+  .card.selected{border-color:var(--accent2);box-shadow:0 0 0 2px rgba(34,197,94,.35),0 12px 30px rgba(0,0,0,.35)}
+  .card.selected:after{content:"✓ SELECTED";position:absolute}
+  .card{position:relative}
+  .card.selected .head h3:after{content:"  ✓";color:var(--accent2);font-weight:700}
+  .picker{position:sticky;bottom:16px;margin-top:26px;display:none;align-items:center;
+    justify-content:space-between;gap:16px;background:#16203a;border:1px solid #2e4272;
+    border-radius:var(--radius);padding:16px 20px;box-shadow:0 14px 34px rgba(0,0,0,.5);z-index:9}
+  .picker.show{display:flex}
+  .picker button{background:var(--accent);color:#fff;border:0;border-radius:9px;
+    padding:11px 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+  .picker button:hover{background:#3a7bf0}
+  footer{margin-top:60px;border-top:1px solid var(--line);padding-top:20px;color:var(--muted);font-size:13px}
+  .bn{color:#fff}
+  .en{color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="kicker">Software Catalog · v1.0</div>
+    <h1>Company Manager — PC App Options</h1>
+    <p class="sub">
+      <span class="bn">Apnar company chalate je je features dorkar — company details, stock, purchase, sales, profit/loss, delivery memo, customer ledger — shob ek jaygay. Niche 6 ta option er preview diyechi. Sundo je ta pochondo hoy, setar number bolben, ami puro app ta build kore dibo.</span><br>
+      <span class="en">Pick the option that fits your business. Each card shows a UI preview, feature list, and effort estimate.</span>
+    </p>
+    <div class="badges">
+      <span class="badge">🖥️ Windows PC app</span>
+      <span class="badge">🗄️ Offline-first database</span>
+      <span class="badge">📄 PDF memo / invoice</span>
+      <span class="badge">📊 Profit &amp; Stock reports</span>
+      <span class="badge">🔐 Multi-user + roles</span>
+      <span class="badge">🇧🇩 Bangla / English UI</span>
+    </div>
+  </header>
+
+  <h2 class="section">Core Modules — shob option ei gula share kore</h2>
+  <p class="section-hint">Base feature set: eta thakle apnar daily business chalate kono kichu baki thakbe na.</p>
+
+  <div class="panelbox">
+    <table>
+      <tr><th style="width:190px">Module</th><th>Ki kaj kore</th></tr>
+      <tr><td><strong>Company Profile</strong></td><td>Company name, logo, address, TIN/BIN, VAT reg, phone/email, bank accounts, authorized signatures — memo header-e auto boshe jabe.</td></tr>
+      <tr><td><strong>Products / Stock</strong></td><td>Item code, category, unit, cost price, sell price, opening stock, reorder level, warehouse/location, barcode.</td></tr>
+      <tr><td><strong>Purchase Entry</strong></td><td>Supplier theke maal entry, purchase price, batch/expiry, due payment tracking, purchase return.</td></tr>
+      <tr><td><strong>Sales &amp; Billing</strong></td><td>Invoice/memo create, multiple price tier (retail/wholesale/dealer), discount, VAT, cash/credit, payment mode.</td></tr>
+      <tr><td><strong>Delivery Memo / Challan</strong></td><td>Alada delivery challan number, driver &amp; vehicle info, receiver signature, partial delivery, memo PDF print.</td></tr>
+      <tr><td><strong>Profit &amp; Loss</strong></td><td>Per invoice profit, per item margin, monthly P&amp;L, COGS calculation, expense entry (rent, salary, utility).</td></tr>
+      <tr><td><strong>Party Ledger</strong></td><td>Customer &amp; supplier sompurno hishab — due, advance, payment history, ageing report.</td></tr>
+      <tr><td><strong>Reports</strong></td><td>Daily sales, stock valuation, low-stock alert, top customers, dead stock, VAT report, cash book.</td></tr>
+      <tr><td><strong>Users &amp; Audit</strong></td><td>Admin/Manager/Salesman/Cashier role, permission control, kে kখon ki change korlo tar audit log.</td></tr>
+      <tr><td><strong>Backup</strong></td><td>One-click local backup + auto daily backup to a folder / pen drive / network path.</td></tr>
+    </table>
+  </div>
+
+  <h2 class="section">📦 Option Catalog — 6 ta app concept</h2>
+  <p class="section-hint">Prottekta card-er preview dekhe decide korben. Number mone rakhben.</p>
+
+  <div class="grid">
+
+    <!-- 1 -->
+    <div class="card">
+      <div class="head"><h3>#1 — Ledger Lite</h3><span class="tag lite">Fastest · Recommended start</span></div>
+      <div class="shot">
+        <div class="bar"><i class="dot" style="background:#ff5f57"></i><i class="dot" style="background:#febc2e"></i><i class="dot" style="background:#28c840"></i></div>
+        <div class="mini">
+          <div class="row">
+            <div class="kpi"><s>Today Sales</s><b>৳ 84,500</b></div>
+            <div class="kpi"><s>Profit</s><b style="color:#5ee09a">৳ 12,300</b></div>
+            <div class="kpi"><s>Due</s><b style="color:#fbbf24">৳ 41,000</b></div>
+          </div>
+          <div class="line w88"></div><div class="line w70"></div><div class="line w45"></div>
+        </div>
+      </div>
+      <div class="body">
+        <p class="desc">Single-user, single-window simple app. Stock, sales, memo ar profit ek screen-e. Jara ekhon Excel/khata te kaj koren, tader jonno perfect first step.</p>
+        <ul class="feat">
+          <li>Dashboard: daily sales, profit, due</li>
+          <li>Item + stock in/out entry</li>
+          <li>Sales memo &amp; delivery challan print</li>
+          <li>Auto profit calculation</li>
+          <li class="no">No multi-user / login</li>
+          <li class="no">No VAT &amp; advanced reports</li>
+        </ul>
+        <div class="meta"><span>⏱️ Build: <span class="price">1–2 din</span></span><span>💻 Windows .exe</span><span>🗄️ SQLite</span></div>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="card">
+      <div class="head"><h3>#2 — Business Pro</h3><span class="tag rec">★ Best value</span></div>
+      <div class="shot">
+        <div class="bar"><i class="dot" style="background:#ff5f57"></i><i class="dot" style="background:#febc2e"></i><i class="dot" style="background:#28c840"></i></div>
+        <div class="mini">
+          <div class="row">
+            <div class="kpi"><s>Sales</s><b>৳ 3.4L</b></div>
+            <div class="kpi"><s>Stock Value</s><b>৳ 18.2L</b></div>
+            <div class="kpi"><s>Margin</s><b style="color:#5ee09a">22.4%</b></div>
+          </div>
+          <div class="line hi"></div><div class="line w88"></div><div class="line w70"></div><div class="line w45"></div>
+        </div>
+      </div>
+      <div class="body">
+        <p class="desc">Puropur professional suite — ei tai amra shobcheye beshi recommend kori. 90% real business er dorkar shob ekhane cover hoy.</p>
+        <ul class="feat">
+          <li>Company profile + memo header design</li>
+          <li>Purchase → Stock → Sales full cycle</li>
+          <li>Delivery memo / challan (driver + receiver)</li>
+          <li>Per-item &amp; monthly P&amp;L report</li>
+          <li>Customer/Supplier ledger + due ageing</li>
+          <li>Login, roles, audit log</li>
+          <li>PDF/Excel export, auto backup</li>
+        </ul>
+        <div class="meta"><span>⏱️ Build: <span class="price">4–7 din</span></span><span>💻 Windows .exe</span><span>🗄️ SQLite / Postgres</span></div>
+      </div>
+    </div>
+
+    <!-- 3 -->
+    <div class="card">
+      <div class="head"><h3>#3 — ERP Suite</h3><span class="tag pro">Heavy / Multi-branch</span></div>
+      <div class="shot">
+        <div class="bar"><i class="dot" style="background:#ff5f57"></i><i class="dot" style="background:#febc2e"></i><i class="dot" style="background:#28c840"></i></div>
+        <div class="mini">
+          <div class="row">
+            <div class="kpi"><s>Branches</s><b>4 active</b></div>
+            <div class="kpi"><s>VAT</s><b>Filed ✓</b></div>
+            <div class="kpi"><s>Receivable</s><b>৳ 9.1L</b></div>
+          </div>
+          <div class="line w88"></div><div class="line hi"></div><div class="line w70"></div><div class="line w45"></div>
+        </div>
+      </div>
+      <div class="body">
+        <p class="desc">Boro business, ekadhik branch, warehouse ar VAT/BIN compliance dorkar hole. Multi-warehouse stock transfer shoho.</p>
+        <ul class="feat">
+          <li>Multi-branch / multi-warehouse</li>
+          <li>Batch, expiry, serial/lot tracking</li>
+          <li>VAT &amp; Mushak-6.3 report, BIN</li>
+          <li>Employee attendance + salary</li>
+          <li>Approval workflow (purchase order → GRN)</li>
+          <li>Network multi-user (LAN server)</li>
+          <li>Role matrix + detailed audit</li>
+        </ul>
+        <div class="meta"><span>⏱️ Build: <span class="price">2–4 soptaho</span></span><span>💻 Windows + LAN server</span><span>🗄️ PostgreSQL</span></div>
+      </div>
+    </div>
+
+    <!-- 4 -->
+    <div class="card">
+      <div class="head"><h3>#4 — Web App (PC + Mobile)</h3><span class="tag web">Cloud / Anywhere access</span></div>
+      <div class="shot">
+        <div class="bar"><i class="dot" style="background:#ff5f57"></i><i class="dot" style="background:#febc2e"></i><i class="dot" style="background:#28c840"></i></div>
+        <div class="mini">
+          <div class="row">
+            <div class="kpi"><s>Live</s><b>● Online</b></div>
+            <div class="kpi"><s>Orders</s><b>128</b></div>
+            <div class="kpi"><s>Users</s><b>7</b></div>
+          </div>
+          <div class="line w88"></div><div class="line w70"></div><div class="line hi"></div>
+        </div>
+      </div>
+      <div class="body">
+        <p class="desc">PC-e browser-e chalbe, chobi mobile-eo. Dokan e na thakeo somossa nai — jekhane theke hok dekhben. Delivery man mobile-e memo dekhte parbe.</p>
+        <ul class="feat">
+          <li>Same core modules, browser-based</li>
+          <li>Mobile-friendly (delivery man app view)</li>
+          <li>Auto cloud backup, no data loss</li>
+          <li>Anywhere access + real-time sync</li>
+          <li>Monthly hosting cost thake</li>
+          <li class="no">Internet dorkar</li>
+        </ul>
+        <div class="meta"><span>⏱️ Build: <span class="price">5–10 din</span></span><span>🌐 Browser + Mobile</span><span>🗄️ PostgreSQL cloud</span></div>
+      </div>
+    </div>
+
+    <!-- 5 -->
+    <div class="card">
+      <div class="head"><h3>#5 — Retail / POS Focus</h3><span class="tag pro">Counter billing</span></div>
+      <div class="shot">
+        <div class="bar"><i class="dot" style="background:#ff5f57"></i><i class="dot" style="background:#febc2e"></i><i class="dot" style="background:#28c840"></i></div>
+        <div class="mini">
+          <div class="row">
+            <div class="kpi"><s>Bill #</s><b>1042</b></div>
+            <div class="kpi"><s>Cart</s><b>6 items</b></div>
+            <div class="kpi"><s>Total</s><b style="color:#5ee09a">৳ 2,840</b></div>
+          </div>
+          <div class="line hi"></div><div class="line w45"></div>
+        </div>
+      </div>
+      <div class="body">
+        <p class="desc">Dokan/shop hisebe khub druto bill korte chai — barcode scanner, cash drawer, receipt printer, keyboard-only operation.</p>
+        <ul class="feat">
+          <li>Barcode scan + keyboard shortcut billing</li>
+          <li>Touch/quick-key product grid</li>
+          <li>Barcode &amp; receipt printer support</li>
+          <li>Cash drawer + daily cash closing</li>
+          <li>Retail/wholesale price auto switching</li>
+          <li>Halka stock &amp; profit report</li>
+        </ul>
+        <div class="meta"><span>⏱️ Build: <span class="price">3–5 din</span></span><span>💻 Windows .exe</span><span>🖨️ USB printer</span></div>
+      </div>
+    </div>
+
+    <!-- 6 -->
+    <div class="card">
+      <div class="head"><h3>#6 — Custom Mix</h3><span class="tag rec">Apnar moto</span></div>
+      <div class="shot">
+        <div class="bar"><i class="dot" style="background:#ff5f57"></i><i class="dot" style="background:#febc2e"></i><i class="dot" style="background:#28c840"></i></div>
+        <div class="mini">
+          <div class="row">
+            <div class="kpi"><s>Module A</s><b>✓</b></div>
+            <div class="kpi"><s>Module B</s><b>✓</b></div>
+            <div class="kpi"><s>Module C</s><b>?</b></div>
+          </div>
+          <div class="line w88"></div><div class="line w70"></div><div class="line w45"></div>
+        </div>
+      </div>
+      <div class="body">
+        <p class="desc">Upore r kono ta 100% match na hole, apni bolben kon module chai ar kon ta chai na — ami ekta custom combination banabo.</p>
+        <ul class="feat">
+          <li>Feature checkbox — apni select korben</li>
+          <li>Apnar existing papers/report format onujayi design</li>
+          <li>Company-er nijjoso memo/letterhead layout</li>
+          <li>Purono data Excel theke import</li>
+          <li>Apnar bhasha-e label (local terms)</li>
+        </ul>
+        <div class="meta"><span>⏱️ Build: <span class="price">Requirement onujayi</span></span><span>💬 Discussion dorkar</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <h2 class="section">⚖️ Side-by-Side Comparison</h2>
+  <p class="section-hint">Kon option-e ki ache, ek nojore.</p>
+  <div class="panelbox" style="overflow-x:auto">
+    <table>
+      <tr>
+        <th>Feature</th><th>#1 Lite</th><th>#2 Pro ★</th><th>#3 ERP</th><th>#4 Web</th><th>#5 POS</th>
+      </tr>
+      <tr><td>Company profile</td><td>Basic</td><td>Full</td><td>Full</td><td>Full</td><td>Basic</td></tr>
+      <tr><td>Stock management</td><td>Simple</td><td>Full</td><td>Multi-warehouse</td><td>Full</td><td>Counter stock</td></tr>
+      <tr><td>Delivery memo/challan</td><td>✓</td><td>✓ Full</td><td>✓ Full</td><td>✓ Full</td><td>Receipt only</td></tr>
+      <tr><td>Profit &amp; Loss report</td><td>Daily only</td><td>Item + Monthly</td><td>Branch-wise</td><td>Full</td><td>Simple</td></tr>
+      <tr><td>Customer ledger / due</td><td>—</td><td>✓ Ageing</td><td>✓ Ageing</td><td>✓</td><td>—</td></tr>
+      <tr><td>Multi-user &amp; roles</td><td>—</td><td>✓</td><td>✓ Advanced</td><td>✓</td><td>Limited</td></tr>
+      <tr><td>VAT / Mushak</td><td>—</td><td>Basic</td><td>✓ Full</td><td>✓</td><td>—</td></tr>
+      <tr><td>Barcode / printer</td><td>—</td><td>Optional</td><td>✓</td><td>—</td><td>✓ Core</td></tr>
+      <tr><td>Mobile access</td><td>—</td><td>—</td><td>—</td><td>✓</td><td>—</td></tr>
+      <tr><td>Offline kaj kore</td><td>✓</td><td>✓</td><td>✓ LAN</td><td>✕</td><td>✓</td></tr>
+      <tr><td>Rokkhonnoi kothin</td><td>Khub shohoj</td><td>Moderate</td><td>Training lage</td><td>Shohoj</td><td>Shohoj</td></tr>
+    </table>
+  </div>
+
+  <h2 class="section">🚀 Next Steps — apni ki korben</h2>
+  <div class="panelbox">
+    <ol class="steps">
+      <li><strong>Option number bolben</strong> — jemon "Option #2 chai" ba "#1 + #5 er mix".</li>
+      <li><strong>Business details diben</strong> — ki business, koto product, koto user, memo-te ki ki likha thake (sample memo thakle aro bhalo).</li>
+      <li><strong>Ami demo build korbo</strong> — apnar nijjoso company name diye choltе premо demo, ja apni choliyе dekhben.</li>
+      <li><strong>Feedback → final polish</strong> — color, layout, report format adjust kore final .exe / web app dibo.</li>
+    </ol>
+    <div class="note">
+      <strong>Quick tip:</strong> Jodi confusеd hon, <strong>Option #2 — Business Pro</strong> diye shuru korben. Eta cholte cholte apni jodi dekhen extra kichu dorkar, ami pore add kore dite parbo. Over-engineered app diye shuru korle shikhতে shomoy lage ar cost beshi.
+    </div>
+  </div>
+
+  <div class="picker" id="picker">
+    <div>
+      <strong id="pickLabel">Kono option select kora hoy ni</strong>
+      <div class="en" id="pickHint">Uporer card-e click korle ekhane apnar choice dekhabe.</div>
+    </div>
+    <button id="copyBtn" type="button">Copy selection</button>
+  </div>
+
+  <footer>
+    <p>Catalog prepared for your review — <strong>choose an option number</strong> and share 3–4 lines about your business, ami tokhon full app build shuru korbo.</p>
+    <p class="en">All previews are indicative UI mockups rendered in this page. Final desktop app will be a native Windows executable with local database, printable memo/invoice, and offline operation.</p>
+  </footer>
+
+</div>
+<script>
+  var cards = document.querySelectorAll('.grid .card');
+  var picker = document.getElementById('picker');
+  var pickLabel = document.getElementById('pickLabel');
+  var pickHint = document.getElementById('pickHint');
+  var current = null;
+
+  cards.forEach(function (card) {
+    card.addEventListener('click', function () {
+      cards.forEach(function (c) { c.classList.remove('selected'); });
+      card.classList.add('selected');
+      current = card.querySelector('h3').textContent.trim();
+      pickLabel.textContent = 'Apni select korlen: ' + current;
+      pickHint.textContent = 'Ei number ta chat-e pathiye din, ar business details 3-4 line likhen.';
+      picker.classList.add('show');
+      picker.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+
+  document.getElementById('copyBtn').addEventListener('click', function () {
+    if (!current) return;
+    var txt = 'I choose: ' + current + '\nBusiness: \nProducts: \nUsers: \nMemo fields: ';
+    navigator.clipboard.writeText(txt).then(function () {
+      var b = document.getElementById('copyBtn');
+      b.textContent = 'Copied ✓';
+      setTimeout(function () { b.textContent = 'Copy selection'; }, 1600);
+    });
+  });
+</script>
+</body>
+</html>

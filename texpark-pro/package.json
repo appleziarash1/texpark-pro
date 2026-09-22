@@ -1,0 +1,35 @@
+{
+  "name": "texpark-pro-business-manager",
+  "version": "2.0.0",
+  "description": "TEXPARK BUYING HOUSE - Business Manager Pro (sales, stock, profit, purchase, delivery, accounts)",
+  "main": "main.js",
+  "author": "TEXPARK BUYING HOUSE",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/logic.test.js && node test/e2e.test.js",
+    "dist": "electron-builder --win portable nsis"
+  },
+  "devDependencies": {
+    "electron": "^38.1.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.texpark.businessmanager.pro",
+    "productName": "Texpark Pro Business Manager",
+    "files": ["index.html", "main.js", "package.json", "css/**/*", "js/**/*"],
+    "win": {
+      "target": ["portable", "nsis"],
+      "artifactName": "Texpark-Pro-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Texpark Pro Business Manager"
+    }
+  }
+}
