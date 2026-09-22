@@ -17,6 +17,10 @@ for r, d, files in os.walk(src):
             continue
         z.write(full, arc)
 z.writestr('_redirects', '/*    /index.html   200\n')
+
+# The APK is not added here: build.js already copies it into texpark-deploy, so
+# this walk picks it up with everything else. Adding it again would put two
+# copies of the same 21 KB file in the archive.
 z.close()
 
 names = sorted(zipfile.ZipFile(out).namelist())

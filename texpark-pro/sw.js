@@ -5,7 +5,7 @@
    The browser only installs a new service worker when this file's bytes
    change, so APP_VERSION must be bumped on every release. If it is not, phones
    keep serving the previous CSS and JS forever with no way to force an update. */
-const APP_VERSION = '2026-09-22.5';
+const APP_VERSION = '2026-09-22.6';
 const CACHE = 'texpark-pro-' + APP_VERSION;
 const ASSETS = [
   './',
@@ -44,10 +44,10 @@ self.addEventListener('fetch', e => {
   if (url.origin !== self.location.origin) return;     // Google Sheets sync etc. goes straight to the network
 
   // The page itself and the code that runs it must never win from cache, or a
-  // phone stays stuck on an old release. Network first, cache only as the
-  // offline fallback.
+  // phone stays stuck on an old release. The APK is in this group too: it is a
+  // download, and serving a cached copy would quietly reinstall an older build.
   const mustBeFresh = req.mode === 'navigate' ||
-    /\.(?:js|css|webmanifest)$/.test(url.pathname);
+    /\.(?:js|css|webmanifest|apk)$/.test(url.pathname);
 
   if (mustBeFresh) {
     e.respondWith(

@@ -26,7 +26,7 @@ password wall ashe na, ar update-o korte parben.
 
 1. Free account khulun: https://app.netlify.com/signup (shudhu email lagbe)
 2. Login kora obosthay khulun: https://app.netlify.com/drop
-3. **`texpark-hosting.zip`** file ta drag kore chere din
+3. **`texpark-hosting.zip`** file ta drag kore chere din (APK-o ei tar bhitor ache)
    (ba `texpark-deploy` **folder ta** — folder-er bhitore na dhuke, pura folder ta)
 4. 20-30 second por ekta link pabben, e.g. `https://random-name-123.netlify.app`
 5. **Settings → Change site name** diye naam din, e.g. `texpark-pro`
@@ -40,6 +40,17 @@ tar root-e `index.html` ache, tai `/` khulei app chalu hoy.
 
 **Important:** ei link ta ei sandbox-er sathe kono somporko nei.
 Sandbox jodi bondho o hoy, app cholbe.
+
+### APK-o ei site-e roy — link ta kokhono purono hobe na
+
+`texpark-hosting.zip`-er bhitor **`TexparkPro.apk`** o ache. Tai deploy korar
+por ei link theke APK ta **jokhon khusi** abar download korte parben:
+
+    https://<apnar-site>.netlify.app/TexparkPro.apk
+
+Eta kaajer, karon sandbox-er link temporary, kintu Netlify-er site paka — tai
+APK-r link-o paka. Phone change korle, notun phone-e install korte hole, ba
+karo phone-e pathate hole — ei ek link-i jotheshto.
 
 ### 404 "Page not found" ashle ki korben
 

@@ -23,7 +23,9 @@ for extra in ['OPEN_APP.bat', 'START_APP.bat', 'CREATE_DESKTOP_SHORTCUT.bat', 'm
 # the single file for the phone, and the offline catalog
 z.write(os.path.join(root, 'texpark-pro.html'), 'texpark-pro.html')
 z.write(os.path.join(root, 'catalog', 'catalog-pro-v1.html'), 'catalog-pro-v1.html')
-# the Android app and its install guide
+# The APK and its guide. The copy inside texpark-pro-app/ is the one the deployed
+# site serves; this top-level copy is so the zip still stands alone if the app
+# folder is deleted. The guide is Android-specific and belongs only here.
 z.write(os.path.join(root, 'TexparkPro.apk'), 'TexparkPro.apk')
 z.write(os.path.join(root, 'ANDROID_BANGLA.txt'), 'ANDROID_BANGLA.txt')
 z.close()

@@ -107,8 +107,8 @@ built bundle themselves. `HOSTING_BANGLA.txt` is the guide, `texpark-deploy/` is
 - `node build.js` (in `texpark-pro/`) regenerates **both** `../texpark-deploy/` and
   `../texpark-pro.html`. Always run this after changing source, or the shipped files drift.
   The script asserts the new cloud/device functions are present in the single file.
-- `npm test` runs `test/logic.test.js` (78), `test/sheet.test.js` (20), `test/e2e.test.js` (196),
-  then `node --test test/android.test.js` (12). Total 306.
+- `npm test` runs `test/logic.test.js` (78), `test/sheet.test.js` (20), `test/e2e.test.js` (197),
+  then `node --test test/android.test.js` (12). Total 307.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
 - Current version: `2026-09-22.5` in both `sw.js` and `js/app.js` (bump both, then rebuild).

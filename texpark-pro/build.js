@@ -34,6 +34,17 @@ for (const f of ['db.js', 'voice.js', 'sync.js', 'app.js']) {
 }
 fs.copyFileSync(path.join(root, 'css', 'app.css'), path.join(outDir, 'css', 'app.css'));
 
+/* ---- 1b. the APK goes into the deployed site ---- */
+/* Hosting the APK is what gives it a link that outlives this sandbox: the
+   owner can re-download it from <site>/TexparkPro.apk on any later phone.
+   It lives in the repo root, not in this folder, so it is copied in here. */
+const apkSrc = path.join(root, '..', 'TexparkPro.apk');
+if (fs.existsSync(apkSrc)) {
+  fs.copyFileSync(apkSrc, path.join(outDir, 'TexparkPro.apk'));
+} else {
+  console.warn('WARN: TexparkPro.apk not found - the deployed site will not offer the app download');
+}
+
 /* ---- 2. the single self-contained file ---- */
 /* Offline install does not work from file://, so the single file drops the
    manifest and the service worker and just inlines everything else. */

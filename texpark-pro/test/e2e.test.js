@@ -571,7 +571,10 @@ ok(sw2.indexOf("'texpark-pro-' + APP_VERSION") !== -1,
    'the cache name is derived from the version, so bumping the version makes a new cache');
 // code must not be served cache-first
 ok(/mustBeFresh/.test(sw2), 'the worker defines which requests must be fresh');
-ok(/\.\(\?:js\|css\|webmanifest\)/.test(sw2), 'js, css and the manifest are treated as must-be-fresh');
+ok(/\.\(\?:js\|css\|webmanifest\|apk\)/.test(sw2),
+   'js, css, the manifest and the APK are treated as must-be-fresh');
+ok(/\|apk\)\$/.test(sw2),
+   'the APK is network-first: a cached copy would reinstall an older build');
 ok(/mode === 'navigate'/.test(sw2), 'the page itself is treated as must-be-fresh');
 // an updated worker should reload the open page instead of waiting for a manual refresh
 ok(/clients\.matchAll/.test(sw2) && /navigate/.test(sw2), 'an updated worker reloads the open page');
