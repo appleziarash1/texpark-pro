@@ -455,6 +455,8 @@
             <div><label>BIN</label><input id="co_bin"></div>
             <div><label>VAT Reg No.</label><input id="co_vatReg"></div>
             <div><label>Memo Prefix</label><input id="stMemoPrefix"></div>
+            <div><label>Device Tag (PC / PH)</label><input id="stDeviceTag" placeholder="auto: PC ba PH" maxlength="6">
+              <div class="hint">PC ar phone-er memo number alada rakhe, jate dutoi ek hoye na</div></div>
           </div>
           <div class="formgrid" style="margin-top:11px">
             <div><label>Default Low-Stock Level</label><input id="stLowStock" type="number"></div>
@@ -534,6 +536,21 @@
             Purono memo-te cost chilo na, tai sei memo gulor profit 0 dekhabe.
           </div>
           <button class="btn-primary" onclick="importOldData()">Import old data</button>
+        </div>
+
+        <div class="card">
+          <h2>Cloud Backup &amp; Restore</h2>
+          <div class="note good">
+            Ei PC/phone-er pura data Google Sheet-e ek row hisebe rakha jay. Noyto PC/phone
+            hariye gele sekhan theke <b>sob fire asha jabe</b>. Prottek device er alada
+            backup thake (<b id="cloudDeviceTag">-</b>).
+          </div>
+          <div class="row">
+            <button class="btn-pink" onclick="cloudBackupNow()">Cloud-e backup pathaan</button>
+            <button class="btn-light" onclick="cloudDeviceList()">Sheet-e ki ki ache</button>
+            <button class="btn-light" onclick="cloudRestore()">Ei device er backup fire aan</button>
+          </div>
+          <div id="cloudOut" style="margin-top:10px;font-size:13px"></div>
         </div>
 
         <div class="card"><h2>Data Summary</h2><div id="dataCounts"></div></div>

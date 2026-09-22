@@ -102,3 +102,68 @@ function syncStatusRender() {
   el.className = 'sync-badge ' + cls;
   el.textContent = txt;
 }
+
+/* ===================== cloud backup / restore =====================
+   The queue above only ever PUSHES, so losing a phone or a PC lost everything
+   that machine had entered — nothing could read the data back. These two paths
+   close that hole: cloudBackupNow() writes a full snapshot into the sheet,
+   cloudRestore() reads the newest one back. */
+
+function cloudBackupNow(quiet) {
+  if (!syncUrl()) { if (!quiet) alert('Age Settings-e Google Sheet sync URL bosan.'); return false; }
+  try {
+    syncPush('backup', {
+      device: deviceTag(),
+      date: today(),
+      version: (typeof APP_VERSION === 'string' ? APP_VERSION : ''),
+      json: JSON.stringify(db)
+    }, 'Cloud backup (' + deviceTag() + ')');
+    if (!quiet) alert('Cloud backup pathano holo (' + deviceTag() + '). Sync badge dekhe confirm korun.');
+    return true;
+  } catch (e) {
+    if (!quiet) alert('Backup pathate parlam na: ' + e.message);
+    return false;
+  }
+}
+
+async function cloudListDevices() {
+  const url = syncUrl();
+  if (!url) { alert('Age Settings-e Google Sheet sync URL bosan.'); return []; }
+  const res = await fetch(url + '?action=pull', { method: 'GET' });
+  const txt = await res.text();
+  let j = {};
+  try { j = JSON.parse(txt); } catch (e) { throw new Error('Sheet theke thik response ashe ni'); }
+  if (j.success === false) throw new Error(j.message || 'pull failed');
+  return j.devices || [];
+}
+
+/* Pull a device's newest cloud snapshot back into this browser. This replaces
+   local data, so it always asks first and keeps a local snapshot behind. */
+async function cloudRestore(device) {
+  const url = syncUrl();
+  if (!url) return alert('Age Settings-e Google Sheet sync URL bosan.');
+  const dev = device || deviceTag();
+  const res = await fetch(url + '?action=pull&device=' + encodeURIComponent(dev), { method: 'GET' });
+  const txt = await res.text();
+  let j = {};
+  try { j = JSON.parse(txt); } catch (e) { throw new Error('Sheet theke thik response ashe ni'); }
+  if (!j.success) throw new Error(j.message || 'pull failed');
+  if (!j.json) return alert('"' + dev + '" er kono backup sheet-e nei.');
+  if (!confirm('"' + dev + '" er ' + (j.date || '') + ' er backup niye ekhonkar data replace korben?')) return;
+  restoreFromJSONText(j.json);
+}
+
+function restoreFromJSONText(text, opts) {
+  try {
+    const incoming = JSON.parse(text);
+    if (!incoming || typeof incoming !== 'object') throw new Error('bad payload');
+    snapshot();                       // local safety copy before the swap
+    db = migrate(incoming);
+    if (!db.users || !db.users.length) db.users = defaultUsers();
+    if (!commit()) return;
+    if (!opts || !opts.silent) alert('Cloud theke restore hoyeche. Page reload hobe.');
+    location.reload();
+  } catch (e) {
+    alert('Backup ta thik na: ' + e.message);
+  }
+}

@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS = {
     vatReg: ''
   },
   memoPrefix: 'TXP/SM/',
+  deviceTag: '',               // 'PC' / 'PH' auto-boshe, Settings-e bodlano jay
   warnOnShortStock: true,      // show a reminder when stock is not entered yet
   lowStockLevel: 10,
   vatPercent: 0,
@@ -116,6 +117,8 @@ function commit() {
     return false;
   }
   if (typeof renderAll === 'function') renderAll();
+  // Anything saved since the last upload is worth pushing before the tab closes.
+  if (typeof window !== 'undefined') window.cloudDirty = true;
   return true;
 }
 
@@ -153,9 +156,29 @@ function restoreSnapshot(index) {
 
 
 /* ============================ document numbers ============================ */
+/* Memo/PO numbers must not collide between the PC and the phone, and the Google
+   Sheet upserts on the number. A per-device counter alone would mint the same
+   TXP/SM/<date>-001 on both machines, and one memo would silently overwrite the
+   other in the sheet. So the device gets a short stable tag baked in, derived
+   once and kept, unless Settings overrides it. */
+const DEVICE_KEY = 'texpark_pro_device_tag';
+
+function deviceTag() {
+  const set = ((db && db.settings && db.settings.deviceTag) || '').trim();
+  if (set) return set.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  let t = '';
+  try { t = localStorage.getItem(DEVICE_KEY) || ''; } catch (e) {}
+  if (!t) {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    t = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ? 'PH' : 'PC';
+    try { localStorage.setItem(DEVICE_KEY, t); } catch (e) {}
+  }
+  return t;
+}
+
 function nextMemoNo() {
   const d = today().replaceAll('-', '/');
-  return db.settings.memoPrefix + d + '-' + String(db.seq.memo).padStart(3, '0');
+  return db.settings.memoPrefix + d + '-' + deviceTag() + String(db.seq.memo).padStart(3, '0');
 }
 function consumeMemoNo() {
   const no = nextMemoNo();
@@ -164,7 +187,7 @@ function consumeMemoNo() {
 }
 function nextPurchaseNo() {
   const d = today().replaceAll('-', '/');
-  return 'TXP/PO/' + d + '-' + String(db.seq.purchase).padStart(3, '0');
+  return 'TXP/PO/' + d + '-' + deviceTag() + String(db.seq.purchase).padStart(3, '0');
 }
 function consumePurchaseNo() {
   const no = nextPurchaseNo();

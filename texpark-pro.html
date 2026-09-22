@@ -7,7 +7,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Texpark Pro">
 <title>Texpark Pro — Business Manager</title>
-<link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
 <style>
@@ -723,6 +722,8 @@ tbody tr:hover td{background:#f7fafd}
             <div><label>BIN</label><input id="co_bin"></div>
             <div><label>VAT Reg No.</label><input id="co_vatReg"></div>
             <div><label>Memo Prefix</label><input id="stMemoPrefix"></div>
+            <div><label>Device Tag (PC / PH)</label><input id="stDeviceTag" placeholder="auto: PC ba PH" maxlength="6">
+              <div class="hint">PC ar phone-er memo number alada rakhe, jate dutoi ek hoye na</div></div>
           </div>
           <div class="formgrid" style="margin-top:11px">
             <div><label>Default Low-Stock Level</label><input id="stLowStock" type="number"></div>
@@ -802,6 +803,21 @@ tbody tr:hover td{background:#f7fafd}
             Purono memo-te cost chilo na, tai sei memo gulor profit 0 dekhabe.
           </div>
           <button class="btn-primary" onclick="importOldData()">Import old data</button>
+        </div>
+
+        <div class="card">
+          <h2>Cloud Backup &amp; Restore</h2>
+          <div class="note good">
+            Ei PC/phone-er pura data Google Sheet-e ek row hisebe rakha jay. Noyto PC/phone
+            hariye gele sekhan theke <b>sob fire asha jabe</b>. Prottek device er alada
+            backup thake (<b id="cloudDeviceTag">-</b>).
+          </div>
+          <div class="row">
+            <button class="btn-pink" onclick="cloudBackupNow()">Cloud-e backup pathaan</button>
+            <button class="btn-light" onclick="cloudDeviceList()">Sheet-e ki ki ache</button>
+            <button class="btn-light" onclick="cloudRestore()">Ei device er backup fire aan</button>
+          </div>
+          <div id="cloudOut" style="margin-top:10px;font-size:13px"></div>
         </div>
 
         <div class="card"><h2>Data Summary</h2><div id="dataCounts"></div></div>
@@ -929,10 +945,6 @@ tbody tr:hover td{background:#f7fafd}
 
 <div id="printArea"></div>
 
-
-
-
-
 <script>
 // Offline + installable on a phone. Needs http(s); the service worker stays
 // quiet when the app is opened straight off the disk with file://.
@@ -943,7 +955,7 @@ if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
 }
 </script>
 <script>
-/* ---- db.js ---- */
+/* bundle 0 */
 /* Texpark Pro — data + business rules.
    Every write goes through here so stock can never become inconsistent again. */
 
@@ -963,6 +975,7 @@ const DEFAULT_SETTINGS = {
     vatReg: ''
   },
   memoPrefix: 'TXP/SM/',
+  deviceTag: '',               // 'PC' / 'PH' auto-boshe, Settings-e bodlano jay
   warnOnShortStock: true,      // show a reminder when stock is not entered yet
   lowStockLevel: 10,
   vatPercent: 0,
@@ -1062,6 +1075,8 @@ function commit() {
     return false;
   }
   if (typeof renderAll === 'function') renderAll();
+  // Anything saved since the last upload is worth pushing before the tab closes.
+  if (typeof window !== 'undefined') window.cloudDirty = true;
   return true;
 }
 
@@ -1099,9 +1114,29 @@ function restoreSnapshot(index) {
 
 
 /* ============================ document numbers ============================ */
+/* Memo/PO numbers must not collide between the PC and the phone, and the Google
+   Sheet upserts on the number. A per-device counter alone would mint the same
+   TXP/SM/<date>-001 on both machines, and one memo would silently overwrite the
+   other in the sheet. So the device gets a short stable tag baked in, derived
+   once and kept, unless Settings overrides it. */
+const DEVICE_KEY = 'texpark_pro_device_tag';
+
+function deviceTag() {
+  const set = ((db && db.settings && db.settings.deviceTag) || '').trim();
+  if (set) return set.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  let t = '';
+  try { t = localStorage.getItem(DEVICE_KEY) || ''; } catch (e) {}
+  if (!t) {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    t = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ? 'PH' : 'PC';
+    try { localStorage.setItem(DEVICE_KEY, t); } catch (e) {}
+  }
+  return t;
+}
+
 function nextMemoNo() {
   const d = today().replaceAll('-', '/');
-  return db.settings.memoPrefix + d + '-' + String(db.seq.memo).padStart(3, '0');
+  return db.settings.memoPrefix + d + '-' + deviceTag() + String(db.seq.memo).padStart(3, '0');
 }
 function consumeMemoNo() {
   const no = nextMemoNo();
@@ -1110,7 +1145,7 @@ function consumeMemoNo() {
 }
 function nextPurchaseNo() {
   const d = today().replaceAll('-', '/');
-  return 'TXP/PO/' + d + '-' + String(db.seq.purchase).padStart(3, '0');
+  return 'TXP/PO/' + d + '-' + deviceTag() + String(db.seq.purchase).padStart(3, '0');
 }
 function consumePurchaseNo() {
   const no = nextPurchaseNo();
@@ -1353,115 +1388,7 @@ function can(page) {
 
 </script>
 <script>
-/* ---- sync.js ---- */
-/* Texpark Pro — sync queue.
-   The old app posted with mode:'no-cors' and then showed "✓ sent" without ever
-   reading a response. This version verifies, retries, and queues while offline. */
-
-const SYNC_KEY = 'texpark_pro_syncq';
-
-var syncQueue = [];
-let syncTimer = null;
-
-function syncLoad() {
-  try { syncQueue = JSON.parse(localStorage.getItem(SYNC_KEY) || '[]'); }
-  catch (e) { syncQueue = []; }
-}
-function syncSave() {
-  try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncQueue.slice(-500))); } catch (e) {}
-}
-function syncUrl() { return (db?.settings?.syncUrl || '').trim(); }
-
-/* Queue one job. type is what Code.gs dispatches on. */
-function syncPush(type, data, label) {
-  if (!syncUrl()) return;
-  syncQueue.push({
-    id: id(),
-    type,
-    data,
-    label: label || type,
-    tries: 0,
-    state: 'pending',            // pending | failed
-    at: new Date().toISOString(),
-    error: ''
-  });
-  syncSave();
-  syncStatusRender();
-  syncFlush();
-}
-
-async function syncFlush() {
-  if (!syncUrl()) { syncStatusRender(); return; }
-  if (syncTimer) return;
-  const url = syncUrl();
-  const pending = syncQueue.filter(j => j.state === 'pending');
-  if (!pending.length) { syncStatusRender(); return; }
-
-  for (const job of pending) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        // text/plain avoids the CORS preflight that Apps Script cannot answer.
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ type: job.type, data: job.data })
-      });
-      // We now actually READ the reply instead of assuming success.
-      const txt = await res.text();
-      let ok = false, msg = '';
-      try {
-        const j = JSON.parse(txt);
-        ok = j.success !== false;
-        msg = j.message || '';
-      } catch (e) {
-        ok = res.ok && /success|true/i.test(txt);
-        msg = txt.slice(0, 120);
-      }
-      if (!ok) throw new Error(msg || ('HTTP ' + res.status));
-
-      syncQueue = syncQueue.filter(j => j.id !== job.id);
-      syncSave();
-    } catch (e) {
-      job.tries++;
-      job.error = String(e.message || e);
-      // Keep retrying on a backoff; after 5 tries mark failed but never drop.
-      if (job.tries >= 5) job.state = 'failed';
-    }
-  }
-  syncStatusRender();
-  if (syncQueue.some(j => j.state === 'pending')) {
-    syncTimer = setTimeout(() => { syncTimer = null; syncFlush(); }, 8000);
-  }
-}
-
-function syncRetryAll() {
-  syncQueue.forEach(j => { j.state = 'pending'; j.tries = 0; j.error = ''; });
-  syncSave();
-  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
-  syncFlush();
-}
-
-function syncCounts() {
-  const pending = syncQueue.filter(j => j.state === 'pending').length;
-  const failed = syncQueue.filter(j => j.state === 'failed').length;
-  return { pending, failed };
-}
-
-function syncStatusRender() {
-  const el = document.getElementById('syncBadge');
-  if (!el) return;
-  const { pending, failed } = syncCounts();
-  const on = !!syncUrl();
-  let cls = 'sync-blue', txt = 'Sync off';
-  if (on && failed) { cls = 'sync-red'; txt = failed + ' failed' + (pending ? ' · ' + pending + ' pending' : ''); }
-  else if (on && pending) { cls = 'sync-amber'; txt = pending + ' pending'; }
-  else if (on) { cls = 'sync-green'; txt = '✓ All synced'; }
-  el.className = 'sync-badge ' + cls;
-  el.textContent = txt;
-}
-
-</script>
-<script>
-/* ---- voice.js ---- */
+/* bundle 1 */
 /* ============================================================================
    Voice Entry  -  "ajke ei product ta in hoise, naam eita X, quantity 50,
    price porche 120" bole dile ei module nijei bujhe stock/memo te boshiye dey.
@@ -1519,7 +1446,7 @@ function voiceNormalize(text) {
     .trim();
 }
 
-function escRx(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function escRx(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\</body>'); }
 function phraseRe(w) { return new RegExp('(^|\\s)' + escRx(w) + '(?=\\s|$)', 'g'); }
 const hasAny = (t, list) => list.some(w => t.includes(w));
 
@@ -2041,12 +1968,185 @@ if (typeof window !== 'undefined' && typeof speechSynthesis !== 'undefined') {
 
 </script>
 <script>
-/* ---- app.js ---- */
+/* bundle 2 */
+/* Texpark Pro — sync queue.
+   The old app posted with mode:'no-cors' and then showed "✓ sent" without ever
+   reading a response. This version verifies, retries, and queues while offline. */
+
+const SYNC_KEY = 'texpark_pro_syncq';
+
+var syncQueue = [];
+let syncTimer = null;
+
+function syncLoad() {
+  try { syncQueue = JSON.parse(localStorage.getItem(SYNC_KEY) || '[]'); }
+  catch (e) { syncQueue = []; }
+}
+function syncSave() {
+  try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncQueue.slice(-500))); } catch (e) {}
+}
+function syncUrl() { return (db?.settings?.syncUrl || '').trim(); }
+
+/* Queue one job. type is what Code.gs dispatches on. */
+function syncPush(type, data, label) {
+  if (!syncUrl()) return;
+  syncQueue.push({
+    id: id(),
+    type,
+    data,
+    label: label || type,
+    tries: 0,
+    state: 'pending',            // pending | failed
+    at: new Date().toISOString(),
+    error: ''
+  });
+  syncSave();
+  syncStatusRender();
+  syncFlush();
+}
+
+async function syncFlush() {
+  if (!syncUrl()) { syncStatusRender(); return; }
+  if (syncTimer) return;
+  const url = syncUrl();
+  const pending = syncQueue.filter(j => j.state === 'pending');
+  if (!pending.length) { syncStatusRender(); return; }
+
+  for (const job of pending) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        // text/plain avoids the CORS preflight that Apps Script cannot answer.
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ type: job.type, data: job.data })
+      });
+      // We now actually READ the reply instead of assuming success.
+      const txt = await res.text();
+      let ok = false, msg = '';
+      try {
+        const j = JSON.parse(txt);
+        ok = j.success !== false;
+        msg = j.message || '';
+      } catch (e) {
+        ok = res.ok && /success|true/i.test(txt);
+        msg = txt.slice(0, 120);
+      }
+      if (!ok) throw new Error(msg || ('HTTP ' + res.status));
+
+      syncQueue = syncQueue.filter(j => j.id !== job.id);
+      syncSave();
+    } catch (e) {
+      job.tries++;
+      job.error = String(e.message || e);
+      // Keep retrying on a backoff; after 5 tries mark failed but never drop.
+      if (job.tries >= 5) job.state = 'failed';
+    }
+  }
+  syncStatusRender();
+  if (syncQueue.some(j => j.state === 'pending')) {
+    syncTimer = setTimeout(() => { syncTimer = null; syncFlush(); }, 8000);
+  }
+}
+
+function syncRetryAll() {
+  syncQueue.forEach(j => { j.state = 'pending'; j.tries = 0; j.error = ''; });
+  syncSave();
+  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+  syncFlush();
+}
+
+function syncCounts() {
+  const pending = syncQueue.filter(j => j.state === 'pending').length;
+  const failed = syncQueue.filter(j => j.state === 'failed').length;
+  return { pending, failed };
+}
+
+function syncStatusRender() {
+  const el = document.getElementById('syncBadge');
+  if (!el) return;
+  const { pending, failed } = syncCounts();
+  const on = !!syncUrl();
+  let cls = 'sync-blue', txt = 'Sync off';
+  if (on && failed) { cls = 'sync-red'; txt = failed + ' failed' + (pending ? ' · ' + pending + ' pending' : ''); }
+  else if (on && pending) { cls = 'sync-amber'; txt = pending + ' pending'; }
+  else if (on) { cls = 'sync-green'; txt = '✓ All synced'; }
+  el.className = 'sync-badge ' + cls;
+  el.textContent = txt;
+}
+
+/* ===================== cloud backup / restore =====================
+   The queue above only ever PUSHES, so losing a phone or a PC lost everything
+   that machine had entered — nothing could read the data back. These two paths
+   close that hole: cloudBackupNow() writes a full snapshot into the sheet,
+   cloudRestore() reads the newest one back. */
+
+function cloudBackupNow(quiet) {
+  if (!syncUrl()) { if (!quiet) alert('Age Settings-e Google Sheet sync URL bosan.'); return false; }
+  try {
+    syncPush('backup', {
+      device: deviceTag(),
+      date: today(),
+      version: (typeof APP_VERSION === 'string' ? APP_VERSION : ''),
+      json: JSON.stringify(db)
+    }, 'Cloud backup (' + deviceTag() + ')');
+    if (!quiet) alert('Cloud backup pathano holo (' + deviceTag() + '). Sync badge dekhe confirm korun.');
+    return true;
+  } catch (e) {
+    if (!quiet) alert('Backup pathate parlam na: ' + e.message);
+    return false;
+  }
+}
+
+async function cloudListDevices() {
+  const url = syncUrl();
+  if (!url) { alert('Age Settings-e Google Sheet sync URL bosan.'); return []; }
+  const res = await fetch(url + '?action=pull', { method: 'GET' });
+  const txt = await res.text();
+  let j = {};
+  try { j = JSON.parse(txt); } catch (e) { throw new Error('Sheet theke thik response ashe ni'); }
+  if (j.success === false) throw new Error(j.message || 'pull failed');
+  return j.devices || [];
+}
+
+/* Pull a device's newest cloud snapshot back into this browser. This replaces
+   local data, so it always asks first and keeps a local snapshot behind. */
+async function cloudRestore(device) {
+  const url = syncUrl();
+  if (!url) return alert('Age Settings-e Google Sheet sync URL bosan.');
+  const dev = device || deviceTag();
+  const res = await fetch(url + '?action=pull&device=' + encodeURIComponent(dev), { method: 'GET' });
+  const txt = await res.text();
+  let j = {};
+  try { j = JSON.parse(txt); } catch (e) { throw new Error('Sheet theke thik response ashe ni'); }
+  if (!j.success) throw new Error(j.message || 'pull failed');
+  if (!j.json) return alert('"' + dev + '" er kono backup sheet-e nei.');
+  if (!confirm('"' + dev + '" er ' + (j.date || '') + ' er backup niye ekhonkar data replace korben?')) return;
+  restoreFromJSONText(j.json);
+}
+
+function restoreFromJSONText(text, opts) {
+  try {
+    const incoming = JSON.parse(text);
+    if (!incoming || typeof incoming !== 'object') throw new Error('bad payload');
+    snapshot();                       // local safety copy before the swap
+    db = migrate(incoming);
+    if (!db.users || !db.users.length) db.users = defaultUsers();
+    if (!commit()) return;
+    if (!opts || !opts.silent) alert('Cloud theke restore hoyeche. Page reload hobe.');
+    location.reload();
+  } catch (e) {
+    alert('Backup ta thik na: ' + e.message);
+  }
+}
+
+</script>
+<script>
+/* bundle 3 */
 /* Texpark Pro — UI + actions. */
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2026-09-22.4';
+const APP_VERSION = '2026-09-22.5';
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
@@ -3429,6 +3529,8 @@ function renderSettings() {
   });
   document.getElementById('stSyncUrl').value = db.settings.syncUrl || '';
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
+  const dt = document.getElementById('stDeviceTag');
+  if (dt) dt.value = db.settings.deviceTag || '';
   document.getElementById('stLowStock').value = db.settings.lowStockLevel || 10;
   document.getElementById('stShortWarn').checked = db.settings.warnOnShortStock !== false;
   document.getElementById('stAutoBackup').checked = db.settings.autoBackup !== false;
@@ -3475,6 +3577,8 @@ function saveCompany() {
     if (e) c[k] = e.value.trim();
   });
   db.settings.memoPrefix = document.getElementById('stMemoPrefix').value.trim() || 'TXP/SM/';
+  const dtEl = document.getElementById('stDeviceTag');
+  db.settings.deviceTag = dtEl ? dtEl.value.trim() : '';
   db.settings.lowStockLevel = num(document.getElementById('stLowStock').value) || 10;
   db.settings.autoBackup = document.getElementById('stAutoBackup').checked;
   commit();
@@ -3521,6 +3625,8 @@ async function testSync() {
 
 /* ===================== backup ===================== */
 function renderBackup() {
+  const tag = document.getElementById('cloudDeviceTag');
+  if (tag) tag.textContent = deviceTag();
   const counts = [
     ['Products', db.products.length], ['Customers', db.customers.length],
     ['Suppliers', db.suppliers.length], ['Sales Memos', db.memos.length],
@@ -3557,6 +3663,23 @@ function backupJSON() {
   a.href = URL.createObjectURL(new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' }));
   a.download = 'texpark_pro_backup_' + today() + '.json';
   a.click();
+}
+
+/* List what the sheet holds, so an operator can pick which machine to restore. */
+async function cloudDeviceList() {
+  const out = document.getElementById('cloudOut');
+  out.textContent = 'Sheet theke ana hocche...';
+  try {
+    const devs = await cloudListDevices();
+    if (!devs.length) { out.innerHTML = '<span class="muted">Sheet-e ekhono kono backup nei.</span>'; return; }
+    out.innerHTML = '<div class="tablewrap"><table><thead><tr><th>Device</th><th>Date</th><th class="right">Size</th><th></th></tr></thead><tbody>' +
+      devs.map(d => '<tr><td><b>' + esc(d.device) + '</b></td><td>' + esc(d.date) + '</td>' +
+        '<td class="right">' + Math.round((d.bytes || 0) / 1024) + ' KB</td>' +
+        '<td class="right"><button class="btn-light btn-sm" onclick="cloudRestore(\'' + esc(d.device) + '\')">Ei ta fire aan</button></td></tr>').join('') +
+      '</tbody></table></div>';
+  } catch (e) {
+    out.innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
+  }
 }
 
 function restoreJSON(e) {
@@ -3659,7 +3782,23 @@ function syncNow() { syncRetryAll(); setTimeout(renderBackup, 1500); }
 window.addEventListener('DOMContentLoaded', function () {
   boot();
   window.addEventListener('online', () => syncFlush());
+  // Push a full cloud backup once a day when the app is opened, so at least one
+  // recent restorable copy always exists off-device without anyone remembering.
+  setTimeout(maybeDailyCloudBackup, 4000);
+  window.addEventListener('beforeunload', () => { if (cloudDirty) cloudBackupNow(true); });
 });
+
+const CLOUD_DAY_KEY = 'texpark_pro_cloud_backup_day';
+var cloudDirty = false;
+
+function maybeDailyCloudBackup() {
+  if (!syncUrl() || db.settings.autoBackup === false) return;
+  let last = '';
+  try { last = localStorage.getItem(CLOUD_DAY_KEY) || ''; } catch (e) {}
+  if (last === today()) return;
+  try { localStorage.setItem(CLOUD_DAY_KEY, today()); } catch (e) {}
+  cloudBackupNow(true);
+}
 
 /* ===================== date range shortcuts ===================== */
 function setRange(fromId, toId, mode) {

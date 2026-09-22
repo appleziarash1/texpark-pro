@@ -180,6 +180,45 @@ ok(/voiceLang\(\)/.test(voiceSrc), 'the active language is shown while listening
 ok(/kono Bangla model dey na|Bangla model/.test(voiceSrc), 'when all languages fail it explains why, in Bangla');
 ok(/type kore likhe din/.test(voiceSrc), 'and points at typing instead of dead-ending');
 
+/* The PC and the phone each keep their own counter, so the same memo number
+   would be minted on both, and Code.gs upserts on that number - one memo would
+   quietly overwrite the other in the sheet. Numbers must be device-scoped. */
+console.log('\n--- PC and phone memo numbers cannot collide ---');
+db.settings.deviceTag = 'PC';
+const pcNo = nextMemoNo();
+db.settings.deviceTag = 'PH';
+const phNo = nextMemoNo();
+ok(pcNo !== phNo, 'PC and phone mint different memo numbers (' + pcNo + ' vs ' + phNo + ')');
+ok(/PC/.test(pcNo) && /PH/.test(phNo), 'the device tag is visible in the number');
+ok(/^TXP\/SM\/\d{4}\/\d{2}\/\d{2}-/.test(pcNo), 'the date part is still there');
+
+db.settings.deviceTag = 'PC';
+const a1 = consumeMemoNo(), a2 = consumeMemoNo();
+ok(a1 !== a2, 'two memos on one device differ (' + a1 + ' vs ' + a2 + ')');
+
+db.settings.deviceTag = '';
+const auto = deviceTag();
+ok(auto === 'PC' || auto === 'PH' || auto.length > 0, 'a blank setting falls back to an auto tag');
+ok(nextMemoNo().indexOf('TXP/SM/') === 0, 'the prefix is preserved');
+
+db.settings.deviceTag = 'PC';
+const poNo = nextPurchaseNo();
+ok(poNo !== nextMemoNo(), 'PO numbers do not clash with memo numbers');
+
+console.log('\n--- losing a device must not lose the data ---');
+const syncSrc = fs.readFileSync(path.join(root, 'js', 'sync.js'), 'utf8');
+ok(/function cloudBackupNow/.test(syncSrc), 'there is a cloud backup push');
+ok(/function cloudRestore/.test(syncSrc), 'there is a cloud restore pull');
+ok(/restoreFromJSONText/.test(syncSrc), 'the pulled payload goes through one restore path');
+ok(/snapshot\(\);\s*\/\/ local safety copy/.test(syncSrc), 'a local snapshot is kept before a cloud restore overwrites');
+ok(/action=pull/.test(syncSrc), 'the client asks the sheet for data back');
+
+const gsSrc = fs.readFileSync(path.join(root, 'Code.gs'), 'utf8');
+ok(/backup: 'Backup'/.test(gsSrc), 'the sheet has a Backup tab');
+ok(/function saveBackup_/.test(gsSrc), 'backups can be written');
+ok(/=== 'pull'/.test(gsSrc), 'doGet answers a pull request');
+ok(/Device/.test(gsSrc) && /JSON/.test(gsSrc), 'the backup sheet records device and payload');
+
 console.log('\n--- snapshots ---');
 ok(listSnapshots().length >= 1, 'a snapshot was taken on commit');
 

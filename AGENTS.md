@@ -74,3 +74,40 @@ and the Save button is disabled. `Settings → allow negative stock` is the expl
 - The Stock page's product `<select>` was originally filled only by `renderProducts()`, so opening
   Stock directly left it empty and opening stock silently did nothing. Now shared via
   `fillStockProductSelect()`. There is a regression test for it.
+- The **service worker reloads any open page** when its bytes change (`clients.navigate()` in
+  `sw.js`). Any browser harness that injects state into an iframe gets wiped by that reload, which
+  is why the cloud round trip is proven in Node against the real `Code.gs` instead.
+
+## Cross-device safety (the "so data is never messed up" work)
+
+### Memo numbers are device-scoped — a real collision, now fixed
+`seq.memo` is per-device. Both PC and phone started at 1, so both minted
+`TXP/SM/<date>-001`, and `Code.gs` upserts the Sales sheet on the memo number — one memo would
+silently overwrite the other. Numbers now carry a device tag: `TXP/SM/2026/09/22-PC001` vs `-PH001`.
+`deviceTag()` derives `PC`/`PH` from the user agent, stores it once, and is overridable in
+Settings. The same applies to purchase numbers (`TXP/PO/...`). Tests cover the collision.
+
+### Cloud backup AND restore (sync used to be push-only)
+`js/sync.js` could only **push**; losing the PC or phone lost everything it had entered.
+Now:
+- `cloudBackupNow()` pushes the whole `db` as JSON into a new **Backup** tab.
+- `cloudRestore()` / `cloudListDevices()` pull it back — `Code.gs doGet?action=pull`.
+- One row per device per day (upsert), so the sheet does not grow without bound.
+- `Settings → Auto daily backup` pushes once a day on open; a dirty flag pushes on tab close.
+- Restore always takes a local `snapshot()` first, then reloads.
+- `saveBackup_` refuses payloads over ~49 KB (a Sheets cell holds 50,000 chars) loudly rather
+  than letting Google truncate a half-backup.
+
+### Permanent hosting: what is and is not possible here
+The sandbox URL is temporary and cannot be made permanent from inside. The user must host the
+built bundle themselves. `HOSTING_BANGLA.txt` is the guide, `texpark-deploy/` is the folder,
+`texpark-pro.html` is the single self-contained file to email or carry on a USB stick.
+
+## Build + test commands
+- `node build.js` (in `texpark-pro/`) regenerates **both** `../texpark-deploy/` and
+  `../texpark-pro.html`. Always run this after changing source, or the shipped files drift.
+  The script asserts the new cloud/device functions are present in the single file.
+- `npm test` runs `test/logic.test.js` (78), `test/sheet.test.js` (20), `test/e2e.test.js` (196).
+- `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
+  `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
+- Current version: `2026-09-22.5` in both `sw.js` and `js/app.js` (bump both, then rebuild).

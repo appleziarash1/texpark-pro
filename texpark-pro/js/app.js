@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2026-09-22.4';
+const APP_VERSION = '2026-09-22.5';
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
@@ -1385,6 +1385,8 @@ function renderSettings() {
   });
   document.getElementById('stSyncUrl').value = db.settings.syncUrl || '';
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
+  const dt = document.getElementById('stDeviceTag');
+  if (dt) dt.value = db.settings.deviceTag || '';
   document.getElementById('stLowStock').value = db.settings.lowStockLevel || 10;
   document.getElementById('stShortWarn').checked = db.settings.warnOnShortStock !== false;
   document.getElementById('stAutoBackup').checked = db.settings.autoBackup !== false;
@@ -1431,6 +1433,8 @@ function saveCompany() {
     if (e) c[k] = e.value.trim();
   });
   db.settings.memoPrefix = document.getElementById('stMemoPrefix').value.trim() || 'TXP/SM/';
+  const dtEl = document.getElementById('stDeviceTag');
+  db.settings.deviceTag = dtEl ? dtEl.value.trim() : '';
   db.settings.lowStockLevel = num(document.getElementById('stLowStock').value) || 10;
   db.settings.autoBackup = document.getElementById('stAutoBackup').checked;
   commit();
@@ -1477,6 +1481,8 @@ async function testSync() {
 
 /* ===================== backup ===================== */
 function renderBackup() {
+  const tag = document.getElementById('cloudDeviceTag');
+  if (tag) tag.textContent = deviceTag();
   const counts = [
     ['Products', db.products.length], ['Customers', db.customers.length],
     ['Suppliers', db.suppliers.length], ['Sales Memos', db.memos.length],
@@ -1513,6 +1519,23 @@ function backupJSON() {
   a.href = URL.createObjectURL(new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' }));
   a.download = 'texpark_pro_backup_' + today() + '.json';
   a.click();
+}
+
+/* List what the sheet holds, so an operator can pick which machine to restore. */
+async function cloudDeviceList() {
+  const out = document.getElementById('cloudOut');
+  out.textContent = 'Sheet theke ana hocche...';
+  try {
+    const devs = await cloudListDevices();
+    if (!devs.length) { out.innerHTML = '<span class="muted">Sheet-e ekhono kono backup nei.</span>'; return; }
+    out.innerHTML = '<div class="tablewrap"><table><thead><tr><th>Device</th><th>Date</th><th class="right">Size</th><th></th></tr></thead><tbody>' +
+      devs.map(d => '<tr><td><b>' + esc(d.device) + '</b></td><td>' + esc(d.date) + '</td>' +
+        '<td class="right">' + Math.round((d.bytes || 0) / 1024) + ' KB</td>' +
+        '<td class="right"><button class="btn-light btn-sm" onclick="cloudRestore(\'' + esc(d.device) + '\')">Ei ta fire aan</button></td></tr>').join('') +
+      '</tbody></table></div>';
+  } catch (e) {
+    out.innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
+  }
 }
 
 function restoreJSON(e) {
@@ -1615,7 +1638,23 @@ function syncNow() { syncRetryAll(); setTimeout(renderBackup, 1500); }
 window.addEventListener('DOMContentLoaded', function () {
   boot();
   window.addEventListener('online', () => syncFlush());
+  // Push a full cloud backup once a day when the app is opened, so at least one
+  // recent restorable copy always exists off-device without anyone remembering.
+  setTimeout(maybeDailyCloudBackup, 4000);
+  window.addEventListener('beforeunload', () => { if (cloudDirty) cloudBackupNow(true); });
 });
+
+const CLOUD_DAY_KEY = 'texpark_pro_cloud_backup_day';
+var cloudDirty = false;
+
+function maybeDailyCloudBackup() {
+  if (!syncUrl() || db.settings.autoBackup === false) return;
+  let last = '';
+  try { last = localStorage.getItem(CLOUD_DAY_KEY) || ''; } catch (e) {}
+  if (last === today()) return;
+  try { localStorage.setItem(CLOUD_DAY_KEY, today()); } catch (e) {}
+  cloudBackupNow(true);
+}
 
 /* ===================== date range shortcuts ===================== */
 function setRange(fromId, toId, mode) {

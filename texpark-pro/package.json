@@ -8,7 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/logic.test.js && node test/e2e.test.js",
+    "test": "node test/logic.test.js && node test/sheet.test.js && node test/e2e.test.js",
     "dist": "electron-builder --win portable nsis"
   },
   "devDependencies": {
