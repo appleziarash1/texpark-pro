@@ -12,32 +12,43 @@ Duita file:
 
 ---
 
-## Sob cheye bhalo: Netlify Drop (account chara o cholbe)
+## Sob cheye bhalo: Netlify Drop
 
-Duita rasta ache — jeta shohoj lage seta korun:
+**Important — agee ei kotha ta jene nin:** Netlify te **login na kore** (anonymous) drag korle,
+site ta kichudin por nijei **password wall-er pichone chole jay**. Tokhon ei message dekhben:
 
-**(a) Ek file wala (sob cheye shohoj)**
-1. Browser e khulun: https://app.netlify.com/drop
-2. `texpark-pro.html` **file ta** drag kore chere din
-3. Bas. Link peye gelen.
+> Password protected site — Please enter your password to get access.
 
-**(b) Pura folder wala (bhalo, karon PWA install hoy)**
-1. Browser e khulun: https://app.netlify.com/drop
-2. Ei `texpark-deploy` **folder ta** drag kore page e chere din
+Ei password ta apni set koren ni, tai apnar jana nei. Eta Netlify-r nijer kora kaj,
+ar free plan-e apni password ta bondho-o korte parben na (setting ta Pro plan-e ache).
+Tai **age free account khulun, tarpor drag korun** — tokhon site ta apnar thake,
+password wall ashe na, ar update-o korte parben.
+
+1. Free account khulun: https://app.netlify.com/signup (shudhu email lagbe)
+2. Login kora obosthay khulun: https://app.netlify.com/drop
+3. `texpark-deploy` **folder ta** drag kore page e chere din
    (folder-er bhitore na dhuke — pura folder ta chere din)
-3. 20-30 second por ekta link pabben, e.g. `https://random-name-123.netlify.app`
-4. **Settings → Change site name** diye naam din, e.g. `texpark-pro`
+4. 20-30 second por ekta link pabben, e.g. `https://random-name-123.netlify.app`
+5. **Settings → Change site name** diye naam din, e.g. `texpark-pro`
    -> link hobe `https://texpark-pro.netlify.app`
-5. Ei link ta apnar permanent link. Phone-e ei link ta kholun.
+6. Ei link ta apnar permanent link. Phone-e ei link ta kholun.
 
 **Important:** ei link ta ei sandbox-er sathe kono somporko nei.
 Sandbox jodi bondho o hoy, app cholbe.
 
-### Account chai?
-Account banale (free) site ta **permanent** hoy ar apnar list-e thake.
-Account chara-o kaj kore, kintu claim na korle kichudin por
-Netlify seta delete korte pare. Tai free account banano bhalo —
-sudhu email lagbe.
+### Keno account lagbe?
+
+Account chara Netlify drop ta **temporary** — site ta claim na korle Netlify
+kichudin por delete korte pare, ar tachara password wall-o boshiye dite pare.
+Jei karon ei message ta ashe. Account banale site ta apnar list-e thake,
+permanent hoy, ar update-o korte parben.
+
+### Jodi password wall eshe jay
+
+Netlify Dashboard → apnar site → **Project configuration → Access & security →
+Visitor access** → Password Protection. Sekhan theke password ta remove korun
+(ba set korun jodi sotti secret rakhte chan). Itar age sure korun site ta apnar
+account-e claim kora ache — noile option ta lock thakbe.
 
 ---
 
