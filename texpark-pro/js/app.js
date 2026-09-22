@@ -1,5 +1,9 @@
 /* Texpark Pro — UI + actions. */
 
+/* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
+   prove which build it is actually running. */
+const APP_VERSION = '2026-09-22.3';
+
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
   { id: 'memo',       label: 'New Sales Memo', ic: '\uFF0B', group: 'Sales' },
@@ -1384,7 +1388,40 @@ function renderSettings() {
   document.getElementById('stLowStock').value = db.settings.lowStockLevel || 10;
   document.getElementById('stShortWarn').checked = db.settings.warnOnShortStock !== false;
   document.getElementById('stAutoBackup').checked = db.settings.autoBackup !== false;
+  const v = document.getElementById('appVersion');
+  if (v) v.textContent = APP_VERSION;
   syncStatusRender();
+}
+
+/* Phones can sit on a cached old build. Ask the browser to re-check the
+   service worker, then pull the files that were probably stale and report
+   what is really out there versus what this device is running. */
+function checkForUpdate() {
+  const out = document.getElementById('updateOut');
+  const say = msg => { if (out) out.innerHTML = msg; };
+  say('Chek korchi...');
+
+  const done = () => {
+    const bust = url => fetch(url + '?v=' + Date.now(), { cache: 'reload' })
+      .then(r => r.text()).catch(() => null);
+    Promise.all([bust('js/app.js'), bust('css/app.css')]).then(res => {
+      const js = res[0] || '', css = res[1] || '';
+      const serverJs = (js.match(/APP_VERSION = '([^']+)'/) || [])[1] || '?';
+      const hasPhoneFix = /iOS zooms the whole page in/.test(css);
+      say('<div class="vp-block"><b>Ei device e: ' + APP_VERSION + '</b>' +
+          'Server e ache: <b>' + serverJs + '</b>' +
+          (serverJs === APP_VERSION
+            ? '<br>Duitai same — apni latest version e achen.'
+            : '<br>Notun version ache! Reload korun.') +
+          '<br>Phone layout fix server e: ' + (hasPhoneFix ? 'ache' : 'nei') + '</div>');
+    });
+  };
+
+  if (!navigator.serviceWorker || !navigator.serviceWorker.controller) { done(); return; }
+  navigator.serviceWorker.getRegistration().then(reg => {
+    if (!reg) { done(); return; }
+    reg.update().catch(() => {}).then(done);
+  }).catch(done);
 }
 
 function saveCompany() {

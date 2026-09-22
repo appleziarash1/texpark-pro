@@ -130,6 +130,22 @@ Google Sheets sync
    response ashbe, tai kaj korche kina nিশ্চinte jante parben
 
 
+Phone-e purono version atke gele
+--------------------------------
+App ta phone-e cache kore rakhe, tai notun version ashar por-o
+phone purono ta dekhate pare. Ekhon ei somossar samadhan ache:
+
+  Settings > App Update > "Update chek korun"
+
+Ekhane dekhbe:
+  - Ei device e kon version ache
+  - Server e kon version ache
+  - Duitai same kina
+
+Notun version ashle number ta bodlabe, ar app nijei reload hoye
+notun version niye nibe. Kichu na korleo cholbe — code ar CSS ar
+kokhono cache theke age ashe na.
+
 Test chalate
 ------------
   npm test

@@ -557,6 +557,34 @@ listed.forEach(a => {
 ok(/serviceWorker/.test(html) && /register\('sw\.js'\)/.test(html), 'index.html registers the service worker');
 ok(/location\.protocol/.test(html), 'service worker is skipped on file:// so the desktop app still opens');
 
+console.log('\n--- a phone must be able to get OFF an old cached build ---');
+const sw2 = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+const appJs = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
+// the browser only installs a new worker when sw.js changes, and a worker that
+// does not change on deploy is exactly what left a phone on the old CSS
+const swVer = (sw2.match(/APP_VERSION = '([^']+)'/) || [])[1];
+const appVer = (appJs.match(/APP_VERSION = '([^']+)'/) || [])[1];
+ok(!!swVer, 'sw.js carries a cache version');
+ok(!!appVer, 'app.js carries a version to display');
+eq(swVer, appVer, 'the two versions match, so they can be bumped together');
+ok(sw2.indexOf("'texpark-pro-' + APP_VERSION") !== -1,
+   'the cache name is derived from the version, so bumping the version makes a new cache');
+// code must not be served cache-first
+ok(/mustBeFresh/.test(sw2), 'the worker defines which requests must be fresh');
+ok(/\.\(\?:js\|css\|webmanifest\)/.test(sw2), 'js, css and the manifest are treated as must-be-fresh');
+ok(/mode === 'navigate'/.test(sw2), 'the page itself is treated as must-be-fresh');
+// an updated worker should reload the open page instead of waiting for a manual refresh
+ok(/clients\.matchAll/.test(sw2) && /navigate/.test(sw2), 'an updated worker reloads the open page');
+ok(/skipWaiting/.test(sw2) && /clients\.claim/.test(sw2), 'the new worker takes over immediately');
+// and there must be a way for the user to tell, and to force it
+ok(/function checkForUpdate/.test(appJs), 'Settings offers an update check');
+ok(/id="appVersion"/.test(html) && /id="updateOut"/.test(html), 'Settings shows the build it is running');
+ok(/checkForUpdate\(\)/.test(html), 'the update button is wired to the function');
+ok(/cache: 'reload'/.test(appJs), 'the check bypasses the cache instead of being fooled by it');
+// the stale-build bug itself: the phone fix must be present in the shipped css
+ok(/iOS zooms the whole page in/.test(fs.readFileSync(path.join(root, 'css/app.css'), 'utf8')),
+   'the phone fix is really in the css that ships');
+
 console.log('\n--- data survives a reload ---');
 eq(db.memos.length, 1, 'memos persisted');
 eq(db.products.length, 5, 'products persisted - incl. the voice-created one');
