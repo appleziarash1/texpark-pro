@@ -304,25 +304,97 @@ function voiceDefaultKind() {
   return 'in';
 }
 
-function voiceToggle() {
-  if (voiceListening) { voiceStop(); return; }
+/* ---------- why the mic may refuse to work ----------
+   Two traps worth knowing about:
+   * iPhone/iPad: speech recognition works in Safari but Apple blocks it inside an
+     app installed to the home screen. Turning the site into an app is exactly what
+     stops the mic, so send people back to plain Safari.
+   * Any plain-http page is not a "secure context", so the browser hides the mic
+     without ever asking. */
+function voiceEnv() {
+  const win = (typeof window !== 'undefined' && window) || {};
+  const nav = win.navigator || (typeof navigator !== 'undefined' && navigator) || {};
+  const ua = nav.userAgent || '';
+  const iOS = /iPad|iPhone|iPod/.test(ua) || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1);
+  const standalone = nav.standalone === true ||
+    !!(win.matchMedia && win.matchMedia('(display-mode: standalone)').matches);
+  // a stub location (tests, odd embeds) has no protocol; fall back to the real one
+  const loc = (win.location && win.location.protocol) ? win.location
+    : ((typeof location !== 'undefined' && location) || {});
+  const host = loc.hostname || '';
+  const secure = win.isSecureContext === true ||
+    loc.protocol === 'https:' || host === 'localhost' || host === '127.0.0.1';
+  return { iOS, standalone, secure, ua };
+}
+
+/* Returns {title, body} in Bangla when the mic cannot work here, else null. */
+function voiceMicBlocked() {
+  const env = voiceEnv();
+  if (env.iOS && env.standalone) {
+    return {
+      title: 'iPhone-e mic cholbe na ei installed app theke',
+      body: 'Ei ta Apple-er limitation — permission-er problem na. Home screen e install kora app-e ' +
+        'Apple speech recognition bondho rakhe. Safari browser khule same link ta kholun ' +
+        '(Share > Open in Safari), tahole mic kaj korbe.'
+    };
+  }
   if (!voiceSupported()) {
+    return {
+      title: 'Ei browser-e voice support nei',
+      body: 'Chrome (Android/PC) ba Safari (iPhone) use korun. Ei browser e sona jabe na.'
+    };
+  }
+  if (!env.secure) {
+    return {
+      title: 'Mic er jonno https:// dorkar',
+      body: 'Ei page ta secure connection (https://) theke khulechen na, tai browser mic ta ' +
+        'bondho rekheche — onumoti cheyeo na. https:// link ba localhost theke kholun.'
+    };
+  }
+  return null;
+}
+
+function voiceTypeFocus() {
+  const i = document.getElementById('voiceTypeInput');
+  if (i) { try { i.focus(); } catch (e) {} }
+}
+
+let voiceWant = false;        // the user still wants to be listening
+let voiceRestarts = 0;        // guards against a restart loop on a silent mic
+
+function voiceToggle() {
+  if (voiceListening || voiceWant) { voiceStop(); return; }
+
+  const blocked = voiceMicBlocked();
+  if (blocked) {
     voiceShow('<div class="vp-head"><b>Voice</b><button class="btn-light btn-sm" onclick="voiceHide()">x</button></div>' +
-      '<div class="vp-body">Ei browser-e voice support nei. Chrome ba Edge use korun. ' +
-      'Na hole niche type kore bole din.</div>');
+      '<div class="vp-body"><div class="vp-block"><b>' + blocked.title + '</b>' + blocked.body + '</div>' +
+      '<div class="vp-hint">Mic chara-o sob kichu korte parben — niche type kore likhe din, ' +
+      'stock o memo duitai same bhabe kaj korbe.</div></div>');
+    voiceTypeFocus();
     return;
   }
+  voiceStart();
+}
+
+function voiceStart() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   voiceRec = new SR();
   voiceRec.lang = 'bn-BD';
   voiceRec.continuous = true;
   voiceRec.interimResults = true;
 
+  voiceWant = true;
+  voiceRestarts = 0;
   voiceListening = true;
   voiceUpdateButton();
   voiceStatus('Shunchi... bole jaan.');
+  voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; shunchi</span>' +
+    '<button class="btn-light btn-sm" onclick="voiceStop()">Stop</button></div>' +
+    '<div class="vp-body"><div class="vp-hint">Boliye din: "naam eita Kids 3pcs Set, quantity 50, price porche 120"</div></div>');
 
   voiceRec.onresult = e => {
+    voiceRestarts = 0;
     let finalText = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) finalText += e.results[i][0].transcript + ' ';
@@ -334,23 +406,56 @@ function voiceToggle() {
       '<div class="vp-hint">Boliye din: "naam eita Kids 3pcs Set, quantity 50, price porche 120"</div></div>');
     if (finalText.trim()) voiceHandle(finalText.trim());
   };
+
   voiceRec.onerror = e => {
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      voiceListening = false; voiceUpdateButton();
+    const err = e.error;
+    if (err === 'aborted') return;                       // we stopped it on purpose
+    if (err === 'no-speech') return;                     // silence; onend listens again
+    if (err === 'not-allowed' || err === 'service-not-allowed') {
+      voiceWant = false; voiceListening = false; voiceUpdateButton();
+      const env = voiceEnv();
+      const how = env.iOS
+        ? 'Safari-r address bar er "AA" (othoba Settings > Safari > Microphone) theke ' +
+          'Microphone > Allow korun, tarpor page ta reload korun.'
+        : 'Address bar er lock icon > Permissions > Microphone > Allow korun, ' +
+          'tarpor page ta reload korun.';
       voiceShow('<div class="vp-head"><b>Voice</b><button class="btn-light btn-sm" onclick="voiceHide()">x</button></div>' +
-        '<div class="vp-body">Microphone-er onumoti nei. Browser-er address bar theke mic allow korun.</div>');
-    } else {
-      voiceStatus('Error: ' + e.error);
+        '<div class="vp-body"><div class="vp-block"><b>Browser mic er onumoti dey nai</b>' + how + '</div>' +
+        '<div class="vp-hint">Onumoti chara-o niche type kore likhe din — kaj same bhabe hobe.</div></div>');
+      voiceTypeFocus();
+      return;
     }
+    if (err === 'audio-capture') {
+      voiceWant = false; voiceListening = false; voiceUpdateButton();
+      voiceStatus('Mic pawa gelo na. Device-er mic thik ache kina dekhun.');
+      return;
+    }
+    if (err === 'network') { voiceStatus('Internet nei — voice recognition er net dorkar.'); return; }
+    voiceStatus('Error: ' + err);
   };
+
   voiceRec.onend = () => {
     voiceListening = false; voiceUpdateButton();
-    if (!voiceLastActions.length) voiceStatus('Theme giyeche. Abar mic chepe bolun.');
+    if (!voiceWant) {
+      if (!voiceLastActions.length) voiceStatus('Theme giyeche. Abar mic chepe bolun.');
+      return;
+    }
+    // Chrome/Safari end the session on their own after a pause; keep listening
+    // until the user says stop, but give up if nothing came through at all.
+    if (voiceRestarts >= 25) {
+      voiceWant = false;
+      voiceStatus('Onek khon shuneo kichu pelam na. Mic abar chepe bolun.');
+      return;
+    }
+    voiceRestarts++;
+    try { voiceRec.start(); voiceListening = true; voiceUpdateButton(); } catch (e) { voiceWant = false; }
   };
+
   try { voiceRec.start(); } catch (e) { voiceStatus('Start korte parlam na: ' + e.message); }
 }
 
 function voiceStop() {
+  voiceWant = false;
   voiceListening = false;
   try { if (voiceRec) voiceRec.stop(); } catch (e) {}
   voiceUpdateButton();

@@ -468,6 +468,61 @@ const junkDone = applyVoiceActions(junk.actions);
 eq(junkDone.length, 0, 'a half-sentence writes nothing');
 eq(db.ledger.length, before, 'ledger untouched by the junk attempt');
 
+console.log('\n--- mic: the app explains why it cannot work instead of failing silently ---');
+// an iPhone with the site installed to the home screen: Apple blocks speech here
+function micCase(ua, opts) {
+  // note: Node's global navigator is read-only, so the app reads window.navigator
+  global.window.navigator = { userAgent: ua, maxTouchPoints: opts.touch || 0, platform: opts.platform || 'iPhone' };
+  global.window.location = { hostname: opts.host || 'example.com', protocol: opts.proto || 'https:' };
+  global.window.isSecureContext = opts.secure !== false;
+  global.window.SpeechRecognition = opts.supported === false ? undefined : function () {};
+  global.window.webkitSpeechRecognition = opts.supported === false ? undefined : function () {};
+  global.window.matchMedia = () => ({ matches: !!opts.standalone });
+  return voiceMicBlocked();
+}
+const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1';
+const ANDROID = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36';
+
+let blk = micCase(IPHONE, { standalone: true, secure: true });
+ok(!!blk, 'iPhone + installed app is caught');
+ok(/Apple/i.test(blk.title + blk.body), 'and the reason names Apple, not the user');
+ok(/Safari/i.test(blk.body), 'and tells them to open Safari instead');
+ok(!/onumoti nei|permission/i.test(blk.title), 'it does not blame a missing permission');
+
+blk = micCase(IPHONE, { standalone: false, secure: true });
+eq(blk, null, 'iPhone in plain Safari is allowed through');
+
+blk = micCase(ANDROID, { standalone: false, secure: true, platform: 'Linux' });
+eq(blk, null, 'Android Chrome is allowed through');
+
+blk = micCase(ANDROID, { standalone: false, secure: true, platform: 'Linux', supported: false });
+ok(blk && /support/i.test(blk.title), 'a browser without the API is told so plainly');
+
+blk = micCase(ANDROID, { standalone: false, secure: false, proto: 'http:', host: '192.168.0.9', platform: 'Linux' });
+ok(blk && /https/i.test(blk.title), 'plain http is flagged - the browser never even asks there');
+
+blk = micCase(ANDROID, { standalone: false, secure: false, proto: 'http:', host: 'localhost', platform: 'Linux' });
+eq(blk, null, 'localhost still counts as secure, so desktop testing keeps working');
+
+// and a refusal mid-session must leave the typing path usable
+global.window.navigator = { userAgent: ANDROID, maxTouchPoints: 0, platform: 'Linux' };
+global.window.location = { hostname: 'example.com', protocol: 'https:' };
+global.window.isSecureContext = true;
+global.window.matchMedia = () => ({ matches: false });
+let fired = null;
+global.window.SpeechRecognition = function () {
+  const self = this;
+  this.start = function () { fired = self; };
+  this.stop = function () {};
+};
+voiceToggle();
+ok(!!fired, 'tapping the mic actually starts a session when nothing is blocking');
+fired.onerror({ error: 'not-allowed' });
+const panelText = document.getElementById('voiceBody').innerHTML;
+ok(/onumoti/i.test(panelText), 'a denied permission is explained');
+ok(/type kore/i.test(panelText), 'and the typing fallback is pointed at');
+ok(!document.createElement('voiceBtn').classList.contains('listening'), 'the button stops showing as listening');
+
 console.log('\n--- phone install / offline wiring ---');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));

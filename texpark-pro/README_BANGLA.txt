@@ -63,13 +63,29 @@ Ki notun (v1 theke ki thik hoyeche)
    Ki bujhlo seta bole dey, tarpor sob kichu save kore dey.
    Bhul hole page theke edit kore nin.
 
-11. PHONE-E INSTALL (offline)
+11. MIC KOTHAY CHOLBE, KOTHAY CHOLBE NA  <-- important
+   Cholbe:
+     - Android phone e Chrome
+     - iPhone e Safari (browser e, khule)
+     - PC/Mac e Chrome, Edge
+   Cholbe na:
+     - iPhone-e "Add to Home screen" kore install korle mic bondho
+       hoye jay. Ei ta Apple-er limitation, apnar phone-er dosh na.
+       Permission dewar por-o kaj korbe na. Ei somoye app nijei
+       bole dey: "Safari browser khule same link ta kholun".
+     - http:// (sada, https chara) link e browser mic ta lukiye
+       rakhe, onumoti cheyeo na. https:// dorkar.
+     - Firefox e ei API nei.
+   Kothao mic na cholleo app atkabe na — niche type kore likhe
+   din, stock o memo duitai same bhabe kaj kore.
+
+12. PHONE-E INSTALL (offline)
    App ta ekhon PWA - phone-er browser theke "Add to Home screen"
    korle ekta app er moto install hobe. Internet na thakleo
    khulbe (service worker cache kore rakhe). Sync queue te
    thakbe, internet firlo automatic chole jabe.
 
-12. ARO
+13. ARO
    - Auto snapshot (prottek save-er age backup, ek click-e ferot)
    - Memo te driver/vehicle/receiver info + delivery tracking
    - Barcode-ready product SKU, VAT %, reorder level
