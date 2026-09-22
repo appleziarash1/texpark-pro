@@ -1,0 +1,109 @@
+# Texpark Pro — permanent hosting (step by step)
+
+Ei folder ta-i pura app. Kono build lagbe na, kono backend lagbe na.
+Netlify ba Vercel er free account e upload korle **jiboneo off hobe na**.
+
+Login: `admin` / `admin123`
+
+Duita file:
+- `texpark-deploy/` = pura app (folder) — PWA/install kaj kore
+- `texpark-pro.html` = ek file e pura app — upload korte sohoj
+  (kintu ei ek file theke "Add to Home screen" thik moto kaj na korte pare)
+
+---
+
+## Sob cheye bhalo: Netlify Drop (account chara o cholbe)
+
+Duita rasta ache — jeta shohoj lage seta korun:
+
+**(a) Ek file wala (sob cheye shohoj)**
+1. Browser e khulun: https://app.netlify.com/drop
+2. `texpark-pro.html` **file ta** drag kore chere din
+3. Bas. Link peye gelen.
+
+**(b) Pura folder wala (bhalo, karon PWA install hoy)**
+1. Browser e khulun: https://app.netlify.com/drop
+2. Ei `texpark-deploy` **folder ta** drag kore page e chere din
+   (folder-er bhitore na dhuke — pura folder ta chere din)
+3. 20-30 second por ekta link pabben, e.g. `https://random-name-123.netlify.app`
+4. **Settings → Change site name** diye naam din, e.g. `texpark-pro`
+   -> link hobe `https://texpark-pro.netlify.app`
+5. Ei link ta apnar permanent link. Phone-e ei link ta kholun.
+
+**Important:** ei link ta ei sandbox-er sathe kono somporko nei.
+Sandbox jodi bondho o hoy, app cholbe.
+
+### Account chai?
+Account banale (free) site ta **permanent** hoy ar apnar list-e thake.
+Account chara-o kaj kore, kintu claim na korle kichudin por
+Netlify seta delete korte pare. Tai free account banano bhalo —
+sudhu email lagbe.
+
+---
+
+## Netlify te update kivabe korben
+
+Code bodlale abar oi folder ta https://app.netlify.com/drop e chere din —
+purono site tar upore update hoye jabe (link same thakbe).
+
+---
+
+## Data kothay thake?
+
+Data apnar **phone/browser-e** thake (localStorage), Netlify te na.
+Tai hosting bodlaleo data hariye jabe na — jeta oi browser e ache.
+Kintu:
+
+- **Backup nin:** Settings -> Backup / Data -> Export
+- Notun phone-e giye oi backup file ta "Restore" kore din
+- Browser cache clear korle data jete pare — tai backup niye rakha bhalo
+
+---
+
+## Keno permanent server ta ei sandbox e kora jay na?
+
+Ei je machine ta ekhon amra use korchi seta ekta **temporary
+sandbox** — kaj korar jonno bhara deya. Eta bondho hole server-o
+bondho. Kono file rekhe dileo server cholbe na, karon cholano
+machine ta-i nei.
+
+Tai permanent hote hole **asar hosting** e uthate hobe. Netlify/
+Vercel/GitHub Pages sob free ar permanent.
+
+---
+
+## Onno option gulo
+
+| Option | Free? | Permanent? | Kothin? |
+|---|---|---|---|
+| **Netlify Drop** | Hae | Hae | Sob cheye shohoj |
+| Vercel | Hae | Hae | Shohoj |
+| GitHub Pages | Hae | Hae | Git jante hobe |
+| Nijer computer e | - | Ha, kintu PC chalu thakte hobe | Shohoj |
+| Hosting/GitHub + Vercel | Hae | Hae | Ektu kothin |
+
+---
+
+## Nijer PC theke cholate chaile
+
+Ei folder ta rakhen. Internet na thakleo cholbe:
+
+```
+cd texpark-deploy
+python3 -m http.server 8080
+```
+
+Tarpor browser e: `http://localhost:8080`
+
+Kintu PC chalu na thakle phone theke access pabben na.
+Tai Netlify Drop e kore fela-i bhalo.
+
+---
+
+## Dorkar hole ami ki korte pari
+
+- App-er kono bhul ba notun feature thik kora
+- Deploy korar age app ta pura test kora
+- GitHub repo toiri kore deya (apnar account e) — tokhon
+  GitHub Pages/Vercel e ek click e deploy hobe
+- README_BANGLA.txt e sob feature-er Bangla guide
