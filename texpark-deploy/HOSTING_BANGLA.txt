@@ -26,15 +26,32 @@ password wall ashe na, ar update-o korte parben.
 
 1. Free account khulun: https://app.netlify.com/signup (shudhu email lagbe)
 2. Login kora obosthay khulun: https://app.netlify.com/drop
-3. `texpark-deploy` **folder ta** drag kore page e chere din
-   (folder-er bhitore na dhuke — pura folder ta chere din)
+3. **`texpark-hosting.zip`** file ta drag kore chere din
+   (ba `texpark-deploy` **folder ta** — folder-er bhitore na dhuke, pura folder ta)
 4. 20-30 second por ekta link pabben, e.g. `https://random-name-123.netlify.app`
 5. **Settings → Change site name** diye naam din, e.g. `texpark-pro`
    -> link hobe `https://texpark-pro.netlify.app`
 6. Ei link ta apnar permanent link. Phone-e ei link ta kholun.
 
+**ZIP ta keno, folder ta keno?** Duitai cholbe. Kintu **folder-er ZIP** (`texpark-pro-download.zip`)
+drop korle 404 ashe, karon tar root-e `index.html` thake na — thake
+`texpark-pro-app/index.html`. `texpark-hosting.zip` ta ei jonno alada banano:
+tar root-e `index.html` ache, tai `/` khulei app chalu hoy.
+
 **Important:** ei link ta ei sandbox-er sathe kono somporko nei.
 Sandbox jodi bondho o hoy, app cholbe.
+
+### 404 "Page not found" ashle ki korben
+
+Ei message-er mane site ta cholche, kintu oi address-e kichu nei.
+
+1. **Root address (`/`) e 404?** Tahole hoyto vhul zip/folder drop kora hoyeche.
+   `texpark-hosting.zip` (root-e index.html) abar drop korun.
+2. **Notun drop korchen?** 20-30 second opei thakun — Netlify deploy korte somoy ney.
+3. **Netlify Dashboard → apnar site → Deploys** tab → dekhen sobcheye last deploy ta
+   "Published" kina. "Failed" hole abar drop korun.
+4. Dhyan din: `https://apnar-site.netlify.app/` — session-e `texpark-pro-app/`
+   lekha jeno na jay. Root-e jaan.
 
 ### Keno account lagbe?
 

@@ -41,6 +41,10 @@ th{background:#f5f8fc;color:var(--navy);font-size:12.5px;text-transform:uppercas
     <small>texpark-pro-download.zip &middot; 112 KB &middot; app + hosting guide + catalog</small>
   </a>
 
+  <a class="big" href="texpark-hosting.zip" download style="background:#12366b;box-shadow:0 8px 22px #12366b40;margin-top:16px">&#10515;&nbsp; Hosting-er jonno (Netlify)
+    <small>texpark-hosting.zip &middot; 56 KB &middot; sob file root-e &mdash; 404 ashe na</small>
+  </a>
+
   <div class="note">Puro ZIP ta ek shathe nichhen &mdash; ei ek file-ei <b>sob kichu</b> ache. Niche ja ja ache tar list dekhun.
   Zip na khulte chaile niche alada alada file-o paben.</div>
 
@@ -113,6 +117,27 @@ th{background:#f5f8fc;color:var(--navy);font-size:12.5px;text-transform:uppercas
     <b>tarpor</b> drop korun. Tahole site ta apnar thakbe, password wall ashe na, ar update-o korte parben.
     Detail <b>HOSTING_BANGLA.txt</b>-e.</div>
   </div>
+
+  <h2 class="sec">Hosting korar somoy jodi "Page not found" (404) ashe</h2>
+  <div class="card">
+    <p style="margin:0 0 10px">Ei 404 ta Netlify-r message &mdash; mane site ta cholche, kintu oi address-e <b>kichu nei</b>.
+    Shobcheye common karon: <b>pura ZIP ta drop kora hoyeche</b>. Netlify ZIP ta nijei khule fele, tokhon website-er root-e
+    <code>index.html</code> thake na &mdash; thake <code>texpark-pro-app/index.html</code> (ek folder bhitore). Tai "<code>/</code>"
+    e giye 404 ashe.</p>
+    <p style="margin:0 0 10px"><b>Samadhan:</b> hosting-er jonno <b>texpark-hosting.zip</b> file ta use korun &mdash;
+    eitate sob file <b>root-e</b> ache, tai <code>/</code> khulei app chalu hobe. Ba folder-ta drag korun
+    (<code>texpark-pro-app</code> folder-er <b>bhitor</b> e na dhuke, <b>pura folder ta</b>).</p>
+    <div class="warn">Kono ekta page-e giye 404 ashe? Netlify te <b>Settings &rarr; Build &amp; deploy &rarr; Deploy Preview</b> na,
+    borong <b>Deploys</b> tab theke dekhen site ta sobcheye last-e thik vabe deploy hoyeche kina. Notun drop korle 20-30 second opei thakun.</div>
+  </div>
+
+  <h2 class="sec">Download korun &mdash; kon file ta kothay</h2>
+  <table>
+    <tr><th>File</th><th>Kaj</th></tr>
+    <tr><td><b>texpark-hosting.zip</b> <span style="color:var(--green);font-weight:700">&larr; hosting-er jonno ei ta</span></td><td>Hosting korte (Netlify drop). Sob file root-e &mdash; 404 ashe na.</td></tr>
+    <tr><td><b>texpark-pro-download.zip</b></td><td>Sob kichu ek shathe &mdash; phone-er file, PC-er folder, guide, catalog.</td></tr>
+    <tr><td><b>texpark-pro.html</b></td><td>Phone-e chalanor ek file.</td></tr>
+  </table>
 
   <div class="foot">TEXPARK BUYING HOUSE &mdash; Texpark Pro Business Manager &middot; version 2026-09-22.5</div>
 </div>
