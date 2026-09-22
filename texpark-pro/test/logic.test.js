@@ -139,6 +139,47 @@ db.users = defaultUsers();
 eq(db.users[0].username, 'admin', 'default user is admin');
 eq(db.users[0].pass, hash('admin123'), 'default password is hashed admin123');
 
+/* The speech engine hands back Bangla script for bn-BD/bn-IN and roman for the
+   engines that only do English. The parser has to understand both, because a
+   phone can land on either depending on what models the browser has. */
+console.log('\n--- voice entry understands Bangla script, not just roman ---');
+vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'voice.js'), 'utf8'), { filename: 'voice.js' });
+
+let va = parseVoiceCommand('নাম এটা Kids 3pcs Set পরিমাণ ৫০ দাম পড়ছে ১২০').actions[0];
+eq(va.kind, 'in', 'Bangla script, stock-in: kind');
+eq(va.name, 'kids set', 'Bangla script, stock-in: product name extracted');
+eq(va.qty, 50, 'Bangla script: Bangla digits ৫০ read as 50');
+eq(va.cost, 120, 'Bangla script: cost picked up');
+
+va = parseVoiceCommand('নাম এটা Kids 3pcs Set পরিমাণ ৫০ বিক্রি দরে ২০০').actions[0];
+eq(va.kind, 'out', 'Bangla script, sell: kind');
+eq(va.rate, 200, 'Bangla script, sell: rate picked up');
+eq(va.cost, null, 'Bangla script, sell: cost stays empty');
+
+va = parseVoiceCommand('পরিমাণ ৫০').actions;
+eq(va.length, 0, 'Bangla: a quantity alone is not an entry (no product named)');
+
+// and the roman path must not regress
+va = parseVoiceCommand('naam eita Kids 3pcs Set, quantity 50, price porche 120').actions[0];
+eq(va.name, 'kids set', 'roman still parses');
+eq(va.qty, 50, 'roman still parses qty');
+eq(va.cost, 120, 'roman still parses cost');
+
+// a Bangla sentence must not turn a filler word into the product name
+va = parseVoiceCommand('আজকে নাম এটা Kids Sweater পরিমাণ ১০ দাম পড়ছে ৩০০').actions[0];
+ok(va.name.indexOf('হয়') === -1, 'Bangla filler words are not taken as the product name');
+eq(va.qty, 10, 'Bangla sentence: qty');
+
+console.log('\n--- a silent speech engine must be detected, not looped on ---');
+const voiceSrc = fs.readFileSync(path.join(root, 'js', 'voice.js'), 'utf8');
+ok(/V_LANG_TRY/.test(voiceSrc), 'there is a list of languages to try');
+ok(/bn-BD/.test(voiceSrc) && /en-IN/.test(voiceSrc), 'it starts with Bangla and falls back to a language Chrome has');
+ok(/voiceGotAnything/.test(voiceSrc), 'the code tracks whether the engine ever returned anything');
+ok(/voiceAdvanceLang/.test(voiceSrc), 'a language that returns nothing is swapped out');
+ok(/voiceLang\(\)/.test(voiceSrc), 'the active language is shown while listening');
+ok(/kono Bangla model dey na|Bangla model/.test(voiceSrc), 'when all languages fail it explains why, in Bangla');
+ok(/type kore likhe din/.test(voiceSrc), 'and points at typing instead of dead-ending');
+
 console.log('\n--- snapshots ---');
 ok(listSnapshots().length >= 1, 'a snapshot was taken on commit');
 

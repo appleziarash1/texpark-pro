@@ -86,28 +86,39 @@ function findProductByName(name) {
 
 /* ---------- keyword sets ---------- */
 const V_IN_WORDS = ['in hoise', 'in hoyeche', 'in holo', 'ashche', 'ashe', 'ashlo', 'elo', 'elom', 'received', 'receive',
-  'mail', 'milo', 'stok', 'stock e', 'baralam', 'barlam', 'joma', 'dhuklo', 'dhukche', 'kinechi', 'kinlam', 'purchase'];
-const V_OUT_WORDS = ['sell', 'sold', 'bikri', 'bech', 'bechlam', 'memo', 'chole gelo', 'delivery hoyeche'];
+  'mail', 'milo', 'stok', 'stock e', 'baralam', 'barlam', 'joma', 'dhuklo', 'dhukche', 'kinechi', 'kinlam', 'purchase',
+  /* Bangla script: speech recognition returns Bangla, not roman, for bn-BD */
+  'ইন', 'আসছে', 'এসেছে', 'এলো', ' ঢুকলো', 'ঢুকেছে', 'পেয়েছি', 'কিনেছি', 'কিনলাম', 'পেলাম', 'স্টক', 'মাল'];
+const V_OUT_WORDS = ['sell', 'sold', 'bikri', 'bech', 'bechlam', 'memo', 'chole gelo', 'delivery hoyeche',
+  'বিক্রি', 'বেচা', 'বেচলাম', 'বেচেছে', 'মেমো', 'সেল', 'গেলো', 'ডেলিভারি'];
 
 /* Which number-slot a keyword announces. */
 const V_FIELDS = [
-  { key: 'qty', words: ['quantity', 'qty', 'kot', 'koto', 'piece', 'pieces', 'pcs', 'pc', 'poriman', 'lagbe'] },
-  { key: 'cost', words: ['price porche', 'porche', 'cost', 'kinechi', 'kinlam', 'kroy', 'dar', 'buy price'] },
-  { key: 'rate', words: ['sell price', 'sell rate', 'sell', 'bikri', 'bikroy', 'rate'] }
+  { key: 'qty', words: ['quantity', 'qty', 'kot', 'koto', 'piece', 'pieces', 'pcs', 'pc', 'poriman', 'lagbe',
+      'পরিমাণ', 'কত', 'কতটা', 'পিস', 'পিচ', 'সংখ্যা'] },
+  { key: 'cost', words: ['price porche', 'porche', 'cost', 'kinechi', 'kinlam', 'kroy', 'dar', 'buy price',
+      'দাম', 'পড়ছে', 'পড়লো', 'ক্রয়', 'কিনদাম', 'মূল্য'] },
+  { key: 'rate', words: ['sell price', 'sell rate', 'sell', 'bikri', 'bikroy', 'rate',
+      'বিক্রয়', 'বিক্রি মূল্য', 'দরে', 'রেট'] }
 ];
 const V_FIELD_WORDS = V_FIELDS.reduce((a, f) => a.concat(f.words), []);
 
-const V_NAME_WORDS = ['naam', 'nam', 'product', 'ei product'];
+const V_NAME_WORDS = ['naam', 'nam', 'product', 'ei product', 'নাম', 'প্রোডাক্ট', 'পণ্য', 'জিনিস'];
 const V_FILLER = [
   ...V_IN_WORDS, ...V_OUT_WORDS, ...V_FIELD_WORDS, ...V_NAME_WORDS,
   'ajke', 'aj', 'ei', 'eita', 'ta', 'the', 'hoise', 'hoyeche', 'holo', 'hoy',
   'ke', 're', 'ra', 'ko', 'er', 'amar', 'ami', 'bhai', 'please', 'koro', 'kore', 'dao', 'den', 'din',
-  'bol', 'boli', 'bolchi', 'ar', 'ebong', 'and', 'o', 'name', 'number'
+  'bol', 'boli', 'bolchi', 'ar', 'ebong', 'and', 'o', 'name', 'number',
+  /* Bangla fillers - without these every Bangla sentence names a product "হয়" */
+  'আজ', 'আজকে', 'এই', 'এটা', 'জিনিসটা', 'পণ্যটা', 'হয়েছে', 'হয়', 'হলো', 'হইলো', 'হৈছে',
+  'কে', 'এর', 'আমার', 'আমি', 'ভাই', 'প্লিজ', 'কর', 'করে', 'দাও', 'দেন', 'দিন',
+  'বল', 'বলি', 'বলছি', 'আর', 'এবং', 'টা', 'টি', 'ও', 'নাম', 'নাম্বার', 'পরে', 'হছে', 'হইছে'
 ].sort((a, b) => b.length - a.length);
 
 /* These alone are never a product name. */
 const V_META = new Set(['price', 'rate', 'quantity', 'qty', 'cost', 'pcs', 'pc', 'piece', 'pieces',
-  'name', 'naam', 'nam', 'sell', 'sold', 'stock', 'memo', 'delivery', 'total', 'amount', 'taka', 'purchase']);
+  'name', 'naam', 'nam', 'sell', 'sold', 'stock', 'memo', 'delivery', 'total', 'amount', 'taka', 'purchase',
+  'দাম', 'রেট', 'পরিমাণ', 'পিস', 'নাম', 'বিক্রি', 'স্টক', 'মেমো', 'ডেলিভারি', 'মোট', 'টাকা']);
 
 /* What is left of a chunk once numbers and filler words are removed is the name. */
 function voiceExtractName(chunk) {
@@ -359,8 +370,27 @@ function voiceTypeFocus() {
   if (i) { try { i.focus(); } catch (e) {} }
 }
 
+/* Chrome's speech engine has no Bangla model. Asking for bn-BD does not error -
+   it simply never recognises anything, which looks exactly like a dead mic.
+   So we listen in a language it does have; the parser understands both Bangla
+   script and roman input either way. */
+const V_LANG_TRY = ['bn-BD', 'bn-IN', 'en-IN', 'en-US'];
+let voiceLangIdx = 0;
+
+function voiceLang() { return V_LANG_TRY[Math.min(voiceLangIdx, V_LANG_TRY.length - 1)]; }
+
+function voiceLangNext() { return V_LANG_TRY[Math.min(voiceLangIdx + 1, V_LANG_TRY.length - 1)]; }
+
+/* Step to the next candidate language. False when we have run out. */
+function voiceAdvanceLang() {
+  if (voiceLangIdx >= V_LANG_TRY.length - 1) return false;
+  voiceLangIdx++;
+  return true;
+}
+
 let voiceWant = false;        // the user still wants to be listening
 let voiceRestarts = 0;        // guards against a restart loop on a silent mic
+let voiceGotAnything = false; // anything at all came back from the engine
 
 function voiceToggle() {
   if (voiceListening || voiceWant) { voiceStop(); return; }
@@ -380,21 +410,23 @@ function voiceToggle() {
 function voiceStart() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   voiceRec = new SR();
-  voiceRec.lang = 'bn-BD';
+  voiceRec.lang = voiceLang();
   voiceRec.continuous = true;
   voiceRec.interimResults = true;
 
   voiceWant = true;
   voiceRestarts = 0;
+  voiceGotAnything = false;
   voiceListening = true;
   voiceUpdateButton();
-  voiceStatus('Shunchi... bole jaan.');
-  voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; shunchi</span>' +
+  voiceStatus('Shunchi... bole jaan. (' + voiceLang() + ')');
+  voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; shunchi ' + esc(voiceLang()) + '</span>' +
     '<button class="btn-light btn-sm" onclick="voiceStop()">Stop</button></div>' +
     '<div class="vp-body"><div class="vp-hint">Boliye din: "naam eita Kids 3pcs Set, quantity 50, price porche 120"</div></div>');
 
   voiceRec.onresult = e => {
     voiceRestarts = 0;
+    voiceGotAnything = true;
     let finalText = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) finalText += e.results[i][0].transcript + ' ';
@@ -440,11 +472,28 @@ function voiceStart() {
       if (!voiceLastActions.length) voiceStatus('Theme giyeche. Abar mic chepe bolun.');
       return;
     }
-    // Chrome/Safari end the session on their own after a pause; keep listening
-    // until the user says stop, but give up if nothing came through at all.
-    if (voiceRestarts >= 25) {
+    // Chrome and Safari end a session on their own after a pause; keep listening
+    // until the user says stop.
+    if (voiceRestarts >= 3 && !voiceGotAnything) {
+      // Nothing at all came back, which for a silent engine means the requested
+      // language has no model here. Try another instead of looping forever.
+      if (voiceAdvanceLang()) {
+        voiceRestarts = 0;
+        voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; shunchi</span>' +
+          '<button class="btn-light btn-sm" onclick="voiceStop()">Stop</button></div>' +
+          '<div class="vp-body"><div class="vp-hint">' + voiceLang() +
+          ' e kichu pelam na, ekhon <b>' + esc(voiceLangNext()) + '</b> diye shunchi. Abar bolun.</div></div>');
+        try { voiceRec.lang = voiceLang(); voiceRec.start(); voiceListening = true; voiceUpdateButton(); } catch (e) { voiceWant = false; }
+        return;
+      }
       voiceWant = false;
-      voiceStatus('Onek khon shuneo kichu pelam na. Mic abar chepe bolun.');
+      voiceShow('<div class="vp-head"><b>Voice</b><button class="btn-light btn-sm" onclick="voiceHide()">x</button></div>' +
+        '<div class="vp-body"><div class="vp-block"><b>Mic shunchi kintu kichu bujhche na</b>' +
+        'Ei browser-er speech engine kono Bangla model dey na — tai bolleo kichu ashe na, ' +
+        'ar kono error-o dekhay na. Ei ta browser-er limitation, mic ba permission-er dosh na.<br><br>' +
+        'Kaj chalate niche <b>type kore likhe din</b> — stock o memo duitai same bhabe hobe. ' +
+        'Othoba Chrome (Android/PC) ba Safari (iPhone) e kholun.</div></div>');
+      voiceTypeFocus();
       return;
     }
     voiceRestarts++;

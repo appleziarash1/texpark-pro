@@ -63,7 +63,26 @@ Ki notun (v1 theke ki thik hoyeche)
    Ki bujhlo seta bole dey, tarpor sob kichu save kore dey.
    Bhul hole page theke edit kore nin.
 
-11. MIC KOTHAY CHOLBE, KOTHAY CHOLBE NA  <-- important
+11. MIC ER ASOL KOTHA  <-- ei ta porun
+   Apni bolchen kintu kichu ashe na - er asol karon:
+   Chrome/Edge er speech engine e BANGLA BHASHA-I NEI. Amra bn-BD
+   cheye shilam, browser kono error dey na, sudhu kichu-i bujhe na.
+   Tai mone hoy mic kaj korche na - kintu mic thik ache.
+
+   Ekhon app ta:
+     - Bangla na pele nijei onno bhasha (bn-IN, en-IN) try kore
+     - kon bhasha-y shunchche seta screen e dekhay
+     - ekbar-o kichu na pele bole dey "ei browser Bangla pare na"
+       ar type korar kotha bole (atke thake na)
+
+   Sob cheye bhalo:
+     - Android: Chrome (Bangla support kore)
+     - iPhone: Safari browser e khulun (install kora app e na)
+     - PC: Chrome / Edge
+
+   Ar Bangla-na-holeo cholbe: "নাম এটা Kids 3pcs Set পরিমাণ ৫০ দাম পড়ছে ১২০"
+   ba "naam eita Kids 3pcs Set quantity 50 price porche 120" - duitai
+   bujhe ney. Bangla ar roman duitai kaj kore.
    Cholbe:
      - Android phone e Chrome
      - iPhone e Safari (browser e, khule)
