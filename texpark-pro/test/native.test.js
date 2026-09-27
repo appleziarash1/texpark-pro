@@ -38,7 +38,7 @@ vm.runInThisContext(fs.readFileSync(path.join(ROOT, 'texpark-pro', 'js', 'db.js'
 
 /* ---- the native rules, compiled and driven over stdin/stdout ---- */
 function compileNative() {
-  const files = ['Json.java', 'Store.java', 'Voice.java'].map(f => path.join(SRC, f));
+  const files = ['Json.java', 'Store.java', 'Voice.java', 'Sync.java'].map(f => path.join(SRC, f));
   try {
     execFileSync(JAVAC, ['-source', '8', '-target', '8', '-nowarn', '-d', OUT].concat(files),
       { stdio: 'pipe' });
@@ -200,6 +200,32 @@ public class Driver {
       st = new Store(st.dbDir());
       st.load();
       out.put("memoCountAfterReload", st.list("memos").size());
+    } else if (op.equals("sync")) {
+      /* The rules that decide whether the owner's edit actually left the phone.
+         Every case here is one that used to be read as a success. */
+      out.put("okJson", Sync.pushAccepted("{\\"success\\":true,\\"message\\":\\"Backup saved for PH\\"}"));
+      out.put("refusedJson", Sync.pushAccepted("{\\"success\\":false,\\"message\\":\\"Backup too large\\"}"));
+      out.put("html", Sync.pushAccepted("<html><body>Sign in</body></html>"));
+      out.put("empty", Sync.pushAccepted(""));
+      out.put("null", Sync.pushAccepted(null));
+      out.put("garbage", Sync.pushAccepted("not json at all"));
+      out.put("refusedReport", Sync.pushReport(false, "{\\"success\\":false,\\"message\\":\\"Backup too large\\"}", "PH"));
+      out.put("offlineReport", Sync.pushReport(false, null, "PH"));
+      out.put("okReport", Sync.pushReport(true, "{\\"success\\":true}", "PH1"));
+      // a merge that worked while the upload failed must say so, not "synced"
+      out.put("mergePushFailed", Sync.mergeReport(false, 3, true, null));
+      out.put("mergeAllGood", Sync.mergeReport(true, 3, true, null));
+      out.put("mergeNothingNew", Sync.mergeReport(true, 0, true, null));
+      out.put("mergeSaveFailed", Sync.mergeReport(true, 2, false, "disk full"));
+      out.put("mergePushFailedAndSaveFailed", Sync.mergeReport(false, 2, false, "disk full"));
+      out.put("pollFirst", Sync.pollDue(0, 1000));
+      out.put("pollTooSoon", Sync.pollDue(1000, 1000 + Sync.POLL_EVERY_MS - 1));
+      out.put("pollDueNow", Sync.pollDue(1000, 1000 + Sync.POLL_EVERY_MS));
+      // the device tag must be unique per install, not a bare "PH"
+      String tag = st.deviceTag();
+      out.put("tag", tag);
+      out.put("tagUnique", tag.length() > 2 && tag.startsWith("PH"));
+      out.put("tagStable", tag.equals(st.deviceTag()));
     } else if (op.equals("json")) {
       // numbers must survive a round trip without growing a decimal point
       Map<String,Object> d = new LinkedHashMap<String,Object>();
@@ -360,6 +386,35 @@ test('native: every menu item opens a screen, not a blank page', () => {
     && !screensSrc.includes('"' + id + '".equals(page)'));
   assert.deepStrictEqual(unhandled, [],
     'menu items with no screen: ' + unhandled.join(', ') + ' would open blank');
+});
+
+test('native: a sync only counts as a success when the sheet accepted the upload', () => {
+  const r = runNative({ op: 'sync' });
+  assert.strictEqual(r.okJson, true, 'success:true is an accepted upload');
+  assert.strictEqual(r.refusedJson, false, 'success:false from the sheet is not a success');
+  assert.strictEqual(r.html, false, 'an HTML reply (a proxy or login page) is not a success');
+  assert.strictEqual(r.empty, false, 'an empty body is not a success');
+  assert.strictEqual(r.null, false, 'no reply at all is not a success');
+  assert.strictEqual(r.garbage, false, 'an unparseable body is not a success');
+  assert.match(r.refusedReport, /Backup too large/, 'the sheet\'s own reason is shown');
+  assert.match(r.offlineReport, /internet ba URL/i, 'a missing reply blames the network, not the sheet');
+  // The bug the owner hit: a merge reported as a clean sync while his own edit
+  // never left the phone, so the web app kept showing the old numbers.
+  assert.match(r.mergePushFailed, /uthlo na/, 'a failed upload is reported even when a merge worked');
+  assert.match(r.mergePushFailed, /^Ei device-er data sheet-e uthlo na/,
+    'a failed upload leads the report, so it cannot be read as a clean sync');
+  assert.match(r.mergeAllGood, /3 ta snapshot merge hoyeche/);
+  assert.match(r.mergeNothingNew, /kono notun backup nei/);
+  assert.match(r.mergeSaveFailed, /save korte parlam na: disk full/, 'a failed save surfaces the reason');
+  assert.match(r.mergePushFailedAndSaveFailed, /uthlo na[\s\S]*save korte parlam na/,
+    'both failures are reported, not just the last one');
+  assert.strictEqual(r.pollFirst, true, 'the first poll always runs');
+  assert.strictEqual(r.pollTooSoon, false, 'a second screen open does not poll again');
+  assert.strictEqual(r.pollDueNow, true, 'once the interval has passed it polls again');
+  // A bare "PH" would let the app and a phone browser share one sheet row and
+  // overwrite each other's books.
+  assert.strictEqual(r.tagUnique, true, 'the fallback device tag is unique per install: ' + r.tag);
+  assert.strictEqual(r.tagStable, true, 'the tag is minted once and kept, so memo numbers stay stable');
 });
 
 test('native: nothing depends on a WebView or window.print any more', () => {

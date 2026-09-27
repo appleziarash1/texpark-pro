@@ -112,9 +112,14 @@ which patches rows when the row count is unchanged and only falls back to a full
 ### Memo numbers are device-scoped — a real collision, now fixed
 `seq.memo` is per-device. Both PC and phone started at 1, so both minted
 `TXP/SM/<date>-001`, and `Code.gs` upserts the Sales sheet on the memo number — one memo would
-silently overwrite the other. Numbers now carry a device tag: `TXP/SM/2026/09/22-PC001` vs `-PH001`.
-`deviceTag()` derives `PC`/`PH` from the user agent, stores it once, and is overridable in
-Settings. The same applies to purchase numbers (`TXP/PO/...`). Tests cover the collision.
+silently overwrite the other. Numbers now carry a device tag: `TXP/SM/2026/09/22-PC001` vs
+`-PH001`. The tag is `PC`/`PH`-derived **plus a four-character per-install suffix**
+(`PC7K2Q`), stored once, and overridable in Settings. The suffix is not decoration: the
+sheet's backup tab keeps one row per device tag, so a bare `PH` on the phone app and a bare
+`PH` in a phone's browser were the same row and each silently replaced the other's books.
+Android also memoizes the tag in `Store.tagCache`. Without that, a device whose `device_tag.txt`
+could not be written re-minted the tag on every call — changing memo numbers mid-session. The
+same applies to purchase numbers (`TXP/PO/...`). Tests cover the collision.
 
 ### Cloud backup AND restore (sync used to be push-only)
 `js/sync.js` could only **push**; losing the PC or phone lost everything it had entered.
@@ -122,7 +127,7 @@ Now:
 - `cloudBackupNow()` pushes the whole `db` as JSON into a new **Backup** tab.
 - `cloudRestore()` / `cloudListDevices()` pull it back — `Code.gs doGet?action=pull`.
 - One row per device per day (upsert), so the sheet does not grow without bound.
-- `Settings → Auto daily backup` pushes once a day on open; a dirty flag pushes on tab close.
+- `Settings → Auto daily backup` pushes once a day on open.
 - Restore always takes a local `snapshot()` first, then reloads.
 - `saveBackup_` refuses payloads over ~49 KB (a Sheets cell holds 50,000 chars) loudly rather
   than letting Google truncate a half-backup.
@@ -133,6 +138,28 @@ kept showing yesterday's numbers until he remembered to press "fire aan". Now `c
 runs on login, on `online`, and on `visibilitychange`, and does push → `?action=pullall` → merge
 → push in that order (the push must be *awaited*; a queued push would race the pull and the
 merge would run against a cloud that does not yet hold this device's work).
+
+### A sync is only a success when the sheet says so (the "phone edit never reached the web" bug)
+The owner edited stock and a product on the phone with internet, then found the web app still
+showing the old numbers. Three separate faults, all fixed:
+
+1. **Nothing pushed on save.** Both sides only synced on open/visibility, so an edit sat on the
+   device until the app was restarted. The Android `Store.Listener` now calls `schedulePush()`
+   after every commit (a 2 s quiet period coalesces a burst of edits; `onPause` flushes so the
+   upload is not lost on the way out). The web side calls `scheduleCloudPush()` from `commit()`,
+   flushing on `visibilitychange`/`pagehide` — *not* `beforeunload`, whose request a browser
+   cancels halfway, which is why web edits often never arrived at all.
+2. **A failed upload was reported as a good sync.** `Sync.pullAll` discarded the push result and
+   could answer `N ta snapshot merge hoyeche` while this device's data never left. `Sync.pushAccepted`
+   reads the reply body (`success !== false`), so an Apps Script refusal, an empty body and an HTML
+   login page are all failures — a 200 is not proof of a save. `Sync.mergeReport` leads with the
+   upload failure when there was one.
+3. **The post-merge save was unchecked.** `store.commit()`'s result and `lastSaveError` are now
+   surfaced, in `pullAll` and in `pullDevice`.
+
+`Sync.appVersion` is a field set by `MainActivity`, not a reach into it, so `Sync` compiles and
+runs on a plain JVM — these decision rules are tested in `native.test.js` (`pollDue`,
+`pushAccepted`, `mergeReport`) without a phone.
 
 The merge is why records carry an `at` stamp and deletes leave a `del` tombstone; a pull that
 merges an identical snapshot must not bump those stamps, or every open would restamp everything
@@ -223,7 +250,7 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   `MainActivity.APP_VERSION` from it before compiling. If they drift, the app offers the same
   "update" on every launch.
 - `test/native.test.js` compiles the shipped `Json`, `Store` and `Voice` on a plain JVM and
-  runs the real classes against the real JS business rules (15 tests). The shop's central
+  runs the real classes against the real JS business rules (16 tests). The shop's central
   rule is driven through `Store.saveMemo` itself: a memo for a product with **no stock card at
   all** must save, must create the card, must clamp `available` at 0, and must keep the whole
   quantity as a reported shortfall. That rule used to live in `ScreensData`, where an
@@ -249,7 +276,8 @@ job. Native also brings the real keyboard, date picker, back button and voice re
 - Recovery paths that exist on purpose: load failure → dialog offering retry / change address;
   long-press Back → change the stored address without losing data (data lives in WebView
   localStorage, not in the APK, so changing the address never wipes business data).
-- Guide: `ANDROID_BANGLA.txt`. Download page: `download.html` (APK button + explanation).
+- Guide: `ANDROID_BANGLA.txt`. Download page: `demo.html`, generated by `make-demo.py`
+  (two QR codes — the app APK and the web app — plus the install steps).
 - **Update discovery reads `js/app.js`, not `version.txt`.** The live host was configured with
   Netlify's `/* /index.html 200` fallback, so every unknown path — including `version.txt` —
   came back 200 full of HTML. The updater had no way to tell a real version from that page and

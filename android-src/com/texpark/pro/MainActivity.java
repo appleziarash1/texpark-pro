@@ -45,7 +45,7 @@ import java.util.Map;
 public class MainActivity extends Activity {
 
     /** Shown in Settings. build-apk.py rewrites this line to the built version. */
-    public static final String APP_VERSION = "2027-01-01.1";
+    public static final String APP_VERSION = "2027-01-01.2";
 
     private static final String PREFS = "texpark_pro_shell";
     private static final String KEY_URL = "update_url";
@@ -61,6 +61,19 @@ public class MainActivity extends Activity {
     private TextToSpeech tts;
     private boolean ttsReady = false;
 
+    /** The last time an automatic poll ran, and the pushes waiting to go up.
+     *
+     *  A shop phone saves constantly - a memo, then a stock top-up, then a
+     *  correction - and pushing after each one would spend the owner's data on
+     *  snapshots that are stale by the time they arrive. A short quiet period
+     *  coalesces a burst of edits into one upload. */
+    private long lastPollAt = 0L;
+    private long lastPushAt = 0L;
+    private boolean pushScheduled = false;
+    private final android.os.Handler syncHandler = new android.os.Handler();
+    private Runnable pushTask;
+    private static final long PUSH_QUIET_MS = 2000L;
+
     private static final int REQ_VOICE = 4001;
 
     /* ------------------------------------------------------------ lifecycle */
@@ -72,12 +85,22 @@ public class MainActivity extends Activity {
 
         store = new Store(getFilesDir());
         store.load();
+        Sync.appVersion = APP_VERSION;
         buildChrome();
+
+        /* Every save asks for an upload. This is the fix for the phone's edits never
+           reaching the sheet: syncing only when the app opened meant a memo typed
+           mid-morning sat on the phone until the app was restarted, and a PC looking
+           at the web app saw yesterday's numbers. */
+        store.setListener(new Store.Listener() {
+            public void onDataChanged() { schedulePush(); }
+        });
 
         screens = new Screens(this, store, contentHolder, badge, navWrap, dim);
         setupTts();
         screens.render();
         checkForUpdateInBackground();
+        autoSyncQuietly();
     }
 
     @Override
@@ -404,9 +427,71 @@ public class MainActivity extends Activity {
         if (Boolean.FALSE.equals(store.settings().get("autoPull"))) return;
         final String url = Store.str(store.settings(), "syncUrl");
         if (url.isEmpty()) return;
+        // Opening screen after screen is normal; without this each one would fetch
+        // the sheet and spend the owner's data on an answer he already has.
+        if (!Sync.pollDue(lastPollAt, System.currentTimeMillis())) return;
+        lastPollAt = System.currentTimeMillis();
         new Thread(new Runnable() {
-            public void run() { Sync.pullAll(store, url); }
+            public void run() {
+                // pullAll pushes first and reports whether that upload worked, so
+                // there is no separate push here.
+                Sync.pullAll(store, url);
+                runOnUiThread(new Runnable() { public void run() { screens.render(); } });
+            }
         }).start();
+    }
+
+    /* ------------------------------------------------------------ push on save */
+
+    /**
+     * Queues an upload of this device's snapshot.
+     *
+     * Called after every commit, so a memo or a stock change reaches the sheet
+     * while the owner is still holding the phone rather than at the next launch.
+     * Offline is the normal state of a shop phone, so failure is retried on the
+     * next save and on the next open instead of interrupting him with a dialog.
+     */
+    private void schedulePush() {
+        if (pushTask == null) {
+            pushTask = new Runnable() {
+                public void run() { pushNow(); }
+            };
+        }
+        syncHandler.removeCallbacks(pushTask);
+        pushScheduled = true;
+        syncHandler.postDelayed(pushTask, PUSH_QUIET_MS);
+    }
+
+    /** True once, allowing only one upload at a time; false if one is already out. */
+    private boolean claimPush() {
+        long now = System.currentTimeMillis();
+        if (now - lastPushAt < 1000L) return false;
+        lastPushAt = now;
+        return true;
+    }
+
+    private void pushNow() {
+        pushScheduled = false;
+        if (store.session == null) return;
+        if (Boolean.FALSE.equals(store.settings().get("autoPull"))) return;
+        final String url = Store.str(store.settings(), "syncUrl");
+        if (url.isEmpty()) return;
+        if (!claimPush()) return;
+        new Thread(new Runnable() {
+            public void run() { Sync.backupQuiet(store, url); }
+        }).start();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Leaving the app is the moment a pending upload matters most: the owner is
+        // about to look at it from somewhere else, and the quiet period may not have
+        // elapsed yet.
+        if (pushScheduled) {
+            syncHandler.removeCallbacks(pushTask);
+            pushTask.run();
+        }
     }
 
     /* ------------------------------------------------------------ backup files */

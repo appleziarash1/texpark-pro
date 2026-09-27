@@ -47,6 +47,7 @@ public class Store {
      *  reported as saved. Null after a successful commit. */
     public String lastSaveError;
     private File dir;
+    private String tagCache;
     private Listener listener;
 
     public interface Listener { void onDataChanged(); }
@@ -838,6 +839,7 @@ public class Store {
     /** Memo numbers must not collide between PC and phone, and the Google Sheet upserts
      *  on the number, so the device tag is baked in rather than per-device counters. */
     public String deviceTag() {
+        if (tagCache != null) return tagCache;
         String set = str(settings(), "deviceTag").trim();
         if (!set.isEmpty()) {
             String t = set.toUpperCase(Locale.US).replaceAll("[^A-Z0-9]", "");
@@ -847,10 +849,27 @@ public class Store {
         if (t == null) t = "";
         t = t.trim();
         if (t.isEmpty()) {
-            t = "PH";
+            /* A bare "PH" collides: the phone app and the browser build of the web
+               app on some other phone both fall back to it, and the sheet keeps one
+               backup row per device tag. The two would then overwrite each other's
+               snapshot, so the second saver silently replaces the first's books.
+               The tag is minted once and kept, so it stays small and stable while
+               still being unique per install. */
+            t = "PH" + randomTag();
+            // The folder may not exist yet on a fresh install, and a tag that cannot
+            // be persisted would be re-minted on the next call - changing the device
+            // tag mid-session and with it every memo number.
+            if (dir != null && !dir.isDirectory()) dir.mkdirs();
             try { writeFile(tagFile(), t); } catch (IOException ignored) { }
         }
+        tagCache = t;
         return t;
+    }
+
+    /** Four characters from the app's own id alphabet, for a per-install tag. */
+    private static String randomTag() {
+        String c = id();
+        return c.length() >= 4 ? c.substring(0, 4).toUpperCase(Locale.US) : "0000";
     }
 
     public String nextMemoNo() {

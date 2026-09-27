@@ -184,6 +184,31 @@ function restoreFromJSONText(text, opts) {
 const AUTOSYNC_KEY = 'texpark_pro_autosync_at';
 const AUTOSYNC_MIN_MS = 8000;          // one pull at a time; opening pages in a row is common
 var autoSyncBusy = false;
+var cloudPushTimer = null;
+
+/* Saves come in bursts - a memo, then a stock top-up, then a correction - so the
+   upload waits for a short quiet period and sends one snapshot for all of them. */
+const CLOUD_PUSH_QUIET_MS = 2000;
+
+function scheduleCloudPush() {
+  if (!syncUrl()) return;
+  if (typeof session === 'undefined' || !session) return;
+  if (cloudPushTimer) clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(function () {
+    cloudPushTimer = null;
+    if (typeof window !== 'undefined') window.cloudDirty = false;
+    cloudBackupNow(true);
+  }, CLOUD_PUSH_QUIET_MS);
+}
+
+/* Send anything still waiting. Called when the tab is hidden, which is the last
+   reliable moment - unlike beforeunload, a hidden tab keeps running long enough
+   for the request to leave. */
+function flushCloudPush() {
+  if (cloudPushTimer) { clearTimeout(cloudPushTimer); cloudPushTimer = null; }
+  if (typeof window !== 'undefined') window.cloudDirty = false;
+  try { cloudBackupNow(true); } catch (e) { /* offline is normal */ }
+}
 
 function autosyncEnabled() {
   return !!syncUrl() && !(db && db.settings && db.settings.autoPull === false);

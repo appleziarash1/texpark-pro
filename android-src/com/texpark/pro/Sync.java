@@ -27,7 +27,81 @@ public final class Sync {
     private static final int CONNECT_MS = 15000;
     private static final int READ_MS = 25000;
 
+    /** The app's version, handed in by the activity at startup.
+     *
+     *  Read from a field rather than straight out of MainActivity so this whole
+     *  class compiles and runs on a plain JVM - the rules about what counts as a
+     *  successful sync are the ones that quietly lose the owner's work, so they
+     *  are worth testing without a phone. */
+    public static String appVersion = "";
+
+    /** How long before an automatic poll may run again. Opening several screens in
+     *  a row is normal; without this each one would fetch the sheet. */
+    public static final long POLL_EVERY_MS = 30000L;
+
     private Sync() {}
+
+    /* --------------------------------------------------- decisions (pure) */
+
+    /** Whether an automatic poll is due. Kept separate from the HTTP around it so
+     *  the "too soon" rule can be tested with a made-up clock. */
+    public static boolean pollDue(long lastPollMs, long nowMs) {
+        if (lastPollMs <= 0L) return true;
+        return nowMs - lastPollMs >= POLL_EVERY_MS;
+    }
+
+    /** The sheet's own verdict on an upload.
+     *
+     *  Apps Script answers 200 whether it saved or refused, and a proxy or a login
+     *  page can answer 200 with HTML. Reading the body is the only truthful check:
+     *  anything that is not a JSON object with success not-false is a failure, and
+     *  calling it a success is how a memo that never left the phone gets believed. */
+    public static boolean pushAccepted(String reply) {
+        if (reply == null || reply.trim().isEmpty()) return false;
+        try {
+            Map<String, Object> j = Json.obj(Json.read(reply));
+            if (j.isEmpty()) return false;
+            return !Boolean.FALSE.equals(j.get("success"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** What to tell the owner after an upload attempt. */
+    public static String pushReport(boolean accepted, String reply, String device) {
+        if (accepted) return "Cloud backup pathano hoyeche (" + device + ").";
+        String err = errorOf(reply);
+        if (err != null) return "Sheet bollo: " + err;
+        return "Cloud backup pathate parlam na \u2014 internet ba URL ta dekhun.";
+    }
+
+    /** What to tell the owner after a pull-and-merge.
+     *
+     *  The push is reported separately and first, because a merge that succeeded
+     *  while the upload failed is exactly the case that used to be reported as
+     *  "synced": this device learned the cloud's news and the cloud never learned
+     *  this device's. */
+    public static String mergeReport(boolean pushOk, int merged, boolean committed, String saveError) {
+        StringBuilder b = new StringBuilder();
+        if (!pushOk) {
+            b.append("Ei device-er data sheet-e uthlo na \u2014 abar chesta hobe.")
+             .append(" (Internet, URL, othoba sheet-er JSON cell size dekhun.)");
+        }
+        if (!committed) {
+            b.append(b.length() > 0 ? "\n" : "")
+             .append("Merge ta save korte parlam na")
+             .append(saveError == null || saveError.isEmpty() ? "." : ": " + saveError);
+            return b.toString();
+        }
+        if (merged == 0) {
+            b.append(b.length() > 0 ? "\n" : "")
+             .append("Sheet-e kono notun backup nei.");
+            return b.toString();
+        }
+        b.append(b.length() > 0 ? "\n" : "")
+         .append(merged).append(" ta snapshot merge hoyeche.");
+        return b.toString();
+    }
 
     /* ------------------------------------------------------------ public API */
 
@@ -37,7 +111,7 @@ public final class Sync {
         Map<String, Object> data = new LinkedHashMap<String, Object>();
         data.put("device", store.deviceTag());
         data.put("date", Store.today());
-        data.put("version", MainActivity.APP_VERSION);
+        data.put("version", appVersion);
         data.put("json", Json.write(store.db));
 
         Map<String, Object> payload = new LinkedHashMap<String, Object>();
@@ -47,10 +121,21 @@ public final class Sync {
 
         String trimmed = trimSlash(url);
         String res = post(trimmed, body);
-        if (res == null) return "Pathate parlam na \u2014 internet ba URL ta dekhun.";
-        String err = errorOf(res);
-        if (err != null) return "Sheet bollo: " + err;
-        return "Cloud backup pathano hoche (" + store.deviceTag() + ").";
+        return pushReport(pushAccepted(res), res, store.deviceTag());
+    }
+
+    /** A push that only says whether it worked, for callers that act on it. */
+    public static boolean backupQuiet(Store store, String url) {
+        if (url == null || url.trim().isEmpty()) return false;
+        Map<String, Object> data = new LinkedHashMap<String, Object>();
+        data.put("device", store.deviceTag());
+        data.put("date", Store.today());
+        data.put("version", appVersion);
+        data.put("json", Json.write(store.db));
+        Map<String, Object> payload = new LinkedHashMap<String, Object>();
+        payload.put("type", "backup");
+        payload.put("data", data);
+        return pushAccepted(post(trimSlash(url), Json.write(payload)));
     }
 
     /** Pushes, then pulls and merges: the direction that cannot lose this device's work. */
@@ -60,10 +145,13 @@ public final class Sync {
 
         // Push first. If this device's work only exists locally, merging a pull over
         // the top of it would lose it; sending it up first makes the cloud a superset.
-        String pushed = backup(store, trimmed);
+        // Whether it really went up is remembered, not discarded: a pull that merges
+        // while this device's own work failed to upload must not be reported as a
+        // clean sync - the other machines would never see the new memo.
+        boolean pushed = backupQuiet(store, trimmed);
 
         String res = get(trimmed + "?action=pullall");
-        if (res == null) return "Sheet theke anaa gelo na. " + pushed;
+        if (res == null) return mergeReport(pushed, 0, true, null);
         String err = errorOf(res);
         if (err != null) return "Sheet bollo: " + err;
 
@@ -95,8 +183,9 @@ public final class Sync {
             store.mergeCloudInto(Store.cast(incoming));
             merged++;
         }
-        store.commit();
-        return merged == 0 ? "Sheet-e kono backup pelam na." : merged + " ta snapshot merge hoyeche.";
+        if (merged == 0) return mergeReport(pushed, 0, true, null);
+        boolean committed = store.commit();
+        return mergeReport(pushed, merged, committed, store.lastSaveError);
     }
 
     /** A single-device pull, used to repair one machine from the sheet. */
@@ -113,7 +202,10 @@ public final class Sync {
         Object incoming = Json.read(json);
         if (!(incoming instanceof Map)) return "Backup ta thik na.";
         store.mergeCloudInto(Store.cast(incoming));
-        store.commit();
+        if (!store.commit()) {
+            return "Restore ta save korte parlam na"
+                    + (store.lastSaveError == null ? "." : ": " + store.lastSaveError);
+        }
         return "Restore hoyeche.";
     }
 

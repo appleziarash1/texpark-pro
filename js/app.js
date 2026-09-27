@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.1';
+const APP_VERSION = '2027-01-01.2';
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
@@ -1715,9 +1715,16 @@ window.addEventListener('DOMContentLoaded', function () {
   // Coming back to the tab is when stale numbers are most likely to be believed,
   // so re-check the cloud then too - not only on a cold open.
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) cloudAutoSync('visible');
+    if (document.hidden) {
+      // Leaving the page is the last moment an unsent edit can go up. Hiding runs
+      // while the tab still gets to finish a request, unlike beforeunload, whose
+      // upload the browser cancels halfway.
+      if (cloudDirty) flushCloudPush();
+      return;
+    }
+    cloudAutoSync('visible');
   });
-  window.addEventListener('beforeunload', () => { if (cloudDirty) cloudBackupNow(true); });
+  window.addEventListener('pagehide', function () { if (cloudDirty) flushCloudPush(); });
 });
 
 const CLOUD_DAY_KEY = 'texpark_pro_cloud_backup_day';
