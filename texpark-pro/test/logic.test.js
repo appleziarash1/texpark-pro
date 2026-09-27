@@ -40,6 +40,29 @@ ok(probs.length === 1, 'selling 5 when 0 available is blocked');
 eq(probs[0].available, 0, 'reports available 0');
 eq(probs[0].short, 5, 'reports shortfall 5');
 
+console.log('\n--- a memo on an empty card never shows minus stock ---');
+/* The owner sells 60 before entering the goods. The card must read 0 on the
+   shelf and 60 still to enter - not -60, which looked like an error and was the
+   thing he reported. Entering the 60 later lands on top of those sales. */
+db = blankDB();
+const pEmpty = db.products[0];
+const emptyCard = ensureStockCard(pEmpty.id);
+emptyCard.sold = 60;
+emptyCard.available = stockAvailable(emptyCard);
+eq(emptyCard.available, 0, 'available floors at 0, no minus sign');
+eq(stockShort(emptyCard), 60, 'the 60 sold with nothing received is shown as tola baki');
+eq(stockRaw(emptyCard), -60, 'the raw figure still remembers the shortfall internally');
+emptyCard.opening = 60;
+emptyCard.available = stockAvailable(emptyCard);
+eq(emptyCard.available, 0, 'entering exactly what went out settles at 0');
+emptyCard.opening = 100;
+emptyCard.available = stockAvailable(emptyCard);
+eq(emptyCard.available, 40, 'received 100 against 60 sold leaves 40 on the shelf');
+eq(stockShort(emptyCard), 0, 'nothing left to enter');
+db = blankDB();
+stockOf(db.products[0].id);
+stockOf(db.products[1].id);
+
 console.log('\n--- opening stock, then sell ---');
 const s1 = stockOf(p1.id);
 s1.opening = 10;

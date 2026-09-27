@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2026-09-22.6';
+const APP_VERSION = '2026-09-22.7';
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
@@ -246,16 +246,53 @@ function renderMemoLines() {
         db.products.map(x => '<option value="' + x.id + '"' + (x.id === it.productId ? ' selected' : '') + '>' +
           esc(x.name) + (x.sku ? ' [' + esc(x.sku) + ']' : '') + '</option>').join('') +
       '</select></td>' +
-      '<td class="right"><span class="pill ' + (avail <= 0 ? 'danger' : avail <= num(p?.reorderLevel) ? 'warn' : 'ok') + '">' +
+      '<td class="right"><span id="memoAvail' + i + '" class="pill ' + (avail <= 0 ? 'danger' : avail <= num(p?.reorderLevel) ? 'warn' : 'ok') + '">' +
         (it.productId ? avail : '-') + '</span></td>' +
-      '<td><input class="' + (notEntered ? 'warn-field' : '') + '" type="number" step="0.01" value="' + num(it.rate) + '" oninput="memoSet(' + i + ',\'rate\',this.value)"></td>' +
-      '<td><input class="' + (notEntered ? 'warn-field' : '') + '" type="number" min="0" step="1" value="' + num(it.qty) + '" oninput="memoSet(' + i + ',\'qty\',this.value)"></td>' +
-      '<td class="right">' + money(num(it.qty) * num(it.rate)) + '</td>' +
+      '<td><input id="memoRate' + i + '" class="' + (notEntered ? 'warn-field' : '') + '" type="number" step="0.01" value="' + num(it.rate) + '" oninput="memoSet(' + i + ',\'rate\',this.value)"></td>' +
+      '<td><input id="memoQty' + i + '" class="' + (notEntered ? 'warn-field' : '') + '" type="number" min="0" step="1" value="' + num(it.qty) + '" oninput="memoSet(' + i + ',\'qty\',this.value)"></td>' +
+      '<td class="right" id="memoAmount' + i + '">' + money(num(it.qty) * num(it.rate)) + '</td>' +
       '<td class="right">' + money(num(it.qty) * num(it.cost)) + '</td>' +
-      '<td class="right"><b class="' + (margin >= 0 ? 'green' : 'red') + '">' + money(margin) + '</b></td>' +
+      '<td class="right" id="memoMargin' + i + '"><b class="' + (margin >= 0 ? 'green' : 'red') + '">' + money(margin) + '</b></td>' +
       '<td><button class="btn-danger btn-sm" onclick="memoDel(' + i + ')">x</button></td>' +
       '</tr>';
   }).join('');
+}
+
+/* Refresh the cells of one memo row that depend on the value just typed, without
+   rebuilding the row. The inputs are left alone on purpose: rewriting an input
+   the owner is typing in is what moved the caret out of the box. */
+function memoPatchLine(i) {
+  const it = memoDraft.items[i];
+  if (!it) return;
+  const p = productById(it.productId);
+  const s = p ? db.stock.find(x => x.productId === p.id) : null;
+  const avail = num(s?.available);
+  const notEntered = it.productId && num(it.qty) > avail && db.settings.warnOnShortStock !== false;
+
+  const pill = document.getElementById('memoAvail' + i);
+  if (pill) {
+    pill.className = 'pill ' + (avail <= 0 ? 'danger' : avail <= num(p?.reorderLevel) ? 'warn' : 'ok');
+    pill.textContent = it.productId ? String(avail) : '-';
+  }
+  ['memoRate' + i, 'memoQty' + i].forEach(cid => {
+    const inp = document.getElementById(cid);
+    if (inp) inp.className = notEntered ? 'warn-field' : '';
+  });
+  const amt = document.getElementById('memoAmount' + i);
+  if (amt) amt.textContent = money(num(it.qty) * num(it.rate));
+  const margin = num(it.qty) * (num(it.rate) - num(it.cost));
+  const mg = document.getElementById('memoMargin' + i);
+  if (mg) mg.innerHTML = '<b class="' + (margin >= 0 ? 'green' : 'red') + '">' + money(margin) + '</b>';
+}
+
+/* The row count is the one thing that cannot be patched in place - a line was
+   added or removed. Anything else is patched so typing keeps its caret. */
+function memoSyncLines() {
+  const tb = document.getElementById('memoRows');
+  if (!tb) return;
+  const rendered = tb.children ? tb.children.length : -1;
+  if (rendered !== memoDraft.items.length) { renderMemoLines(); return; }
+  memoDraft.items.forEach((_, i) => memoPatchLine(i));
 }
 
 function memoPickProduct(i, pid) {
@@ -269,7 +306,10 @@ function memoPickProduct(i, pid) {
 
 function memoSet(i, field, v) {
   memoDraft.items[i][field] = num(v);
-  renderMemoLines();
+  /* Re-rendering the whole table here would throw the caret out of the box the
+     owner is typing in after the first digit. Only the cells that actually
+     depend on the value change in place instead. */
+  memoPatchLine(i);
   calcMemo();
 }
 
@@ -328,7 +368,7 @@ function calcMemo() {
   const cl = document.getElementById('memoCustList');
   if (cl) cl.innerHTML = '<option value="">- New / Select -</option>' +
     db.customers.map(c => '<option value="' + c.id + '">' + esc(c.name) + (c.phone ? ' - ' + esc(c.phone) : '') + '</option>').join('');
-  renderMemoLines();
+  memoSyncLines();
 }
 
 function pickMemoCustomer(cid) {
@@ -992,15 +1032,18 @@ function renderStock() {
   const arr = db.products.filter(p => p.name.toLowerCase().includes(q));
   document.getElementById('stockTable').innerHTML = arr.length
     ? '<div class="tablewrap"><table><thead><tr><th>Product</th><th class="right">Opening</th><th class="right">Purchased</th>' +
-      '<th class="right">Sold</th><th class="right">Available</th><th class="right">Unit Cost</th>' +
+      '<th class="right">Sold</th><th class="right">Available</th><th class="right">Tola baki</th><th class="right">Unit Cost</th>' +
       '<th class="right">Stock Value</th><th>Status</th><th></th></tr></thead><tbody>' +
       arr.map(p => {
         const s = db.stock.find(x => x.productId === p.id) || {};
         const av = num(s.available);
+        const short = stockShort(s);
         const st = av <= 0 ? 'danger' : av <= num(p.reorderLevel) ? 'warn' : 'ok';
         return '<tr><td>' + esc(p.name) + '</td><td class="right">' + num(s.opening) + '</td>' +
           '<td class="right">' + num(s.purchased) + '</td><td class="right">' + num(s.sold) + '</td>' +
-          '<td class="right"><b>' + av + '</b></td><td class="right">' + money(stockCost(p.id)) + '</td>' +
+          '<td class="right"><b>' + av + '</b></td>' +
+          '<td class="right">' + (short > 0 ? '<b class="red">' + short + '</b>' : '-') + '</td>' +
+          '<td class="right">' + money(stockCost(p.id)) + '</td>' +
           '<td class="right">' + money(av * stockCost(p.id)) + '</td>' +
           '<td><span class="pill ' + st + '">' + (av <= 0 ? 'OUT' : av <= num(p.reorderLevel) ? 'LOW' : 'OK') + '</span></td>' +
           '<td><button class="btn-light btn-sm" onclick="openStockEdit(\'' + p.id + '\')">Edit</button> ' +
@@ -1046,8 +1089,11 @@ function saveAdjust() {
   const reason = document.getElementById('adReason').value.trim();
   if (delta === 0) return alert('Adjustment qty din (positive add, negative kom).');
   const s = stockOf(pid);
-  if (num(s.available) + delta < 0) {
-    return alert('Adjustment korle stock negative hoye jabe. Available: ' + num(s.available));
+  /* Checked against the raw figure, not the clamped one: a card whose sales
+     already ran ahead of its receipts sits at available 0 with a shortfall, and
+     it must still accept a downward adjustment. */
+  if (stockRaw(s) + delta < 0) {
+    return alert('Adjustment korle stock tolar poriman theke kome jabe. Available: ' + num(s.available));
   }
   if (delta > 0) s.opening = num(s.opening) + delta;
   else s.sold = num(s.sold) + Math.abs(delta);
@@ -1088,8 +1134,10 @@ function saveStockEdit() {
   if (sold < memoSold) {
     return alert('Sold qty memo-r asol bikri (' + memoSold + ') theke kome hote pare na.');
   }
-  const available = opening + purchased - sold;
-  if (available < 0) return alert('Available stock negative hote pare na. Opening/Purchased baran.');
+  const available = stockRaw({ opening, purchased, sold });
+  /* A card whose sales ran ahead of its receipts is a normal state - the memo
+     auto-add creates exactly that. It is kept as a shortfall to enter, not
+     refused here, so the owner can always re-save the card he just looked at. */
 
   const s = stockOf(pid);
   const before = num(s.available);
@@ -1099,7 +1147,9 @@ function saveStockEdit() {
   logStock(pid, 'Adjustment', s.available - before, 'Manual', 'Stock card edited');
   commit();
   closeStockEdit();
-  alert('Stock update hoyeche.');
+  alert(available < 0
+    ? 'Stock update hoyeche.\nSold er cheye tola kom - ei ' + Math.abs(available) + ' ta "Tola baki" te dekhabe.'
+    : 'Stock update hoyeche.');
 }
 
 /* ===================== stock ledger (audit trail) ===================== */

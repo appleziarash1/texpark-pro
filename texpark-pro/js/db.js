@@ -196,10 +196,25 @@ function consumePurchaseNo() {
 }
 
 /* ============================ stock engine ============================ */
-// available = opening + purchased - sold  (adjusted folds into purchased/opening)
-function stockAvailable(s) {
+/* What the books say, before physical reality is applied. This is the figure
+   that can go negative, and it is kept separate so the shortfall is not lost. */
+function stockRaw(s) {
   if (!s) return 0;
   return num(s.opening) + num(s.purchased) - num(s.sold);
+}
+
+/* Available is what is physically on the shelf, so it stops at 0. A memo that
+   goes out before its stock is entered puts the card at 0 - not at a negative
+   number, which used to read as if the shop owed goods it never bought. When the
+   received qty is entered later it lands on top of these sales by itself. */
+function stockAvailable(s) {
+  return Math.max(0, stockRaw(s));
+}
+
+/* How much is still to be entered: the sales that have gone out minus what was
+   ever received. This is the number that used to appear as a minus sign. */
+function stockShort(s) {
+  return Math.max(0, -stockRaw(s));
 }
 
 /* Read-only stock lookup - never creates a card, so callers that only want to

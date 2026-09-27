@@ -57,17 +57,45 @@ so they were not invented; the plan stands on the audited code + the one bug the
 New localStorage key: **`texpark_pro_v2`** (old `texpark_biz_v1` untouched; one-way import in Backup page).
 Admin seed: `admin` / `admin123`, password stored as a hash. 4 roles: admin, manager, salesman, accountant.
 
-### The bug the user named, and the fix
-Old: memo saved with zero/insufficient stock → stock went minus.
-New: `checkStockForItems()` blocks the save, lists which product is short and by how much,
-and the Save button is disabled. `Settings → allow negative stock` is the explicit opt-out.
-`saveStockEdit()` also refuses to set sold qty below the quantity real memos prove was sold.
+### The rule the owner set: the memo is the source of truth
+A memo must **never** be blocked by missing or insufficient stock. It saves, the product
+auto-appears in Stock (0 received), and the received qty is entered whenever it suits.
+`checkStockForItems()` is a **report**, not a gate — it feeds the reminder box on the memo page.
+`saveMemo()` requires only a customer name and at least one line with a product and qty > 0.
+
+The owner then caught the follow-on: selling 60 with nothing received showed stock **-60**,
+which reads as an error. Fixed by splitting the two numbers:
+- `stockRaw(s)` = opening + purchased − sold — may be negative, internal truth.
+- `stockAvailable(s)` = `max(0, stockRaw)` — what is on the shelf, never a minus sign.
+- `stockShort(s)` = `max(0, -stockRaw)` — the "Tola baki" column: what is still to enter.
+Entering the 60 later lands on top of those sales by itself (100 received → available 100).
+`saveAdjust()` and `saveStockEdit()` guard against `stockRaw`, never the clamped value, so a
+card that is short can still be corrected. `saveStockEdit()` still refuses to set sold below
+the qty real memos prove was sold.
+
+### Second bug the owner named: the caret jumped out of the box
+`memoSet()` called `renderMemoLines()`, which replaced `memoRows.innerHTML` on every keystroke —
+so after the first digit the box lost focus and typing stopped. Now:
+`memoSet()` → `memoPatchLine(i)` updates only the dependent cells (available pill, amount,
+profit, warn class) and never writes to an `<input>`. `calcMemo()` ends with `memoSyncLines()`,
+which patches rows when the row count is unchanged and only falls back to a full
+`renderMemoLines()` when a line was added or removed. Inputs are labelled `memoRate<i>` /
+`memoQty<i>` so the patch can find them.
 
 ### Things that bit me here (don't repeat)
+- **Never re-render a container that holds an input the user is typing in.** Patch the cells.
+- The e2e DOM shim could not see the caret bug because its `innerHTML` was a plain property and
+  it had no `children`. It now counts `innerHTML` writes (`_writes`) and derives `children` from
+  the markup, so `eq(el('memoRows')._writes, before, ...)` catches a table rebuild.
 - `let db` / `let session` in `app.js` are **not** `window` properties. Tests must load the source
   with `vm.runInThisContext` (Node) or inject a `<script>` into an iframe (browser) to reach them.
 - The browser's typed input did not persist into app fields via the automation tool; drive
   functions directly for verification instead of relying on synthetic typing.
+- To verify a fix in a **real** browser, copy `index.html` to `probe.html` with an injected
+  `<script>` that drives the functions and writes results into a `<div id="probeOut">`, serve the
+  deploy folder, and read the page. `chromium --dump-dom` hangs in this image; the browser tool
+  works. Guard the probe with `sessionStorage` and call `boot()` yourself, because the service
+  worker reloads the page on activation and the probe would otherwise run twice on stale state.
 - `renderAll()` **swallows exceptions** (`try/catch` around the per-page render). A broken page
   therefore renders empty rather than throwing. When a page looks blank, check `console.error`,
   and prefer `ok(ERRS.length === 0, ...)`-style assertions.

@@ -10,8 +10,9 @@ const root = path.join(__dirname, '..');
 /* ---------------- minimal DOM ---------------- */
 function makeEl(id) {
   const el = {
-    id, value: '', textContent: '', innerHTML: '', checked: false, disabled: false,
+    id, value: '', textContent: '', checked: false, disabled: false,
     style: {}, dataset: {}, className: '',
+    _html: '', _writes: 0,
     classList: {
       _s: new Set(),
       add(...c) { c.forEach(x => this._s.add(x)); },
@@ -23,6 +24,18 @@ function makeEl(id) {
     addEventListener() {}, focus() {}, click() {}, querySelector() { return makeEl('x'); },
     querySelectorAll() { return []; }
   };
+  /* innerHTML is counted, and children is derived from it. Together they let a
+     test see whether the memo table was rebuilt under the owner's cursor - the
+     bug this shim previously could not observe. */
+  Object.defineProperty(el, 'innerHTML', {
+    get() { return this._html; },
+    set(v) { this._html = String(v); this._writes++; },
+    configurable: true
+  });
+  Object.defineProperty(el, 'children', {
+    get() { const m = String(this._html).match(/<tr>/g); return { length: m ? m.length : 0 }; },
+    configurable: true
+  });
   return el;
 }
 
@@ -152,7 +165,9 @@ const autoCard = findStock(widget.id);
 ok(!!autoCard, 'THE STOCK CARD WAS AUTO-CREATED from the memo');
 eq(autoCard.opening, 0, 'auto card starts with 0 received - user still tops it up later');
 eq(autoCard.sold, 10, 'the memo qty landed in sold');
-eq(autoCard.available, -10, 'available shows the honest shortfall until stock is entered');
+eq(autoCard.available, 0, 'available stops at 0 - a shelf cannot hold minus ten');
+eq(stockShort(autoCard), 10, 'the shortfall is reported separately as tola baki');
+eq(findStock(widget.id).available >= 0, true, 'nothing on the stock card shows a minus');
 ok(db.ledger.some(l => l.type === 'AutoAdd' && l.productId === widget.id),
   'auto-creation is traceable in the stock ledger');
 
@@ -163,7 +178,8 @@ el('stockProduct').value = widget.id;
 el('stockAddQty').value = '50';
 el('stockCost').value = '100';
 addStockPurchase();
-eq(findStock(widget.id).available, 40, 'received 50 closes the -10 gap to +40');
+eq(findStock(widget.id).available, 40, 'received 50 closes the 10 shortfall to +40');
+eq(stockShort(findStock(widget.id)), 0, 'nothing left to enter once 50 was received');
 const ledgerAtTopUp = db.ledger.length;   // everything after this point already has stock
 
 console.log('\n--- an already-carded product is not duplicated ---');
@@ -186,6 +202,28 @@ calcMemo();
 eq(el('memoSaveBtn').disabled, false, 'save button enabled');
 saveMemo();
 eq(db.memos.length, 2, 'second memo saved - no new stock card needed');
+
+console.log('\n--- typing in a memo box keeps its caret (no table rebuild) ---');
+/* Regression: memoSet used to call renderMemoLines(), which replaced memoRows
+   and threw the caret out of the box after the first digit. Nothing is saved
+   here, so the memos counted above stay the ones the rest of the file asserts on. */
+nav('memo');
+newMemo();
+memoDraft.items = [{ productId: widget.id, qty: 1, rate: 0, cost: 100, vat: 0, amount: 0 }];
+renderMemoLines();
+const rowsBefore = el('memoRows')._writes;
+memoSet(0, 'qty', '6');
+memoSet(0, 'qty', '60');
+memoSet(0, 'rate', '250');
+eq(el('memoRows')._writes, rowsBefore, 'the memo table was NOT rebuilt while typing');
+eq(memoDraft.items[0].qty, 60, 'both digits of 60 landed in the draft');
+eq(memoDraft.items[0].rate, 250, 'the rate landed too');
+ok(el('memoAmount0').textContent.includes('15,000'), 'the line amount updated in place');
+/* The browser owns the input's text; the app must not write it back while the
+   owner types. Park a value in the box and confirm the patch leaves it alone. */
+el('memoQty0').value = '60';
+memoSet(0, 'qty', '65');
+eq(el('memoQty0').value, '60', 'the input is never rewritten by the patch');
 
 const memo = db.memos[1];   // the memo that carries the charges
 ok(/TXP\/SM\//.test(memo.memoNo), 'memo number uses the company prefix');
