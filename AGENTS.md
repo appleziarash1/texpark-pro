@@ -128,11 +128,25 @@ Now:
 
 ### Permanent hosting: what is and is not possible here
 The sandbox URL is temporary and cannot be made permanent from inside. The user must host the
-built bundle themselves. `HOSTING_BANGLA.txt` is the guide, `texpark-deploy/` is the folder,
+built bundle themselves. `docs/HOSTING_BANGLA.txt` is the guide, the repo root is the folder,
 `texpark-pro.html` is the single self-contained file to email or carry on a USB stick.
 
+### The repo root *is* the site
+`build.js` writes the app to the repo root (`index.html`, `js/`, `css/`, `sw.js`, icons,
+`version.txt`, `TexparkPro.apk`) because GitHub Pages serves the root of the branch it is
+pointed at. That is also what the installed APK needs: its update check derives every path by
+resolving index.html's own relative links, so moving the app into a subfolder would make it
+fetch from the wrong place. Consequence: the repo root holds the app **and** the build tooling
+and `.git` together, so anything that walks it must use an allowlist. `make-hosting-zip.py`
+does exactly that, and asserts `android-keystore.jks` and `.git/` are absent - the keystore is
+the private key that signs the APK, and publishing it would let anyone sign an APK that Android
+accepts as an update to the installed one.
+
+The catalog pages (`index.html`, `download.html`) live in `catalog/`, not the root, precisely so
+the root `index.html` can be the app.
+
 ## Build + test commands
-- `node build.js` (in `texpark-pro/`) regenerates **both** `../texpark-deploy/` and
+- `node build.js` (in `texpark-pro/`) regenerates **both** the repo root and
   `../texpark-pro.html`. Always run this after changing source, or the shipped files drift.
   The script asserts the new cloud/device functions are present in the single file.
 - `npm test` runs `test/logic.test.js` (78), `test/sheet.test.js` (20), `test/e2e.test.js` (197),

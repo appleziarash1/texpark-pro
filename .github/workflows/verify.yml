@@ -1,0 +1,50 @@
+name: Verify
+
+# Checks a push cannot ship a site that is broken on the owner's already-installed
+# APK. The APK itself is NOT built here: signing needs android-keystore.jks, and
+# that private key stays off GitHub on purpose - publishing it would let anyone
+# sign an APK Android accepts as an update to the installed one. The signed APK is
+# built on a trusted machine and committed as TexparkPro.apk.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: App logic, sheet and browser tests
+        working-directory: texpark-pro
+        run: npm test
+
+      - name: The app the repo serves is the app the source builds
+        run: |
+          node texpark-pro/build.js
+          # build.js rewrites these from source. A dirty tree means a generated file
+          # was hand-edited, so the deployed app would drift from what was tested.
+          if ! git diff --quiet; then
+            echo "::error::Generated site differs from texpark-pro/ source - run 'node texpark-pro/build.js' and commit the result."
+            exit 1
+          fi
+
+      - name: Every path index.html asks for exists, and version.txt agrees
+        run: python3 ci/check-site.py
+
+      - name: Hosting zip carries the site and no secrets
+        run: |
+          python3 make-hosting-zip.py
+          python3 ci/check-zip.py

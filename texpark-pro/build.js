@@ -1,13 +1,18 @@
 /* Builds the two shippable forms from the source in this folder, so the deploy
    bundle and the single-file app can never drift behind the code again:
-     ../texpark-deploy   folder to host (js/css kept as separate files)
+     ../                 the repo root: the folder GitHub Pages serves
      ../texpark-pro.html one self-contained file to email or run from a USB stick
    Run: node build.js                                                        */
 const fs = require('fs');
 const path = require('path');
 
 const root = __dirname;
-const outDir = path.join(root, '..', 'texpark-deploy');
+/* The repo root IS the deployable site: GitHub Pages serves it, so the app has
+   to sit at index.html there, not inside a subfolder. That is also what the
+   installed APK expects - its update check derives every path from index.html's
+   own relative links, so moving the app into a subfolder would make it fetch
+   from the wrong place. */
+const outDir = path.join(root, '..');
 const outFile = path.join(root, '..', 'texpark-pro.html');
 
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');

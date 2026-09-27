@@ -131,7 +131,7 @@ node texpark-pro/build.js
 ANDROID_HOME=/path/to/android-sdk python3 build-apk.py
 ```
 
-`build-apk.py` web app ta `texpark-deploy/` theke niye, `assets/site/` hishebe
+`build-apk.py` web app ta repo root theke niye, `assets/site/` hishebe
 APK-er bhitor boshay, ar verify kore je sob file sotti bhitor-e ache.
 `TexparkPro.apk` root-e toiri hoy, `android-keystore.jks` diye sign hoye.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds Texpark Pro.apk (Android) from android-src/ + texpark-deploy/.
+"""Builds Texpark Pro.apk (Android) from android-src/ + the web app in the repo root.
 
 The web app is wrapped INSIDE the APK (assets/site), so the app opens with no
 internet, never shows a blank page because a host is down, and needs no setup
@@ -24,7 +24,9 @@ PLATFORM = os.path.join(SDK, 'platforms', 'android-34', 'android.jar')
 
 # The deploy folder is the single source of the app the APK ships. build.js
 # writes it, so the APK can never wrap a stale app.
-DEPLOY = os.path.join(ROOT, 'texpark-deploy')
+# The repo root is the deployable site (GitHub Pages serves it), so that is
+# where the app files live and what gets wrapped into the APK.
+DEPLOY = ROOT
 
 
 def check_referenced_files(site):
@@ -201,7 +203,7 @@ def main():
 
     # The supplied icon is already the brand navy with the pink wordmark, so it
     # ships as-is rather than being recoloured.
-    icon_src = os.path.join(ROOT, 'texpark-deploy', 'icon-512.png')
+    icon_src = os.path.join(ROOT, 'icon-512.png')
     shutil.copy(icon_src, os.path.join(res, 'drawable', 'ic_launcher.png'))
     shutil.copy(icon_src, os.path.join(res, 'drawable', 'ic_launcher_fg.png'))
     w, h = 512, 512

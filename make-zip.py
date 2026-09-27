@@ -1,6 +1,6 @@
 import zipfile, os
 root = '/workspace/project'
-src = os.path.join(root, 'texpark-deploy')
+src = root  # the repo root is the site
 out = os.path.join(root, 'texpark-pro-download.zip')
 if os.path.exists(out):
     os.remove(out)
