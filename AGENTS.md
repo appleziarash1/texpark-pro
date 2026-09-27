@@ -9,7 +9,8 @@ Two things live here:
 | `/workspace/project/` | Catalog/review pages served over HTTP on port 12000. `index.html` = current catalog (v2). `catalog/catalog-v1.html` = archived first catalog. |
 
 Serve command used: `python3 -m http.server 12000 --bind 0.0.0.0` from `/workspace/project`.
-Public URL: `https://work-1-zwmlgjnofcfiguwb.prod-runtime.all-hands.dev/`
+Public URL: `https://appleziarash1.github.io/texpark-pro` (permanent). The sandbox URL
+`https://work-1-zwmlgjnofcfiguwb.prod-runtime.all-hands.dev/` is temporary - do not hand it out.
 
 ## The user's app: Texpark Business Manager v1.0.1
 - Brand: TEXPARK BUYING HOUSE. MD: Mahmudul Hasan Sourav. Uttara, Dhaka.
@@ -149,10 +150,29 @@ Three latent duplicates had to be fixed for this to be safe, all found by the me
 - `rebaseStockFromLedger()` skips products that no longer exist, so deleting a product cannot
   resurrect a "(deleted product)" row from old ledger movements.
 
-### Permanent hosting: what is and is not possible here
-The sandbox URL is temporary and cannot be made permanent from inside. The user must host the
-built bundle themselves. `docs/HOSTING_BANGLA.txt` is the guide, the repo root is the folder,
-`texpark-pro.html` is the single self-contained file to email or carry on a USB stick.
+### Permanent hosting: live on GitHub Pages
+**The site is live and permanent: `https://appleziarash1.github.io/texpark-pro`.** Pages is
+configured as *Deploy from a branch -> main -> / (root)*, which is why `build.js` writes the app
+to the repo root. Pushing to `main` redeploys the site and the APK's update check follows it,
+so no manual upload step exists any more.
+
+The sandbox URL (`https://work-1-...prod-runtime.all-hands.dev/`) is still only temporary: it
+dies with the sandbox and must never be given to the owner as *the* address.
+
+**Pages must not be switched to "GitHub Actions" build.** `actions/configure-pages` cannot
+create the Pages site with `GITHUB_TOKEN` — creating it needs the Pages permission, which the
+token does not carry, and it fails `403 Resource not accessible by integration`. The site was
+turned on once by hand in Settings -> Pages. `pages.yml` was deleted rather than left failing:
+with branch deploy there is nothing left for a workflow to do, and two deploys racing to serve
+the same root is the one thing that could briefly serve a half-updated app.
+
+`docs/HOSTING_BANGLA.txt` is the guide for the owner, `texpark-pro.html` is the single
+self-contained file to email or carry on a USB stick.
+
+Repository code is public (that is what free Pages requires). The business data is not: it
+lives in device `localStorage` and in the owner's Google Sheet. `Code.gs` is published by
+Pages and carries the spreadsheet ID in plain text, which is harmless while that Sheet is
+private — anyone able to read `Code.gs` gains nothing without access to the Sheet itself.
 
 ### The repo root *is* the site
 `build.js` writes the app to the repo root (`index.html`, `js/`, `css/`, `sw.js`, icons,
