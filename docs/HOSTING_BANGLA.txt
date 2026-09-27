@@ -1,10 +1,21 @@
 # Texpark Pro — permanent hosting (step by step)
 
-Ei repo-r **root ta-i pura app**. Kono build lagbe na, kono backend lagbe na.
-GitHub Pages e upload korle **jiboneo off hobe na** — ar sob cheye bhalo dike,
-Pages **nijei apnar site host kore**, alada kono account lagbe na.
+**Kaj shesh. Site ekhon live.** Ei link ta permanent — apnar PC bondho thakleo,
+ei sandbox muche geleo cholbe:
 
-Login: `admin` / `admin123`
+```
+https://appleziarash1.github.io/texpark-pro
+```
+
+Login: `admin` / `admin123` → login korar por **Settings → Change my password**
+theke bodle nin।
+
+APK download: `https://appleziarash1.github.io/texpark-pro/TexparkPro.apk`
+
+Ei repo-r **root ta-i pura app**. Kono build lagbe na, kono backend lagbe na.
+Erpor apni jakhon repo-te notun code push korben, **site nijei update hobe** —
+abar kichu drop korte hobe na. APK-r update check-o ei link-e ache, tai phone-e
+notun build nijei chole ashbe.
 
 Duita file:
 - repo root (`index.html`, `js/`, `css/`) = pura app (folder) — PWA/install kaj kore
@@ -13,19 +24,17 @@ Duita file:
 
 ---
 
-## Sob cheye bhalo: GitHub Pages (account lagbe na, alada kichu lagbe na)
+## GitHub Pages — already chalu (kichu korar nei)
 
-Apnar repo ta-i site. Root-e `index.html` ache, tai `/` khulei app chalu hoy.
+Eta ekbar hate chalu kora hoyeche (`Settings -> Pages -> Deploy from a branch ->
+main -> / (root)`), ar seta-i thik: repo root-e `index.html` ache, tai `/` khulei
+app chalu hoy.
 
-1. `https://github.com/appleziarash1/texpark-pro` khulun
-2. **Settings → Pages**
-3. Source: **Deploy from a branch**
-4. Branch: **main**, folder: **/ (root)** — Save
-5. 1-2 minute por link: `https://appleziarash1.github.io/texpark-pro`
+**Keno "Deploy from a branch", "GitHub Actions" na?** Karon apnar APK ta repo
+root theke file khuje pay — `index.html` ache kothay seta dekhe baki path gulo
+banay. Branch deploy root ta jemon ache temon-i dey, tai APK ar site kokhono
+alada hoy na.
 
-Bas. Erpor apni jakhon repo-te notun code push korben (ba GitHub-er website theke
-file edit korben), **site nijei update hobe** — abar kichu drop korte hobe na.
-APK-r update check-o ei link-e ache, tai phone-e notun build nijei chole ashbe.
 
 **Ekta kotha:** free plan-e Pages **public repo** te-i kaj kore. Repo public hole
 keu apnar code dekhte parbe — kintu **business data dekhte parbe na**. Data apnar
