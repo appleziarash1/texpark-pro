@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Builds Texpark Pro.apk (Android) from android-src/ + the web app in the repo root.
+"""Builds Texpark Pro.apk (Android) from android-src/.
 
-The web app is wrapped INSIDE the APK (assets/site), so the app opens with no
-internet, never shows a blank page because a host is down, and needs no setup
-address on first launch. The hosted site is only asked for a newer build, which
-MainActivity/AppInstaller downloads and swaps in for the next launch.
+The app is fully native: real Android views, a local database in the app's private
+folder, and no WebView. It needs no host at runtime, so it opens with no internet
+and needs no setup address on first launch. The hosted site is only asked whether a
+newer APK exists.
 
 Runs on JDK + Android SDK build-tools only, so there is no Gradle download.
 """
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -29,28 +30,26 @@ PLATFORM = os.path.join(SDK, 'platforms', 'android-34', 'android.jar')
 DEPLOY = ROOT
 
 
-def check_referenced_files(site):
-    """Every local href/src in index.html must exist in the wrapped app.
+def stamp_version_in_source(version):
+    """Writes the built version into MainActivity.APP_VERSION.
 
-    Catches the case apksigner cannot: a stylesheet or script that never made
-    it into the APK, which installs cleanly and shows a broken screen.
+    Written to a temp file and moved into place, so an interrupted build cannot
+    leave the source file truncated - the next build would then fail to compile
+    with a confusing error instead of simply rebuilding.
     """
-    import re
-    html = open(os.path.join(site, 'index.html'), encoding='utf-8').read()
-    refs = re.findall(r'(?:href|src)\s*=\s*"([^"]+)"', html)
-    missing = []
-    for ref in refs:
-        if ref.startswith(('http://', 'https://', 'data:', '#', 'mailto:')):
-            continue
-        ref = ref.split('?')[0].split('#')[0]
-        if not ref or ref in ('sw.js', 'manifest.webmanifest'):
-            continue  # the service worker is deliberately left out of the APK
-        if not os.path.isfile(os.path.join(site, ref)):
-            missing.append(ref)
-    if missing:
-        raise SystemExit('index.html asks for files the APK does not carry: '
-                         + ', '.join(sorted(set(missing))))
-    print('   every local file index.html asks for is wrapped (%d checked)' % len(refs))
+    target = os.path.join(SRC, 'com', 'texpark', 'pro', 'MainActivity.java')
+    with open(target, encoding='utf-8') as f:
+        text = f.read()
+    stamped = re.sub(r'APP_VERSION = "[^"]*"', 'APP_VERSION = "%s"' % version, text, count=1)
+    if stamped == text:
+        if 'APP_VERSION = "%s"' % version not in text:
+            raise SystemExit('could not find APP_VERSION in ' + target)
+        return
+    tmp = target + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.write(stamped)
+    os.replace(tmp, target)
+    print('   stamped APP_VERSION = %s' % version)
 
 
 def newest_build_tools(sdk):
@@ -147,50 +146,29 @@ def tint_png(src, dst, rgb):
 def main():
     if not os.path.isdir(BT):
         raise SystemExit('Missing Android build-tools at ' + BT)
-    if not os.path.isfile(os.path.join(DEPLOY, 'index.html')):
-        raise SystemExit('Missing web app in ' + DEPLOY + ' - run: node texpark-pro/build.js')
+    if not os.path.isfile(os.path.join(DEPLOY, 'version.txt')):
+        raise SystemExit('Missing ' + os.path.join(DEPLOY, 'version.txt')
+                         + ' - run: node texpark-pro/build.js')
     if os.path.exists(BUILD):
         shutil.rmtree(BUILD)
     for d in ['res', 'gen', 'obj', 'classes', 'dex', 'apk', 'assets']:
         os.makedirs(os.path.join(BUILD, d), exist_ok=True)
     res, gen, obj = (os.path.join(BUILD, d) for d in ('res', 'gen', 'obj'))
     assets = os.path.join(BUILD, 'assets')
+    # Nothing ships in assets now that the app is native, but aapt2 link is still
+    # given the folder. A marker keeps it from being an empty directory, which is
+    # the case aapt2 has historically mishandled.
+    with open(os.path.join(assets, 'README.txt'), 'w') as f:
+        f.write('Native app: no web assets are shipped in the APK.\n')
 
-    # ------------------------------------------------------------ the app itself
-    # Everything the WebView loads is copied under assets/site. version.txt is
-    # the stamp the APK's own bundled build is compared by, so it travels too.
-    site = os.path.join(assets, 'site')
-    os.makedirs(site, exist_ok=True)
-    for name in ['index.html', 'version.txt', 'sw.js',
-                 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'Code.gs']:
-        src = os.path.join(DEPLOY, name)
-        if os.path.isfile(src):
-            shutil.copy(src, os.path.join(site, name))
-        else:
-            print('   warn: deploy is missing ' + name)
-    for sub in ['js', 'css']:
-        s = os.path.join(DEPLOY, sub)
-        if not os.path.isdir(s):
-            continue
-        os.makedirs(os.path.join(site, sub), exist_ok=True)
-        for name in sorted(os.listdir(s)):
-            shutil.copy(os.path.join(s, name), os.path.join(site, sub, name))
-
-    # The service worker would try to cache the app out from under the update
-    # mechanism, and the in-app updater already covers offline. It stays in the
-    # hosted copy, not in the APK.
-    sw = os.path.join(site, 'sw.js')
-    if os.path.exists(sw):
-        os.remove(sw)
-
+    # ------------------------------------------------------------ the app stamp
+    # The native app takes its version from version.txt, which build.js writes.
+    # Stamping it into MainActivity here is what keeps Settings' "Version" and the
+    # update check from disagreeing with the release.
     with open(os.path.join(DEPLOY, 'version.txt')) as f:
         version = f.read().strip() or '0'
     print('== app version in APK: ' + version + ' ==')
-
-    # A file index.html asks for but the APK does not carry is the one defect
-    # that gets past apksigner: the app installs, opens, and is unstyled or
-    # dead in one screen the owner may not visit until it matters.
-    check_referenced_files(site)
+    stamp_version_in_source(version)
 
     # 2026-09-22.7 -> 2026092207. Android only compares the code, and a fixed
     # 1 would silently refuse every future APK as an update.
@@ -311,19 +289,18 @@ def main():
     # it installs cleanly and opens to a blank page.
     with zipfile.ZipFile(OUT) as z:
         names = z.namelist()
-        need = ['assets/site/index.html', 'assets/site/version.txt',
-                'assets/site/js/app.js',
-                'assets/site/js/db.js', 'assets/site/css/app.css', 'classes.dex']
-        missing = [n for n in need if n not in names]
-        if missing:
-            raise SystemExit('APK is missing: ' + ', '.join(missing))
-        bundled = z.read('assets/site/version.txt').decode('utf-8').strip()
-        if bundled != version:
-            raise SystemExit('APK holds %r but the deploy folder is %r' % (bundled, version))
-        appjs = z.read('assets/site/js/app.js').decode('utf-8')
-        if ("APP_VERSION = '" + version + "'") not in appjs:
-            raise SystemExit('bundled app.js does not claim version ' + version)
-    print('verified: app %s wrapped inside, dex present, %d files' % (version, len(names)))
+        # An APK with no dex installs and then does nothing, and apksigner is happy
+        # to sign it. This is the check that catches a packaging step going wrong.
+        if 'classes.dex' not in names:
+            raise SystemExit('APK has no classes.dex - it would install and not run')
+        # A release whose stamp is not what the version claims would compare against
+        # the wrong number forever, so the built version is looked for in the dex.
+        # Dex stores strings as modified UTF-8, which is ordinary UTF-8 for ASCII,
+        # so the version's bytes appear in the string table verbatim.
+        if version.encode('utf-8') not in z.read('classes.dex'):
+            raise SystemExit('APK does not carry version ' + version
+                             + ' - build-apk.py stamps MainActivity before compiling')
+    print('verified: version %s, dex present, %d files' % (version, len(names)))
     print('built', OUT, round(os.path.getsize(OUT) / 1024), 'KB')
 
 

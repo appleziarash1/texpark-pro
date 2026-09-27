@@ -4,12 +4,27 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Voice entry: recording audio for the mic, and speaking back -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-
-    <!-- Camera is optional: the app is still installable without it -->
+    <!-- Voice entry hands the microphone to the system recogniser, which owns the
+         recording: this app never records audio itself, so it does not declare
+         RECORD_AUDIO. A permission the app cannot use would only appear as a
+         scare on the store listing that the shop has to explain away. -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Speech recognition and text-to-speech are looked up rather than depended
+         on: a phone with neither still installs and runs, it just cannot take
+         voice input or read a reply back. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
 
     <application
         android:label="@string/app_name"

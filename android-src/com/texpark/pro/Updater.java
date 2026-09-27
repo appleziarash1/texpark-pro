@@ -195,6 +195,50 @@ public final class Updater {
     }
 
     /**
+     * Whether the host is offering an APK newer than the one installed.
+     *
+     * It asks for version.txt, the tiny stamp the release publishes, rather than
+     * the multi-megabyte APK: the check runs on every launch over a phone
+     * connection, and downloading an APK just to read a version would be absurd.
+     *
+     * A downloaded APK is never installed silently. Since Android 8 an app may not
+     * install an APK from its own process - only the system installer may, after
+     * the owner confirms - so a silent self-update would be a lie in the code. The
+     * owner is pointed at the file and installs it, and his data survives because
+     * it lives in the app's data folder, not in the APK.
+     *
+     * False on any failure (offline, a host that is down, a malformed stamp): a
+     * check that cannot reach the host must never be reported as "up to date".
+     */
+    public static boolean hasNewerRelease(String baseUrl, String currentVersion) {
+        String root = baseUrl == null ? "" : baseUrl.trim();
+        while (root.endsWith("/")) root = root.substring(0, root.length() - 1);
+        if (root.isEmpty()) return false;
+        java.net.HttpURLConnection c = null;
+        try {
+            c = (java.net.HttpURLConnection) new java.net.URL(root + "/version.txt").openConnection();
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setUseCaches(false);
+            c.setRequestProperty("Cache-Control", "no-cache");
+            if (c.getResponseCode() != 200) return false;
+            java.io.InputStream in = c.getInputStream();
+            String remote;
+            try {
+                remote = new String(readAll(in), "UTF-8").trim();
+            } finally {
+                in.close();
+            }
+            if (remote.isEmpty()) return false;
+            return compareVersions(remote, currentVersion) > 0;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    /**
      * Compares version strings by their numeric parts, so 2026-09-22.10 sorts
      * above 2026-09-22.9. A plain string compare gets that backwards, and the
      * phone would never take the tenth fix of a day.

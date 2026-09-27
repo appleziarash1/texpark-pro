@@ -200,24 +200,39 @@ the root `index.html` can be the app.
   two databases rather than as one.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
-- Current version: `2026-09-22.10` in both `sw.js` and `js/app.js` (bump both, then rebuild — the
-  e2e test fails if the two drift apart).
+- Current version: `2027-01-01.1` in `sw.js`, `js/app.js`, `version.txt` and
+  `MainActivity.java` (bump them together, then rebuild — the e2e test fails if the two js
+  files drift apart, and `ci/check-site.py` fails if the Java or the APK drifts too).
 
-## Android app (added 2026-09-22)
-`TexparkPro.apk` — a WebView **shell**, deliberately not a copy of the app. The owner types his
-Netlify address once; `MainActivity` stores it and loads it live, so **one edit on the host
-updates every installed phone** with no new APK. This is the user's explicit requirement.
+## Android app (rewritten natively 2026-09-29)
+`TexparkPro.apk` — a **fully native** app, not a WebView. The owner asked for a real Android
+app, and the WebView had a fatal flaw he reported himself: **a memo could not be printed**,
+because `window.print()` does nothing inside a WebView, and printing memos is the shop's main
+job. Native also brings the real keyboard, date picker, back button and voice recogniser.
 
-- Source: `android-src/` (`MainActivity.java`, `SiteUrl.java`, `AndroidManifest.xml`).
-  `MainActivity` uses only plain framework APIs — no AndroidX, so there is no dependency
-  resolution and no Gradle download.
-- Build: `ANDROID_HOME=/opt/android-sdk python3 build-apk.py` → `TexparkPro.apk` (21 KB),
+- Source: `android-src/com/texpark/pro/` — `MainActivity` (shell, top bar, sidebar, back,
+  updates, voice plumbing), `Screens`/`ScreensData`/`ScreensMore` (every screen), `Ui`
+  (widgets), `Store` (data + business rules), `Json`, `Sync` (Sheets backup/pull), `Voice`
+  (spoken-sentence parsing), `Updater`/`SiteUrl`. Plain framework APIs only — no AndroidX,
+  so there is no dependency resolution and no Gradle download.
+- Build: `ANDROID_HOME=/opt/android-sdk python3 build-apk.py` → `TexparkPro.apk` (~77 KB),
   signed with `android-keystore.jks`. **Keep that keystore** — a different one makes the new
   APK a different app, so it will not install over the old one.
-- `SiteUrl.normalise()` is deliberately Android-free so it can be compiled and tested on a
-  plain JVM; `test/android.test.js` runs the shipped class for real. There is no emulator here
-  (no `/dev/kvm`), so this is the honest limit of what can be verified locally. The APK itself
-  is verified with `apksigner verify` + `androguard`.
+- The version is stamped in three places by the build and checked by `ci/check-site.py`:
+  `build.js` writes `version.txt` from `js/app.js`, and `build-apk.py` rewrites
+  `MainActivity.APP_VERSION` from it before compiling. If they drift, the app offers the same
+  "update" on every launch.
+- `test/native.test.js` compiles the shipped `Json`, `Store` and `Voice` on a plain JVM and
+  runs the real classes against the real JS business rules (11 tests). **The voice tests earned
+  their keep immediately**: the first version read the `3` out of the product name "Kids 3pcs"
+  as the quantity and lost the spoken "5 piece", and matched no product at all. Matching is now
+  per-word with the product's own words stripped before the quantity is read, and a tie
+  between two products refuses to guess rather than silently moving the wrong stock.
+- There is no emulator here (no `/dev/kvm`), so the honest limit stands: the APK is verified
+  with `apksigner verify` + `aapt2 dump badging`, and the logic classes are tested on a JVM,
+  but no screen has been driven on a device. The self-update is a **download prompt**, not a
+  silent install: since Android 8 an app may not install an APK from its own process, and code
+  claiming otherwise would be a lie.
 - Two gotchas already hit, do not rediscover them:
   1. build-tools **34.0.0**'s `d8` crashes with an internal NPE on anonymous inner classes.
      `build-apk.py` auto-picks the newest installed build-tools (35.0.0 works).

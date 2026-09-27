@@ -104,35 +104,55 @@ Kintu ei kotha gulo mone rakhben:
 
 - **minSdk 21** (Android 5.0+) — purono phone-o cholbe.
 - **targetSdk 34** — notun Android-er niyom mane chole.
-- **Permissions:** Internet, Network state, Record audio (voice entry-r jonno).
+- **Permissions:** Internet, Network state. Mic-er permission app chay na —
+  voice entry mic ta **system-er voice recogniser** ke dey, se-i record kore.
   Camera optional — na thakleo app install hoy.
 - **Signed** — v1 + v2 + v3 signature soho, tai phone-e install hoy.
-- **Voice entry** kaj korbe: app mic-er permission nijei dey, ar
-  WebView-e `SpeechRecognition` support kore.
-- **Print** kaj korbe: `window.print()` WebView-e print dialog kholay —
-  sekhan theke **Save as PDF** o kora jay.
-- **Backup export** kaj korbe: file gulo Downloads-e jome.
+- **Voice entry** kaj korbe: `RecognizerIntent` (Bangla) diye kotha ney, ar
+  `TextToSpeech` diye uttor bole. Kono phone-e ei duita na thakle app tobuo
+  chole, sudhu voice ta kaj korbe na.
+- **Print** app theke hoy na, ar lage-o na — apni bolechen phone theke print
+  korte hobe na. Memo ta phone-i dekhanor jonno, ar PC theke print korte chan
+  to web app ta khulun.
+- **Backup export** kaj korbe: backup file app-er **nijer private folder**-e
+  jome (`getFilesDir()`), kono onno app eta porbe na.
+
+### App ta kemon bhabe banano
+
+Ei app ta **puro native** — WebView na. Prottek screen asol Android view
+(`TextView`, `EditText`, `ScrollView`) diye toiri. Er karone:
+
+- memo/stock/customer — sob **app-er nijer folder-ei** JSON database-e thake,
+  kono internet lage na, kono host down holeo app chole.
+- **Ekhane-i print kora jeto na** — WebView-e `window.print()` kichui kore na,
+  ar memo print kora dokan-er mukhyo kaj. Sei karone WebView ta bad diye app
+  ta native kora hoyeche (purono WebView shell-er kotha niche rakha hoyeche).
 
 ### APK-er bhitor ki bhore ache
 
-- `assets/site/` — puro app (index.html, css, js, icon)
-- `version.txt` — ei APK-e kono version ache (APK install-er somoy
-  phone-er purono copy-er sathe tulona ei file diye hoy)
+- `classes.dex` — puro native app-er code
+- `res/drawable/ic_launcher.png` — nijer icon
+- `version.txt` — alada file-e deploy folder-e thake (APK-er bhitor na);
+  phone eta host theke pore, ar er sathe nijer version milay
 
-Phone notun version khuje pay **`js/app.js`**-er bhitor theke — karon eta
-app-er nijer file, kono host er bhul page eta fake korte parbe na.
+Phone notun version khuje pay **`version.txt`** host theke — karon eta choto
+(APK-er 77 KB na), tai prottek launch-e check korte khub kom data lage.
 
 ### Nijer APK ta notun kore banate chan?
-
-Prothome deploy folder ta build korun, tarpor APK:
 
 ```
 node texpark-pro/build.js
 ANDROID_HOME=/path/to/android-sdk python3 build-apk.py
 ```
 
-`build-apk.py` web app ta repo root theke niye, `assets/site/` hishebe
-APK-er bhitor boshay, ar verify kore je sob file sotti bhitor-e ache.
+`build.js` age `version.txt` likhe, ar `build-apk.py` sei version ta
+`MainActivity.java`-er bhitor stamp kore — tarpor compile kore. Ei karone
+Settings-e ja version dekhi, ar update check-e ja mile, ek e hoy.
+
+`build-apk.py` verify kore je APK-e `classes.dex` ache ar version ta
+dex-er bhitor sotti ache — ekta khali APK install hoye khola-matra bondho
+hoye jeto, ar apksigner seta signature diye dito.
+
 `TexparkPro.apk` root-e toiri hoy, `android-keystore.jks` diye sign hoye.
 
 **Keystore file ta hariye fellen na** — ek-i keystore diye sign korle

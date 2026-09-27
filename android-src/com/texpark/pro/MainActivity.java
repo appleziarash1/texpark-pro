@@ -4,403 +4,432 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
-import android.text.InputType;
-import android.util.Log;
-import android.util.TypedValue;
+import android.speech.RecognizerIntent;
+import android.speech.tts.TextToSpeech;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
-import android.webkit.JavascriptInterface;
-import android.webkit.PermissionRequest;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
-import android.webkit.ValueCallback;
-import android.webkit.WebChromeClient;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.widget.EditText;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
-import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URLConnection;
-import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
- * Texpark Pro on Android.
+ * Texpark Pro - a fully native business app for TEXPARK BUYING HOUSE.
  *
- * The app itself is wrapped inside the APK, so it opens instantly, works with
- * no internet at all, and never shows a blank page because a host is down.
- * The hosted site has one job: offering a newer build, which is downloaded in
- * the background and used from the next launch onward.
+ * This replaced a WebView that wrapped the hosted site. The owner asked for a real
+ * Android app, and the honest reason the WebView was wrong is worth recording: a
+ * memo could not be printed on Android at all, because window.print() does nothing
+ * inside a WebView, and printing memos is the shop's main job. Native also gets the
+ * real keyboard, the real date picker, the real back button and the real voice
+ * recogniser, which is what a shop app needs.
  *
- * Files reach the WebView through {@link #shouldInterceptRequest} under a
- * made-up https origin rather than as file:// URLs. That detail is load-bearing:
- * a file:// page has an opaque origin where localStorage is blocked, and every
- * memo, stock card and setting lives in localStorage. The app would open, look
- * right, and forget everything when closed.
+ * Everything that decides money lives in {@link Store}, which has no Android
+ * imports and is tested on a plain JVM against the web app's own rules. This class
+ * is only the shell: top bar, sidebar, back handling, updates and voice.
  */
 public class MainActivity extends Activity {
 
-    private static final String TAG = "TexparkPro";
+    /** Shown in Settings. build-apk.py rewrites this line to the built version. */
+    public static final String APP_VERSION = "2027-01-01.1";
 
-    /** Not a real domain: requests for it are answered from the app's own folder. */
-    private static final String HOST = "app.texpark.local";
-    private static final String START_URL = "https://" + HOST + "/index.html";
+    private static final String PREFS = "texpark_pro_shell";
+    private static final String KEY_URL = "update_url";
 
-    private static final String PREFS = "texpark";
-    private static final String KEY_URL = "site_url";
-    /** Where newer builds come from. Changeable from the long-press Back menu. */
-    private static final String DEFAULT_UPDATE_URL = "https://appleziarash1.github.io/texpark-pro";
+    /** Where the released APK lives, so an old install can still find a new one. */
+    static final String DEFAULT_UPDATE_URL = "https://appleziarash1.github.io/texpark-pro";
 
-    private static final int REQ_FILE = 1001;
+    private Store store;
+    private Screens screens;
+    private LinearLayout navWrap;
+    private View dim;
+    private TextView badge;
+    private TextToSpeech tts;
+    private boolean ttsReady = false;
 
-    private WebView web;
-    private ValueCallback<Uri[]> fileCallback;
+    private static final int REQ_VOICE = 4001;
+
+    /* ------------------------------------------------------------ lifecycle */
 
     @Override
-    protected void onCreate(Bundle state) {
-        super.onCreate(state);
-        if (Build.VERSION.SDK_INT >= 21) {
-            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-            getWindow().setStatusBarColor(Color.parseColor("#12366b"));
-        }
-        AppInstaller.installBundledIfNeeded(this);
-        showApp();
-        checkForUpdateInBackground(false);
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        getWindow().setBackgroundDrawableResource(android.R.color.white);
+
+        store = new Store(getFilesDir());
+        store.load();
+        buildChrome();
+
+        screens = new Screens(this, store, contentHolder, badge, navWrap, dim);
+        setupTts();
+        screens.render();
+        checkForUpdateInBackground();
     }
 
-    // ------------------------------------------------------------------ webview
+    @Override
+    protected void onDestroy() {
+        if (tts != null) {
+            tts.stop();
+            tts.shutdown();
+        }
+        super.onDestroy();
+    }
 
-    private void showApp() {
-        web = new WebView(this);
-        web.setBackgroundColor(Color.WHITE);
-        WebSettings s = web.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setDatabaseEnabled(true);
-        s.setLoadWithOverviewMode(true);
-        s.setUseWideViewPort(true);
-        s.setBuiltInZoomControls(false);
-        s.setDisplayZoomControls(false);
-        s.setSupportZoom(false);
-        s.setMediaPlaybackRequiresUserGesture(false);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setAllowFileAccess(false);
-        s.setAllowContentAccess(false);
+    @Override
+    protected void onResume() {
+        super.onResume();
+        autoSyncQuietly();
+    }
 
-        web.addJavascriptInterface(new Bridge(), "AndroidBridge");
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // Rotating must not cost the owner a half-typed memo, so the draft is kept
+        // in Screens and the screen is simply redrawn from it.
+        if (screens != null) screens.render();
+    }
 
-        web.setWebViewClient(new WebViewClient() {
-            @Override
-            public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest req) {
-                return serveLocal(req.getUrl().getHost(), req.getUrl().getPath());
-            }
+    /* ------------------------------------------------------------ chrome */
 
-            @Override
-            @SuppressWarnings("deprecation")
-            public WebResourceResponse shouldInterceptRequest(WebView v, String url) {
-                Uri u = Uri.parse(url);
-                return serveLocal(u.getHost(), u.getPath());
-            }
+    private LinearLayout contentHolder;
 
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
-                return openOutside(r.getUrl());
-            }
+    private void buildChrome() {
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Ui.BG);
 
-            @Override
-            @SuppressWarnings("deprecation")
-            public boolean shouldOverrideUrlLoading(WebView v, String u) {
-                return openOutside(Uri.parse(u));
+        LinearLayout frame = new LinearLayout(this);
+        frame.setOrientation(LinearLayout.VERTICAL);
+        frame.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setBackgroundColor(Ui.NAVY);
+        int p = Ui.dp(this, 10);
+        bar.setPadding(p, p, p, p);
+
+        TextView menu = new TextView(this);
+        menu.setText("\u2630");
+        menu.setTextColor(Color.WHITE);
+        menu.setTextSize(22f);
+        menu.setPadding(0, 0, Ui.dp(this, 12), 0);
+        menu.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (screens != null) screens.openNav(!screens.navOpen);
             }
         });
+        bar.addView(menu);
 
-        web.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onPermissionRequest(final PermissionRequest request) {
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        request.grant(request.getResources());
-                    }
-                });
-            }
+        LinearLayout titles = Ui.col(this);
+        TextView title = new TextView(this);
+        title.setText("TEXPARK Pro");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(16f);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        badge = new TextView(this);
+        badge.setTextColor(0xFFB9C8DE);
+        badge.setTextSize(11f);
+        titles.addView(title);
+        titles.addView(badge);
+        titles.setLayoutParams(new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        bar.addView(titles);
 
-            /**
-             * Backup restore picks a .json off the phone through a file input.
-             * Without this the button quietly does nothing, which looks like
-             * the app refusing the owner's own backup.
-             */
-            @Override
-            public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb,
-                                             FileChooserParams params) {
-                fileCallback = cb;
-                try {
-                    Intent i = params.createIntent();
-                    i.addCategory(Intent.CATEGORY_OPENABLE);
-                    startActivityForResult(i, REQ_FILE);
-                    return true;
-                } catch (android.content.ActivityNotFoundException e) {
-                    fileCallback = null;
-                    return false;
-                }
-            }
+        TextView mic = new TextView(this);
+        mic.setText("\uD83C\uDFA4");
+        mic.setTextColor(Color.WHITE);
+        mic.setTextSize(20f);
+        mic.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { startVoice(); }
         });
+        bar.addView(mic);
 
-        web.loadUrl(START_URL);
-        setContentView(web);
+        frame.addView(bar);
+
+        contentHolder = Ui.col(this);
+        ScrollView shellScroll = new ScrollView(this);
+        shellScroll.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shellScroll.addView(contentHolder);
+        frame.addView(shellScroll);
+
+        navWrap = Ui.col(this);
+        navWrap.setBackgroundColor(0xFF0E2A52);
+        navWrap.setVisibility(View.GONE);
+        navWrap.setLayoutParams(new FrameLayout.LayoutParams(
+                Ui.dp(this, 262), ViewGroup.LayoutParams.MATCH_PARENT));
+
+        dim = new View(this);
+        dim.setBackgroundColor(0x99000000);
+        dim.setVisibility(View.GONE);
+        dim.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { if (screens != null) screens.openNav(false); }
+        });
+        dim.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        root.addView(frame);
+        root.addView(dim);
+        root.addView(navWrap);
+        setContentView(root);
     }
 
-    /**
-     * Answers the app's own requests from the folder on internal storage, so
-     * the page keeps a real https origin and localStorage behaves.
-     *
-     * No-store is deliberate: the only reason a file is asked for again is that
-     * a new build was installed, and a cached old one would hide it.
-     */
-    private WebResourceResponse serveLocal(String host, String path) {
-        if (host == null || !host.equals(HOST)) return null;
-        String rel = path == null ? "" : path;
-        while (rel.startsWith("/")) rel = rel.substring(1);
-        if (rel.isEmpty()) rel = "index.html";
-        if (rel.contains("..")) return null;
+    /* ------------------------------------------------------------ back */
 
-        File dir = AppInstaller.siteDir(this);
-        File f = new File(dir, rel);
-        if (!f.isFile()) {
-            // A path with no extension is a refresh of the single-page app, so
-            // it gets index.html. A path that names a real file (sw.js, a
-            // script, an icon) must 404 instead: handing back HTML under a
-            // .js name fails in a far more confusing way than "not found".
-            if (rel.contains(".")) return null;
-            f = new File(dir, "index.html");
-            if (!f.isFile()) return null;
+    @Override
+    public boolean onKeyDown(int code, KeyEvent event) {
+        if (code != KeyEvent.KEYCODE_BACK) return super.onKeyDown(code, event);
+        if (navWrap != null && navWrap.getVisibility() == View.VISIBLE) {
+            screens.openNav(false);
+            return true;
         }
-        try {
-            Map<String, String> headers = new HashMap<String, String>();
-            headers.put("Cache-Control", "no-store, no-cache, must-revalidate");
-            headers.put("Access-Control-Allow-Origin", "*");
-            InputStream in = new FileInputStream(f);
-            WebResourceResponse r = new WebResourceResponse(mimeOf(rel), "utf-8", in);
-            if (Build.VERSION.SDK_INT >= 21) r.setStatusCodeAndReasonPhrase(200, "OK");
-            r.setResponseHeaders(headers);
-            return r;
-        } catch (IOException e) {
-            Log.e(TAG, "could not serve " + rel, e);
-            return null;
+        if (screens != null && !"dashboard".equals(screens.page)) {
+            screens.go("dashboard");
+            return true;
         }
-    }
-
-    private static String mimeOf(String name) {
-        String n = name.toLowerCase();
-        if (n.endsWith(".html") || n.endsWith(".htm")) return "text/html";
-        if (n.endsWith(".js")) return "application/javascript";
-        if (n.endsWith(".css")) return "text/css";
-        if (n.endsWith(".json") || n.endsWith(".webmanifest")) return "application/manifest+json";
-        if (n.endsWith(".png")) return "image/png";
-        if (n.endsWith(".svg")) return "image/svg+xml";
-        if (n.endsWith(".txt")) return "text/plain";
-        String guess = URLConnection.guessContentTypeFromName(n);
-        return guess == null ? "application/octet-stream" : guess;
-    }
-
-    /** Keeps the app on its own pages; anything else opens in the real browser. */
-    private boolean openOutside(Uri uri) {
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme();
-        if (uri.getHost() != null && uri.getHost().equals(HOST)) return false;
-        if ("about".equals(scheme) || "blob".equals(scheme) || "data".equals(scheme)) return false;
-        try {
-            startActivity(new Intent(Intent.ACTION_VIEW, uri));
-        } catch (Exception e) {
-            Toast.makeText(this, "Ei link ta khola gelo na", Toast.LENGTH_SHORT).show();
-        }
+        // Back on the dashboard is the exit gesture, but it asks first: a stray
+        // press while a memo is open must not close the app.
+        new AlertDialog.Builder(this)
+            .setMessage("App ta bondho korben?")
+            .setPositiveButton("Hyan", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int w) { finish(); }
+            })
+            .setNegativeButton("Na", null)
+            .show();
         return true;
     }
 
-    // ------------------------------------------------------------------ updates
+    /* ------------------------------------------------------------ voice */
 
-    private String updateUrl() {
-        String u = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_URL, null);
-        return (u == null || u.isEmpty()) ? DEFAULT_UPDATE_URL : u;
+    private void setupTts() {
+        try {
+            tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
+                public void onInit(int status) {
+                    ttsReady = status == TextToSpeech.SUCCESS;
+                    if (!ttsReady) return;
+                    int r = tts.setLanguage(new Locale("bn", "BD"));
+                    if (r == TextToSpeech.LANG_MISSING_DATA
+                            || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        tts.setLanguage(Locale.US);   // still useful, just not Bangla
+                    }
+                }
+            });
+        } catch (Exception e) {
+            tts = null;                               // no engine: voice still types
+        }
     }
 
     /**
-     * Looks for a newer build off the main thread, because a slow or dead host
-     * must never delay the app opening. A landed update is only announced: the
-     * swap already happened on disk, and reloading under the owner mid-memo
-     * would be worse than waiting for the next launch.
+     * Voice entry.
+     *
+     * The recogniser is asked for Bangla, because a bn-BD phone returns Bangla
+     * script for "বিক্রি" while an English-set phone returns roman - and the shop's
+     * product names happen to be roman either way.
      */
-    private void checkForUpdateInBackground(final boolean tellTheUser) {
-        new Thread(new Runnable() {
-            public void run() {
-                final boolean updated = AppInstaller.downloadUpdate(MainActivity.this, updateUrl());
-                final String now = AppInstaller.installedVersion(MainActivity.this);
-                if (!tellTheUser && !updated) return;
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        String msg = updated
-                                ? "Notun version " + now + " neme neowa hoyeche.\nApp ta bondho kore abar khulun."
-                                : "Already latest (" + now + ").";
-                        Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
-                    }
-                });
-            }
-        }).start();
-    }
-
-    // ------------------------------------------------------------------ menu
-
-    /** Long-press Back is the whole control surface, so the app stays clean. */
-    @Override
-    public boolean onKeyLongPress(int code, KeyEvent event) {
-        if (code == KeyEvent.KEYCODE_BACK) {
-            showMenu();
-            return true;
-        }
-        return super.onKeyLongPress(code, event);
-    }
-
-    private void showMenu() {
-        final String version = AppInstaller.installedVersion(this);
-        String[] items = {
-                "Update chek korun",
-                "Update-er address bodlun",
-                "Built-in app-e ferot jan",
-        };
-        new AlertDialog.Builder(this)
-                .setTitle("Texpark Pro " + version)
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int which) {
-                        if (which == 0) checkForUpdateInBackground(true);
-                        else if (which == 1) askForUrl();
-                        else askReset();
-                    }
-                })
-                .setNegativeButton("Bondho korun", null)
-                .show();
-    }
-
-    private void askForUrl() {
-        final EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
-        input.setSingleLine(true);
-        input.setHint("https://appleziarash1.github.io/texpark-pro");
-        input.setText(updateUrl());
-
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(20);
-        box.setPadding(pad, pad / 2, pad, 0);
-        TextView help = new TextView(this);
-        help.setText("Ei address theke notun version ashe. "
-                + "App-er data kono somoy ekhane jay na - shudhu app-er file.");
-        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        hp.bottomMargin = dp(10);
-        help.setLayoutParams(hp);
-        box.addView(help);
-        box.addView(input);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Update-er address")
-                .setView(box)
-                .setPositiveButton("Save", new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int w) {
-                        String u = SiteUrl.normalise(input.getText().toString());
-                        if (u == null) {
-                            Toast.makeText(MainActivity.this, "Address ta thik noy.",
-                                    Toast.LENGTH_LONG).show();
-                            return;
-                        }
-                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                                .putString(KEY_URL, u).apply();
-                        Toast.makeText(MainActivity.this, "Save hoyeche", Toast.LENGTH_SHORT).show();
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    /** Throws away a downloaded update and reinstalls the copy inside the APK. */
-    private void askReset() {
-        new AlertDialog.Builder(this)
-                .setTitle("Built-in app-e ferot?")
-                .setMessage("Nemo neowa version ta muche fela hobe, "
-                        + "ar APK-er bhitorer version ta chalu hobe.\n\n"
-                        + "Apnar data (memo, stock, customer) muchbe na - sob thakbe.")
-                .setPositiveButton("Ferot jan", new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int w) {
-                        AppInstaller.resetToBundled(MainActivity.this);
-                        if (web != null) web.reload();
-                        Toast.makeText(MainActivity.this, "Built-in app chalu hoyeche",
-                                Toast.LENGTH_SHORT).show();
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    // ------------------------------------------------------------------ bridge
-
-    /** Lets the web app offer Share, and tells it which shell it runs in. */
-    private class Bridge {
-        @JavascriptInterface
-        public void share(final String text) {
-            runOnUiThread(new Runnable() {
-                public void run() {
-                    Intent i = new Intent(Intent.ACTION_SEND);
-                    i.setType("text/plain");
-                    i.putExtra(Intent.EXTRA_TEXT, text == null ? "" : text);
-                    startActivity(Intent.createChooser(i, "Share"));
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public String platform() {
-            return "android";
-        }
-
-        @JavascriptInterface
-        public String appVersion() {
-            return AppInstaller.installedVersion(MainActivity.this);
+    private void startVoice() {
+        if (store.session == null) { toast("Age login korun."); return; }
+        try {
+            Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "bn-BD");
+            i.putExtra(RecognizerIntent.EXTRA_PROMPT,
+                    "Boliye din \u2014 jemon: \"Kids 3pcs 5 piece\"");
+            startActivityForResult(i, REQ_VOICE);
+        } catch (Exception e) {
+            toast("Ei phone-e voice recognition nei. Google app install korun.");
         }
     }
 
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
-        if (req == REQ_FILE) {
-            if (fileCallback != null) {
-                fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data));
-                fileCallback = null;
-            }
+        if (req == REQ_VOICE) {
+            if (res != RESULT_OK || data == null) return;
+            List<String> heard = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+            if (heard == null || heard.isEmpty()) return;
+            handleVoice(heard.get(0));
             return;
         }
         super.onActivityResult(req, res, data);
     }
 
-    @Override
-    public boolean onKeyDown(int code, KeyEvent event) {
-        if (code == KeyEvent.KEYCODE_BACK && web != null && web.canGoBack()) {
-            web.goBack();
-            return true;
+    /**
+     * Acts on one spoken sentence: either a stock receipt or a memo line.
+     *
+     * A receipt is applied straight away - the owner said so and the quantity is
+     * the whole message. A sale only fills the memo form: a spoken sentence carries
+     * no price, and inventing one would put a wrong figure on a memo that has
+     * already gone to a customer. The reading itself lives in {@link Voice}, where
+     * it is tested off-device.
+     */
+    private void handleVoice(String text) {
+        Voice.Reading r = Voice.read(store, text);
+
+        if (r.product == null) {
+            say("Ei product ta chinlam na.");
+            toast("Product chinlam na. Products page-e nam ta din.");
+            return;
         }
-        return super.onKeyDown(code, event);
+        if (r.intent == Voice.Intent.UNKNOWN) {
+            say(r.productName + " — ashlo na bikri, seta bolun.");
+            toast("Bujhlam na. Bolun \"ashlo\" ba \"bikri\" shobdo diye.");
+            return;
+        }
+        if (r.qty <= 0) {
+            say(r.productName + " er poriman bolun.");
+            toast(r.productName + " pelam, kintu koto piece seta bolun.");
+            return;
+        }
+
+        if (r.intent == Voice.Intent.RECEIPT) {
+            String pid = Store.str(r.product, "id");
+            Map<String, Object> card = store.stockOf(pid);
+            card.put("opening", Double.valueOf(Store.num(card.get("opening")) + r.qty));
+            card.put("available", Double.valueOf(Store.stockAvailable(card)));
+            store.logStock(pid, "Opening", r.qty, "Voice", "Voice: " + r.heard);
+            store.commit();
+            say(r.productName + " " + Ui.qty(r.qty) + " piece stock-e jog holo.");
+            screens.render();
+            return;
+        }
+
+        screens.go("memo");
+        Screens.MemoDraft.Line line;
+        if (screens.draft.lines.size() == 1 && screens.draft.lines.get(0).productId.isEmpty()) {
+            line = screens.draft.lines.get(0);
+        } else {
+            line = new Screens.MemoDraft.Line();
+            screens.draft.lines.add(line);
+        }
+        line.productId = Store.str(r.product, "id");
+        line.qty = Ui.qty(r.qty);
+        line.rate = Ui.qty(r.product.get("rate"));
+        line.cost = Ui.qty(store.stockCost(Store.str(r.product, "id")));
+        screens.render();
+        say(r.productName + " " + Ui.qty(r.qty) + " piece memo-te dilam. Rate dekhe save korun.");
     }
 
-    private int dp(int v) {
-        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v,
-                getResources().getDisplayMetrics());
+    private void say(String text) {
+        if (!ttsReady || tts == null) return;
+        try {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+        } catch (Exception ignored) { }
+    }
+
+    void toast(String m) { Toast.makeText(this, m, Toast.LENGTH_LONG).show(); }
+
+    /* ------------------------------------------------------------ updates */
+
+    /** The address the owner keeps, editable in Settings so a moved site still works. */
+    String updateUrl() {
+        String u = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_URL, null);
+        return (u == null || u.isEmpty()) ? DEFAULT_UPDATE_URL : u;
+    }
+
+    void setUpdateUrl(String url) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_URL, url).apply();
+    }
+
+    /**
+     * Checks for a newer APK quietly on launch.
+     *
+     * Offline is the normal state of a shop phone, so a check that cannot reach the
+     * host says nothing at all rather than raising an error the owner would learn
+     * to dismiss.
+     */
+    private void checkForUpdateInBackground() {
+        final String url = updateUrl();
+        new Thread(new Runnable() {
+            public void run() {
+                if (!Updater.hasNewerRelease(url, APP_VERSION)) return;
+                runOnUiThread(new Runnable() {
+                    public void run() { offerDownloadOnly(url); }
+                });
+            }
+        }).start();
+    }
+
+    /** Points at the newer APK. See {@link Updater#hasNewerRelease} for why the
+     *  downloaded APK cannot be installed silently. */
+    private void offerDownloadOnly(final String url) {
+        new AlertDialog.Builder(this)
+            .setTitle("Notun version ache")
+            .setMessage("App-er notun version ber hoyeche. Download kore install korben?\n\n"
+                    + "Apnar data (memo, stock, customer) muchbe na \u2014 sob thakbe.")
+            .setPositiveButton("Download", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int w) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW,
+                                Uri.parse(trimSlash(url) + "/TexparkPro.apk")));
+                        toast("Download shesh hole file ta tap kore install korun.");
+                    } catch (Exception e) {
+                        toast("Browser khola gelo na.");
+                    }
+                }
+            })
+            .setNegativeButton("Pore", null)
+            .show();
+    }
+
+    private static String trimSlash(String s) {
+        String out = s == null ? "" : s.trim();
+        while (out.endsWith("/")) out = out.substring(0, out.length() - 1);
+        return out;
+    }
+
+    /* ------------------------------------------------------------ autosync */
+
+    /**
+     * Pushes this device's snapshot and merges the others, off the UI thread and
+     * without a toast. A phone is offline often; announcing every failure would
+     * teach the owner to ignore the one message that matters.
+     */
+    private void autoSyncQuietly() {
+        if (store.session == null) return;
+        if (Boolean.FALSE.equals(store.settings().get("autoPull"))) return;
+        final String url = Store.str(store.settings(), "syncUrl");
+        if (url.isEmpty()) return;
+        new Thread(new Runnable() {
+            public void run() { Sync.pullAll(store, url); }
+        }).start();
+    }
+
+    /* ------------------------------------------------------------ backup files */
+
+    /** Writes a backup into the app's private folder. Returns the path, or null. */
+    public static String writeBackup(Store store) {
+        File f = new File(store.dbDir(), "texpark-backup-" + Store.today() + ".json");
+        FileOutputStream out = null;
+        try {
+            out = new FileOutputStream(f);
+            out.write(Json.write(store.db).getBytes("UTF-8"));
+            out.flush();
+            return f.getAbsolutePath();
+        } catch (IOException e) {
+            return null;
+        } finally {
+            if (out != null) try { out.close(); } catch (IOException ignored) { }
+        }
+    }
+
+    public static List<Object> listSnapshots(Store store) { return store.listSnapshots(); }
+
+    public static String restoreSnapshot(Store store, int index) {
+        return store.restoreSnapshot(index);
     }
 }
