@@ -121,6 +121,17 @@ Android also memoizes the tag in `Store.tagCache`. Without that, a device whose 
 could not be written re-minted the tag on every call — changing memo numbers mid-session. The
 same applies to purchase numbers (`TXP/PO/...`). Tests cover the collision.
 
+### Edit `texpark-pro/`, then run `node texpark-pro/build.js`
+`texpark-pro/` is the source of the web app; the repo root is its **build output**
+(GitHub Pages serves the root, and the APK's update check derives paths from
+`index.html` there). Editing a file at the root looks like it works — the change
+is live immediately — but the next `node texpark-pro/build.js` copies the source
+over it and silently reverts the fix. That is exactly how the push-on-save fix
+came to exist at the root and not in the source. Never hand-edit root `js/*.js`,
+`sw.js` or `index.html`; the root copies are regenerated. `version.txt` is written
+by `build.js` from `js/app.js`, so bump `APP_VERSION` in `texpark-pro/js/app.js`
+and `texpark-pro/sw.js`, not `version.txt`.
+
 ### Cloud backup AND restore (sync used to be push-only)
 `js/sync.js` could only **push**; losing the PC or phone lost everything it had entered.
 Now:

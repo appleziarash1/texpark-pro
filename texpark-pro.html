@@ -1315,6 +1315,12 @@ function commit() {
   if (typeof renderAll === 'function') renderAll();
   // Anything saved since the last upload is worth pushing before the tab closes.
   if (typeof window !== 'undefined') window.cloudDirty = true;
+  // Upload now, not only when the tab closes. A browser cancels a request started
+  // from beforeunload, so "wait until he leaves the page" meant an edit made on the
+  // web app often never reached the sheet at all.
+  if (typeof scheduleCloudPush === 'function') scheduleCloudPush();
+  // Anything saved since the last upload is worth pushing before the tab closes.
+  if (typeof window !== 'undefined') window.cloudDirty = true;
   return true;
 }
 
@@ -1369,7 +1375,12 @@ function deviceTag() {
   try { t = localStorage.getItem(DEVICE_KEY) || ''; } catch (e) {}
   if (!t) {
     const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
-    t = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ? 'PH' : 'PC';
+    /* A bare 'PH'/'PC' is not unique: the Android app and this page on another
+       machine would both claim it, and the sheet holds one backup row per tag -
+       each would then overwrite the other's snapshot. Mint a suffix once and keep
+       it, so memo numbers stay stable for this install and no one else takes it. */
+    const base = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ? 'PH' : 'PC';
+    t = base + (id().slice(0, 4).toUpperCase());
     try { localStorage.setItem(DEVICE_KEY, t); } catch (e) {}
   }
   return t;
@@ -2412,6 +2423,32 @@ const AUTOSYNC_KEY = 'texpark_pro_autosync_at';
 const AUTOSYNC_MIN_MS = 8000;          // one pull at a time; opening pages in a row is common
 var autoSyncBusy = false;
 
+var cloudPushTimer = null;
+
+/* Saves come in bursts - a memo, then a stock top-up, then a correction - so the
+   upload waits for a short quiet period and sends one snapshot for all of them. */
+const CLOUD_PUSH_QUIET_MS = 2000;
+
+function scheduleCloudPush() {
+  if (!syncUrl()) return;
+  if (typeof session === 'undefined' || !session) return;
+  if (cloudPushTimer) clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(function () {
+    cloudPushTimer = null;
+    if (typeof window !== 'undefined') window.cloudDirty = false;
+    cloudBackupNow(true);
+  }, CLOUD_PUSH_QUIET_MS);
+}
+
+/* Send anything still waiting. Called when the tab is hidden, which is the last
+   reliable moment - unlike beforeunload, a hidden tab keeps running long enough
+   for the request to leave. */
+function flushCloudPush() {
+  if (cloudPushTimer) { clearTimeout(cloudPushTimer); cloudPushTimer = null; }
+  if (typeof window !== 'undefined') window.cloudDirty = false;
+  try { cloudBackupNow(true); } catch (e) { /* offline is normal */ }
+}
+
 function autosyncEnabled() {
   return !!syncUrl() && !(db && db.settings && db.settings.autoPull === false);
 }
@@ -2513,7 +2550,7 @@ async function pullAndMerge() {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.1';
+const APP_VERSION = '2027-01-01.2';
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
@@ -4226,9 +4263,16 @@ window.addEventListener('DOMContentLoaded', function () {
   // Coming back to the tab is when stale numbers are most likely to be believed,
   // so re-check the cloud then too - not only on a cold open.
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) cloudAutoSync('visible');
+    if (document.hidden) {
+      // Leaving the page is the last moment an unsent edit can go up. Hiding runs
+      // while the tab still gets to finish a request, unlike beforeunload, whose
+      // upload the browser cancels halfway.
+      if (cloudDirty) flushCloudPush();
+      return;
+    }
+    cloudAutoSync('visible');
   });
-  window.addEventListener('beforeunload', () => { if (cloudDirty) cloudBackupNow(true); });
+  window.addEventListener('pagehide', function () { if (cloudDirty) flushCloudPush(); });
 });
 
 const CLOUD_DAY_KEY = 'texpark_pro_cloud_backup_day';

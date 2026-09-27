@@ -355,6 +355,8 @@ function commit() {
   // from beforeunload, so "wait until he leaves the page" meant an edit made on the
   // web app often never reached the sheet at all.
   if (typeof scheduleCloudPush === 'function') scheduleCloudPush();
+  // Anything saved since the last upload is worth pushing before the tab closes.
+  if (typeof window !== 'undefined') window.cloudDirty = true;
   return true;
 }
 
@@ -408,11 +410,11 @@ function deviceTag() {
   let t = '';
   try { t = localStorage.getItem(DEVICE_KEY) || ''; } catch (e) {}
   if (!t) {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
     /* A bare 'PH'/'PC' is not unique: the Android app and this page on another
        machine would both claim it, and the sheet holds one backup row per tag -
        each would then overwrite the other's snapshot. Mint a suffix once and keep
        it, so memo numbers stay stable for this install and no one else takes it. */
-    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
     const base = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ? 'PH' : 'PC';
     t = base + (id().slice(0, 4).toUpperCase());
     try { localStorage.setItem(DEVICE_KEY, t); } catch (e) {}

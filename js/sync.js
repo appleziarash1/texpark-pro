@@ -184,6 +184,7 @@ function restoreFromJSONText(text, opts) {
 const AUTOSYNC_KEY = 'texpark_pro_autosync_at';
 const AUTOSYNC_MIN_MS = 8000;          // one pull at a time; opening pages in a row is common
 var autoSyncBusy = false;
+
 var cloudPushTimer = null;
 
 /* Saves come in bursts - a memo, then a stock top-up, then a correction - so the

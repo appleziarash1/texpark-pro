@@ -163,6 +163,36 @@ addMemo(ph, 'TXP/SM/1-PH001', 'Phone Customer', 3, 250);
   try { flaky.cloudAutoSync('test'); } catch (e) { crashed = true; }
   ok(!crashed, 'cloudAutoSync swallows an offline pull so the app keeps working');
 
+  /* ------------------------------ a save must reach the sheet by itself ------------------------------ */
+  console.log('\n--- a web edit is uploaded without waiting for the tab to close ---');
+  const web = makeDevice('PC', sheet);
+  web.db.settings.autoPull = false;          // no polling, so the only writer is the save
+  let posts = 0;
+  const webFetch = web.fetch;
+  web.fetch = function (url, opts) {
+    if (opts && opts.method === 'POST') posts++;
+    return webFetch.apply(null, arguments);
+  };
+  sheet.rows.PC = '';                        // forget what PC held
+  addMemo(web, 'TXP/SM/9-PC001', 'Web Customer', 2, 300);
+  /* commit() marks the upload due and schedules it; a browser would cancel a
+     request started from beforeunload, so waiting for the tab to close used to
+     lose the edit entirely. */
+  ok(web.cloudPushTimer, 'a save schedules an upload instead of waiting for the tab to close');
+  eq(web.window.cloudDirty, true, 'and it is remembered as unsent');
+  web.flushCloudPush();
+  await new Promise(r => setTimeout(r, 50));
+  eq(web.cloudDirty, false, 'the flush clears the unsent mark so it is not sent twice');
+  ok(posts >= 1, 'the flush pushed to the sheet');
+  ok(/TXP\/SM\/9-PC001/.test(sheet.rows.PC || ''), 'the sheet now holds the memo made on the web app');
+
+  /* ------------------------------ device tags are unique per install ------------------------------ */
+  console.log('\n--- two machines cannot claim one sheet row ---');
+  const a = makeDevice('', sheet), b = makeDevice('', sheet);
+  ok(a.deviceTag() !== b.deviceTag(),
+    'two installs get different tags, so neither overwrites the other: ' + a.deviceTag() + ' vs ' + b.deviceTag());
+  eq(a.deviceTag(), a.deviceTag(), 'a tag is minted once and kept, so memo numbers stay stable');
+
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
   console.log('=================');
