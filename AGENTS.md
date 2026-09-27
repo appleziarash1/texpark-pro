@@ -165,6 +165,15 @@ updates every installed phone** with no new APK. This is the user's explicit req
   long-press Back → change the stored address without losing data (data lives in WebView
   localStorage, not in the APK, so changing the address never wipes business data).
 - Guide: `ANDROID_BANGLA.txt`. Download page: `download.html` (APK button + explanation).
+- **Update discovery reads `js/app.js`, not `version.txt`.** The live host was configured with
+  Netlify's `/* /index.html 200` fallback, so every unknown path — including `version.txt` —
+  came back 200 full of HTML. The updater had no way to tell a real version from that page and
+  would sit on an old build forever. `Updater.versionIn()` pulls `APP_VERSION` out of
+  `js/app.js` (a file the app genuinely needs, so a fallback cannot fake it) and
+  `Updater.referencedFiles()` derives the file list from `index.html` itself. `version.txt`
+  survives only as the stamp the APK's own bundled build is compared by; `filelist.txt` is gone.
+  `make-hosting-zip.py` writes **no** `_redirects` so a missing file 404s instead of returning
+  a valid-looking page — a catch-all rewrite is the one host setting that breaks the updater.
 - A JDK is not part of this image and `apt` has no `openjdk-*` package. `test/android.test.js`
   needs `javac`/`java`, so on a fresh shell the 12 android tests report a **false failure** —
   it is a missing tool, not broken code. Fix: download Adoptium 17 and point `JAVA_HOME` at it

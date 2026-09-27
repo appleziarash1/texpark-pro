@@ -4,3 +4,7 @@ android-build/
 # APK signing key. Not source: it is the private key that makes Android treat a
 # new APK as an update of the installed one. Never commit or ship it.
 android-keystore.jks
+
+# APK signature side-file produced next to the APK by apksigner. The APK is
+# already signed; this only exists for `apksigner verify --v4` and is not shipped.
+*.idsig

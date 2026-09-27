@@ -1,138 +1,89 @@
 package com.texpark.pro;
 
 import android.app.Activity;
-import android.content.ActivityNotFoundException;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputType;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.KeyEvent;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.Window;
-import android.view.WindowManager;
-import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
-import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URLConnection;
+import java.util.HashMap;
+import java.util.Map;
+
 /**
- * A shell around the Texpark Pro web app.
+ * Texpark Pro on Android.
  *
- * It deliberately does not ship a copy of the app. The address of the hosted
- * site is stored once and the WebView loads it live, so a fix uploaded to the
- * host shows up here on the next launch without rebuilding or reinstalling.
+ * The app itself is wrapped inside the APK, so it opens instantly, works with
+ * no internet at all, and never shows a blank page because a host is down.
+ * The hosted site has one job: offering a newer build, which is downloaded in
+ * the background and used from the next launch onward.
+ *
+ * Files reach the WebView through {@link #shouldInterceptRequest} under a
+ * made-up https origin rather than as file:// URLs. That detail is load-bearing:
+ * a file:// page has an opaque origin where localStorage is blocked, and every
+ * memo, stock card and setting lives in localStorage. The app would open, look
+ * right, and forget everything when closed.
  */
 public class MainActivity extends Activity {
 
+    private static final String TAG = "TexparkPro";
+
+    /** Not a real domain: requests for it are answered from the app's own folder. */
+    private static final String HOST = "app.texpark.local";
+    private static final String START_URL = "https://" + HOST + "/index.html";
+
     private static final String PREFS = "texpark";
     private static final String KEY_URL = "site_url";
+    /** Where newer builds come from. Changeable from the long-press Back menu. */
+    private static final String DEFAULT_UPDATE_URL = "https://keen-rolypoly-3f9aa4.netlify.app";
+
     private static final int REQ_FILE = 1001;
 
     private WebView web;
-    private View setupView;
     private ValueCallback<Uri[]> fileCallback;
-    private boolean loadFailedShown;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         if (Build.VERSION.SDK_INT >= 21) {
-            Window w = getWindow();
-            w.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-            w.setStatusBarColor(Color.parseColor("#12366b"));
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+            getWindow().setStatusBarColor(Color.parseColor("#12366b"));
         }
-        String url = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_URL, null);
-        if (url == null || url.isEmpty()) {
-            showSetup();
-        } else {
-            showApp(url);
-        }
+        AppInstaller.installBundledIfNeeded(this);
+        showApp();
+        checkForUpdateInBackground(false);
     }
 
-    // ------------------------------------------------------------- setup UI
-    private void showSetup() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackgroundColor(Color.parseColor("#eef3f9"));
-        int pad = dp(28);
-        box.setPadding(pad, dp(56), pad, pad);
+    // ------------------------------------------------------------------ webview
 
-        TextView title = new TextView(this);
-        title.setText("Texpark Pro");
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
-        title.setTextColor(Color.parseColor("#12366b"));
-        title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
-        box.addView(title);
-
-        TextView help = new TextView(this);
-        help.setText(getString(R.string.enter_url)
-                + "\n\nEkbar bosalei hobe. Pore app nijei update hobe \u2014 notun APK lagbe na.");
-        help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        help.setTextColor(Color.parseColor("#4a5b73"));
-        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        hp.topMargin = dp(14);
-        help.setLayoutParams(hp);
-        box.addView(help);
-
-        final EditText input = new EditText(this);
-        input.setHint(R.string.url_hint);
-        input.setSingleLine(true);
-        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        input.setBackgroundColor(Color.WHITE);
-        input.setPadding(dp(14), dp(16), dp(14), dp(16));
-        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        ip.topMargin = dp(22);
-        input.setLayoutParams(ip);
-        box.addView(input);
-
-        Button go = new Button(this);
-        go.setText(R.string.start);
-        go.setAllCaps(false);
-        go.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        go.setBackgroundColor(Color.parseColor("#f22b70"));
-        go.setTextColor(Color.WHITE);
-        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
-        gp.topMargin = dp(18);
-        go.setLayoutParams(gp);
-        box.addView(go);
-
-        go.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                String u = SiteUrl.normalise(input.getText().toString());
-                if (u == null) {
-                    Toast.makeText(MainActivity.this, R.string.bad_url, Toast.LENGTH_LONG).show();
-                    return;
-                }
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                        .putString(KEY_URL, u).apply();
-                showApp(u);
-            }
-        });
-
-        setupView = box;
-        setContentView(box);
-    }
-
-    // --------------------------------------------------------------- webview
-    private void showApp(String url) {
+    private void showApp() {
         web = new WebView(this);
         web.setBackgroundColor(Color.WHITE);
         WebSettings s = web.getSettings();
@@ -145,43 +96,34 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setSupportZoom(false);
         s.setMediaPlaybackRequiresUserGesture(false);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        if (Build.VERSION.SDK_INT >= 21) {
-            CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
-        }
+        s.setAllowFileAccess(false);
+        s.setAllowContentAccess(false);
 
         web.addJavascriptInterface(new Bridge(), "AndroidBridge");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
+            public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest req) {
+                return serveLocal(req.getUrl().getHost(), req.getUrl().getPath());
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
+            public WebResourceResponse shouldInterceptRequest(WebView v, String url) {
+                Uri u = Uri.parse(url);
+                return serveLocal(u.getHost(), u.getPath());
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
-                return handleUrl(v, r.getUrl());
+                return openOutside(r.getUrl());
             }
 
             @Override
             @SuppressWarnings("deprecation")
             public boolean shouldOverrideUrlLoading(WebView v, String u) {
-                return handleUrl(v, Uri.parse(u));
-            }
-
-            @Override
-            public void onReceivedError(WebView v, WebResourceRequest req,
-                                        android.webkit.WebResourceError err) {
-                if (req.isForMainFrame()) showLoadFailed();
-            }
-
-            @Override
-            @SuppressWarnings("deprecation")
-            public void onReceivedError(WebView v, int code, String desc, String failingUrl) {
-                if (failingUrl != null && failingUrl.equals(v.getUrl())) showLoadFailed();
-            }
-
-            @Override
-            public void onReceivedHttpError(WebView v, WebResourceRequest req,
-                                            android.webkit.WebResourceResponse res) {
-                // A 404 on the main frame means the stored address is wrong.
-                if (req.isForMainFrame() && res.getStatusCode() >= 400) showLoadFailed();
+                return openOutside(Uri.parse(u));
             }
         });
 
@@ -195,6 +137,11 @@ public class MainActivity extends Activity {
                 });
             }
 
+            /**
+             * Backup restore picks a .json off the phone through a file input.
+             * Without this the button quietly does nothing, which looks like
+             * the app refusing the owner's own backup.
+             */
             @Override
             public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb,
                                              FileChooserParams params) {
@@ -204,67 +151,75 @@ public class MainActivity extends Activity {
                     i.addCategory(Intent.CATEGORY_OPENABLE);
                     startActivityForResult(i, REQ_FILE);
                     return true;
-                } catch (ActivityNotFoundException e) {
+                } catch (android.content.ActivityNotFoundException e) {
                     fileCallback = null;
                     return false;
                 }
             }
         });
 
-        web.loadUrl(url);
+        web.loadUrl(START_URL);
         setContentView(web);
-        setupView = null;
     }
 
     /**
-     * The stored address is wrong or the site is down. Without this the user
-     * would stare at a blank page with no way to fix or change the address.
+     * Answers the app's own requests from the folder on internal storage, so
+     * the page keeps a real https origin and localStorage behaves.
+     *
+     * No-store is deliberate: the only reason a file is asked for again is that
+     * a new build was installed, and a cached old one would hide it.
      */
-    private void showLoadFailed() {
-        if (loadFailedShown) return;
-        loadFailedShown = true;
-        runOnUiThread(new Runnable() {
-            public void run() {
-                final String bad = getSharedPreferences(PREFS, MODE_PRIVATE)
-                        .getString(KEY_URL, "");
-                android.app.AlertDialog.Builder b =
-                        new android.app.AlertDialog.Builder(MainActivity.this);
-                b.setTitle("Site ta khola gelo na");
-                b.setMessage("Address ta holo:\n" + bad
-                        + "\n\nInternet ache kina dekhen, ar address ta thik ache kina.\n"
-                        + "Address bodlate chaile 'Address bodlun' chepun.");
-                b.setCancelable(false);
-                b.setPositiveButton("Abar chesta korun", new android.content.DialogInterface.OnClickListener() {
-                    public void onClick(android.content.DialogInterface d, int w) {
-                        loadFailedShown = false;
-                        if (web != null) web.reload();
-                    }
-                });
-                b.setNeutralButton("Address bodlun", new android.content.DialogInterface.OnClickListener() {
-                    public void onClick(android.content.DialogInterface d, int w) {
-                        loadFailedShown = false;
-                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                                .remove(KEY_URL).apply();
-                        showSetup();
-                    }
-                });
-                b.show();
-            }
-        });
+    private WebResourceResponse serveLocal(String host, String path) {
+        if (host == null || !host.equals(HOST)) return null;
+        String rel = path == null ? "" : path;
+        while (rel.startsWith("/")) rel = rel.substring(1);
+        if (rel.isEmpty()) rel = "index.html";
+        if (rel.contains("..")) return null;
+
+        File dir = AppInstaller.siteDir(this);
+        File f = new File(dir, rel);
+        if (!f.isFile()) {
+            // A path with no extension is a refresh of the single-page app, so
+            // it gets index.html. A path that names a real file (sw.js, a
+            // script, an icon) must 404 instead: handing back HTML under a
+            // .js name fails in a far more confusing way than "not found".
+            if (rel.contains(".")) return null;
+            f = new File(dir, "index.html");
+            if (!f.isFile()) return null;
+        }
+        try {
+            Map<String, String> headers = new HashMap<String, String>();
+            headers.put("Cache-Control", "no-store, no-cache, must-revalidate");
+            headers.put("Access-Control-Allow-Origin", "*");
+            InputStream in = new FileInputStream(f);
+            WebResourceResponse r = new WebResourceResponse(mimeOf(rel), "utf-8", in);
+            if (Build.VERSION.SDK_INT >= 21) r.setStatusCodeAndReasonPhrase(200, "OK");
+            r.setResponseHeaders(headers);
+            return r;
+        } catch (IOException e) {
+            Log.e(TAG, "could not serve " + rel, e);
+            return null;
+        }
     }
 
-    /** Keeps the app inside its own site; sends everything else to the browser. */
-    private boolean handleUrl(WebView v, Uri uri) {
+    private static String mimeOf(String name) {
+        String n = name.toLowerCase();
+        if (n.endsWith(".html") || n.endsWith(".htm")) return "text/html";
+        if (n.endsWith(".js")) return "application/javascript";
+        if (n.endsWith(".css")) return "text/css";
+        if (n.endsWith(".json") || n.endsWith(".webmanifest")) return "application/manifest+json";
+        if (n.endsWith(".png")) return "image/png";
+        if (n.endsWith(".svg")) return "image/svg+xml";
+        if (n.endsWith(".txt")) return "text/plain";
+        String guess = URLConnection.guessContentTypeFromName(n);
+        return guess == null ? "application/octet-stream" : guess;
+    }
+
+    /** Keeps the app on its own pages; anything else opens in the real browser. */
+    private boolean openOutside(Uri uri) {
         String scheme = uri.getScheme() == null ? "" : uri.getScheme();
-        String here = v.getUrl() == null ? "" : v.getUrl();
-        String hereHost = Uri.parse(here).getHost();
-        if (hereHost == null) hereHost = "";
-
-        boolean internal = "about".equals(scheme) || "blob".equals(scheme)
-                || "data".equals(scheme)
-                || (uri.getHost() != null && uri.getHost().equals(hereHost));
-        if (internal) return false;
-
+        if (uri.getHost() != null && uri.getHost().equals(HOST)) return false;
+        if ("about".equals(scheme) || "blob".equals(scheme) || "data".equals(scheme)) return false;
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, uri));
         } catch (Exception e) {
@@ -273,7 +228,131 @@ public class MainActivity extends Activity {
         return true;
     }
 
-    // ------------------------------------------------------------------- bridge
+    // ------------------------------------------------------------------ updates
+
+    private String updateUrl() {
+        String u = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_URL, null);
+        return (u == null || u.isEmpty()) ? DEFAULT_UPDATE_URL : u;
+    }
+
+    /**
+     * Looks for a newer build off the main thread, because a slow or dead host
+     * must never delay the app opening. A landed update is only announced: the
+     * swap already happened on disk, and reloading under the owner mid-memo
+     * would be worse than waiting for the next launch.
+     */
+    private void checkForUpdateInBackground(final boolean tellTheUser) {
+        new Thread(new Runnable() {
+            public void run() {
+                final boolean updated = AppInstaller.downloadUpdate(MainActivity.this, updateUrl());
+                final String now = AppInstaller.installedVersion(MainActivity.this);
+                if (!tellTheUser && !updated) return;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        String msg = updated
+                                ? "Notun version " + now + " neme neowa hoyeche.\nApp ta bondho kore abar khulun."
+                                : "Already latest (" + now + ").";
+                        Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    // ------------------------------------------------------------------ menu
+
+    /** Long-press Back is the whole control surface, so the app stays clean. */
+    @Override
+    public boolean onKeyLongPress(int code, KeyEvent event) {
+        if (code == KeyEvent.KEYCODE_BACK) {
+            showMenu();
+            return true;
+        }
+        return super.onKeyLongPress(code, event);
+    }
+
+    private void showMenu() {
+        final String version = AppInstaller.installedVersion(this);
+        String[] items = {
+                "Update chek korun",
+                "Update-er address bodlun",
+                "Built-in app-e ferot jan",
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Texpark Pro " + version)
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        if (which == 0) checkForUpdateInBackground(true);
+                        else if (which == 1) askForUrl();
+                        else askReset();
+                    }
+                })
+                .setNegativeButton("Bondho korun", null)
+                .show();
+    }
+
+    private void askForUrl() {
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
+        input.setSingleLine(true);
+        input.setHint("https://apnar-site.netlify.app");
+        input.setText(updateUrl());
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        box.setPadding(pad, pad / 2, pad, 0);
+        TextView help = new TextView(this);
+        help.setText("Ei address theke notun version ashe. "
+                + "App-er data kono somoy ekhane jay na - shudhu app-er file.");
+        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        hp.bottomMargin = dp(10);
+        help.setLayoutParams(hp);
+        box.addView(help);
+        box.addView(input);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Update-er address")
+                .setView(box)
+                .setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        String u = SiteUrl.normalise(input.getText().toString());
+                        if (u == null) {
+                            Toast.makeText(MainActivity.this, "Address ta thik noy.",
+                                    Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                .putString(KEY_URL, u).apply();
+                        Toast.makeText(MainActivity.this, "Save hoyeche", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Throws away a downloaded update and reinstalls the copy inside the APK. */
+    private void askReset() {
+        new AlertDialog.Builder(this)
+                .setTitle("Built-in app-e ferot?")
+                .setMessage("Nemo neowa version ta muche fela hobe, "
+                        + "ar APK-er bhitorer version ta chalu hobe.\n\n"
+                        + "Apnar data (memo, stock, customer) muchbe na - sob thakbe.")
+                .setPositiveButton("Ferot jan", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        AppInstaller.resetToBundled(MainActivity.this);
+                        if (web != null) web.reload();
+                        Toast.makeText(MainActivity.this, "Built-in app chalu hoyeche",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    // ------------------------------------------------------------------ bridge
+
     /** Lets the web app offer Share, and tells it which shell it runs in. */
     private class Bridge {
         @JavascriptInterface
@@ -292,14 +371,18 @@ public class MainActivity extends Activity {
         public String platform() {
             return "android";
         }
+
+        @JavascriptInterface
+        public String appVersion() {
+            return AppInstaller.installedVersion(MainActivity.this);
+        }
     }
 
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         if (req == REQ_FILE) {
             if (fileCallback != null) {
-                fileCallback.onReceiveValue(
-                        WebChromeClient.FileChooserParams.parseResult(res, data));
+                fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data));
                 fileCallback = null;
             }
             return;
@@ -309,30 +392,11 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int code, KeyEvent event) {
-        if (code == KeyEvent.KEYCODE_BACK && setupView == null && web != null) {
-            if (web.canGoBack()) {
-                web.goBack();
-                return true;
-            }
-            // Back on the first page: give a way out rather than quitting.
-            if (event.getRepeatCount() == 0) {
-                Toast.makeText(this, "Abar chepe ber hobo \u00b7 chhere dhore address bodlun",
-                        Toast.LENGTH_SHORT).show();
-                return true;
-            }
-        }
-        return super.onKeyDown(code, event);
-    }
-
-    /** Long-pressing Back lets the owner point the app at a different address. */
-    @Override
-    public boolean onKeyLongPress(int code, KeyEvent event) {
-        if (code == KeyEvent.KEYCODE_BACK && setupView == null) {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_URL).apply();
-            showSetup();
+        if (code == KeyEvent.KEYCODE_BACK && web != null && web.canGoBack()) {
+            web.goBack();
             return true;
         }
-        return super.onKeyLongPress(code, event);
+        return super.onKeyDown(code, event);
     }
 
     private int dp(int v) {

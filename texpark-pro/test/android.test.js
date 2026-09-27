@@ -126,3 +126,272 @@ test('android: null is refused', () => {
   const out = execFileSync(JAVA, ['-cp', OUT, 'NullProbe'], { encoding: 'utf8' });
   assert.strictEqual(out, '<<null>>');
 });
+
+/* ---------------------------------------------------------------- updater
+ *
+ * The pieces that decide whether a phone takes a new build at all. A wrong
+ * answer here is invisible: the phone keeps running the version with the bug
+ * the owner already reported, and nothing on screen says why. Updater is free
+ * of Android imports precisely so the real class can be exercised like this.
+ */
+const UPDATER_SRC = path.join(ROOT, 'android-src', 'com', 'texpark', 'pro', 'Updater.java');
+
+test('android: Updater compiles without any Android import', () => {
+  const src = fs.readFileSync(UPDATER_SRC, 'utf8');
+  assert.ok(!src.includes('import android.'), 'Updater must stay testable off-device');
+  execFileSync(JAVAC, ['-nowarn', '-d', OUT, UPDATER_SRC], { stdio: 'pipe' });
+  assert.ok(fs.existsSync(path.join(OUT, 'com', 'texpark', 'pro', 'Updater.class')));
+});
+
+// Drives the real Updater with a fake network and a real temp folder.
+function updaterProbe(body) {
+  const script = `
+    import com.texpark.pro.Updater;
+    import java.io.File;
+    import java.nio.file.Files;
+    import java.util.*;
+
+    public class UpProbe {
+      ${body}
+    }
+  `;
+  const p = path.join(OUT, 'UpProbe.java');
+  fs.writeFileSync(p, script);
+  execFileSync(JAVAC, ['-nowarn', '-cp', OUT, '-d', OUT, p], { stdio: 'pipe' });
+  return execFileSync(JAVA, ['-cp', OUT, 'UpProbe', OUT], { encoding: 'utf8' });
+}
+
+test('android: a newer version wins and an older one is refused', () => {
+  const out = updaterProbe(`
+    public static void main(String[] a) {
+      System.out.print(
+        (Updater.compareVersions("2026-09-22.7", "2026-09-22.6") > 0) + "," +
+        (Updater.compareVersions("2026-09-22.6", "2026-09-22.7") < 0) + "," +
+        (Updater.compareVersions("2026-09-22.6", "2026-09-22.6") == 0));
+    }`);
+  assert.strictEqual(out, 'true,true,true');
+});
+
+test('android: the tenth fix of a day is newer than the ninth', () => {
+  // The bug this guards: string order puts .10 before .9, so the phone would
+  // refuse the tenth fix forever and silently.
+  const out = updaterProbe(`
+    public static void main(String[] a) {
+      System.out.print(Updater.compareVersions("2026-09-22.10", "2026-09-22.9") > 0);
+    }`);
+  assert.strictEqual(out, 'true');
+});
+
+test('android: a fresh install takes the bundled build', () => {
+  const out = updaterProbe(`
+    public static void main(String[] a) {
+      System.out.print(Updater.shouldInstallBundled("2026-09-22.7", "") + "," +
+        Updater.shouldInstallBundled("2026-09-22.7", "2026-09-22.7") + "," +
+        Updater.shouldInstallBundled("2026-09-22.6", "2026-09-22.7"));
+    }`);
+  assert.strictEqual(out, 'true,false,false');
+});
+
+test('android: an update installs every file, and the app opens from the new build', () => {
+  const out = updaterProbe(`
+    public static void main(String[] a) throws Exception {
+      File dest = new File(a[0], "site1");
+      new File(dest, "js").mkdirs();
+      Files.write(new File(dest, "js/app.js").toPath(),
+        "old\\nconst APP_VERSION = '2026-09-22.6';\\n".getBytes("UTF-8"));
+      Files.write(new File(dest, "index.html").toPath(), "old".getBytes("UTF-8"));
+
+      final Map<String, byte[]> remote = new HashMap<String, byte[]>();
+      remote.put("index.html", ("<html><head>\\n"
+        + "<link rel=\\"stylesheet\\" href=\\"css/app.css\\">\\n"
+        + "<script src=\\"js/app.js\\"></script>\\n"
+        + "</head><body></body></html>").getBytes("UTF-8"));
+      remote.put("css/app.css", "body{color:red}".getBytes("UTF-8"));
+      remote.put("js/app.js", "new\\nconst APP_VERSION = '2026-09-22.7';\\n".getBytes("UTF-8"));
+
+      boolean ok = Updater.applyUpdate(dest, "2026-09-22.6", new Updater.Fetcher() {
+        public byte[] get(String p) { return remote.get(p); }
+      });
+      System.out.print(ok + "," +
+        new File(dest, "css/app.css").isFile() + "," +
+        new File(dest, "js/app.js").isFile() + "," +
+        new String(Files.readAllBytes(new File(dest, "index.html").toPath()), "UTF-8").startsWith("<html") + "," +
+        new File(a[0], "site1.old").exists() + "," +
+        new File(a[0], "site1.new").exists());
+    }`);
+  assert.strictEqual(out, 'true,true,true,true,false,false');
+});
+
+test('android: the version comes from app.js, not from a file a host could fake', () => {
+  const out = updaterProbe(`
+    public static void main(String[] a) {
+      System.out.print(Updater.versionIn("const APP_VERSION = '2026-09-22.10';\\n")
+        + "," + Updater.versionIn("no version here")
+        + "," + Updater.versionIn(null));
+    }`);
+  assert.strictEqual(out, '2026-09-22.10,,');
+});
+
+test('android: the file list is read out of the the app markup', () => {
+  const out = updaterProbe(`
+    public static void main(String[] a) {
+      String html = "<link rel=\\"stylesheet\\" href=\\"css/app.css\\">"
+        + "<script src=\\"js/db.js\\"></script>"
+        + "<script src=\\"js/app.js\\"></script>"
+        + "<img src=\\"icon-192.png?v=3\\">"
+        + "<a href=\\"#/settings\\">x</a>"
+        + "<a href=\\"https://example.com/x.js\\">y</a>"
+        + "<a href=\\"mailto:md@example.com\\">z</a>";
+      System.out.print(Updater.referencedFiles(html).toString());
+    }`);
+  assert.strictEqual(out, '[css/app.css, js/db.js, js/app.js, icon-192.png]');
+});
+
+test('android: a half-uploaded build is thrown away, never half-applied', () => {
+  // One file missing on the host is exactly what a deploy in progress looks
+  // like. Installing what did arrive would leave the app a mix of two versions.
+  const out = updaterProbe(`
+    public static void main(String[] a) throws Exception {
+      File dest = new File(a[0], "site2");
+      new File(dest, "js").mkdirs();
+      Files.write(new File(dest, "js/app.js").toPath(),
+        "old\\nconst APP_VERSION = '2026-09-22.6';\\n".getBytes("UTF-8"));
+      Files.write(new File(dest, "index.html").toPath(), "old".getBytes("UTF-8"));
+
+      final Map<String, byte[]> remote = new HashMap<String, byte[]>();
+      remote.put("index.html", ("<html><head><script src=\\"js/app.js\\"></script>"
+        + "<link href=\\"css/app.css\\"></head></html>").getBytes("UTF-8"));
+      remote.put("css/app.css", "body{}".getBytes("UTF-8"));
+      // js/app.js is deliberately absent, so the build can never be complete
+
+      boolean ok = Updater.applyUpdate(dest, "2026-09-22.6", new Updater.Fetcher() {
+        public byte[] get(String p) { return remote.get(p); }
+      });
+      System.out.print(ok + "," +
+        new String(Files.readAllBytes(new File(dest, "index.html").toPath()), "UTF-8") + "," +
+        new File(a[0], "site2.new").exists());
+    }`);
+  assert.strictEqual(out, 'false,old,false');
+});
+
+test('android: markup saved under a .js name is refused', () => {
+  // The host answering a missing script with the app page is the failure that
+  // survives the whole download: the phone would install a build whose script
+  // is a page of HTML and break on open.
+  const out = updaterProbe(`
+    public static void main(String[] a) throws Exception {
+      File dest = new File(a[0], "site3");
+      dest.mkdirs();
+      Files.write(new File(dest, "index.html").toPath(), "old".getBytes("UTF-8"));
+      final Map<String, byte[]> remote = new HashMap<String, byte[]>();
+      remote.put("index.html", "<html><head><script src=\\"js/app.js\\"></script></head></html>"
+        .getBytes("UTF-8"));
+      remote.put("js/app.js", "<!doctype html><html>the app page</html>".getBytes("UTF-8"));
+      System.out.print(Updater.applyUpdate(dest, "2026-09-22.6", new Updater.Fetcher() {
+        public byte[] get(String p) { return remote.get(p); }
+      }) + "," + new String(Files.readAllBytes(
+        new File(dest, "index.html").toPath()), "UTF-8"));
+    }`);
+  assert.strictEqual(out, 'false,old');
+});
+
+test('android: a dead host leaves the phone on the build it has', () => {
+  const out = updaterProbe(`
+    public static void main(String[] a) throws Exception {
+      File dest = new File(a[0], "site4");
+      new File(dest, "js").mkdirs();
+      Files.write(new File(dest, "js/app.js").toPath(),
+        "const APP_VERSION = '2026-09-22.7';\\n".getBytes("UTF-8"));
+      boolean ok = Updater.applyUpdate(dest, "2026-09-22.7", new Updater.Fetcher() {
+        public byte[] get(String p) { return null; }
+      });
+      System.out.print(ok + "," + Updater.versionIn(new String(Files.readAllBytes(
+        new File(dest, "js/app.js").toPath()), "UTF-8")));
+    }`);
+  assert.strictEqual(out, 'false,2026-09-22.7');
+});
+
+test('android: a path in the markup cannot escape the app folder', () => {
+  // The markup is fetched from the network; a ../../ href in it must not be
+  // able to make the updater read or write outside the app's own directory.
+  const out = updaterProbe(`
+    public static void main(String[] a) {
+      System.out.print(Updater.referencedFiles(
+        "<script src=\\"../../evil.js\\"></script>"
+        + "<script src=\\"/etc/passwd\\"></script>"
+        + "<script src=\\"js/app.js\\"></script>").toString());
+    }`);
+  assert.strictEqual(out, '[js/app.js]');
+});
+
+test('android: a blank version on the host is not an update', () => {
+  // A host answering with an empty script (a broken deploy, a captive portal
+  // login page) must not be treated as a newer build.
+  const out = updaterProbe(`
+    public static void main(String[] a) throws Exception {
+      File dest = new File(a[0], "site5");
+      dest.mkdirs();
+      Files.write(new File(dest, "index.html").toPath(), "old".getBytes("UTF-8"));
+      final Map<String, byte[]> remote = new HashMap<String, byte[]>();
+      remote.put("index.html", "<html><script src=\\"js/app.js\\"></script></html>".getBytes("UTF-8"));
+      remote.put("js/app.js", "   \\n".getBytes("UTF-8"));
+      boolean ok = Updater.applyUpdate(dest, "2026-09-22.7", new Updater.Fetcher() {
+        public byte[] get(String p) { return remote.get(p); }
+      });
+      System.out.print(ok + "," + new String(Files.readAllBytes(
+        new File(dest, "index.html").toPath()), "UTF-8"));
+    }`);
+  assert.strictEqual(out, 'false,old');
+});
+
+test('android: a fallback page in place of the app script is refused', () => {
+  // The host answering for js/app.js with the app page is the case that would
+  // otherwise decide the phone is up to date forever: the page is not a
+  // version, so nothing ever compares as newer and the fix never arrives.
+  const out = updaterProbe(`
+    public static void main(String[] a) throws Exception {
+      File dest = new File(a[0], "site6");
+      dest.mkdirs();
+      Files.write(new File(dest, "index.html").toPath(), "old".getBytes("UTF-8"));
+      final Map<String, byte[]> remote = new HashMap<String, byte[]>();
+      remote.put("js/app.js", ("<!doctype html><html>"
+        + "<script src=\\"js/app.js\\"></script>the app page</html>").getBytes("UTF-8"));
+      remote.put("index.html", "<html><script src=\\"js/app.js\\"></script></html>".getBytes("UTF-8"));
+      boolean ok = Updater.applyUpdate(dest, "2026-09-22.7", new Updater.Fetcher() {
+        public byte[] get(String p) { return remote.get(p); }
+      });
+      System.out.print(ok + "," + new String(Files.readAllBytes(
+        new File(dest, "index.html").toPath()), "UTF-8"));
+    }`);
+  assert.strictEqual(out, 'false,old');
+});
+
+test('android: markup with no app script is not the app', () => {
+  // If the fallback page ever loses the script tag, the file list it yields
+  // would be missing a file the app needs. Such markup is refused outright.
+  const out = updaterProbe(`
+    public static void main(String[] a) throws Exception {
+      File dest = new File(a[0], "site7");
+      dest.mkdirs();
+      Files.write(new File(dest, "index.html").toPath(), "old".getBytes("UTF-8"));
+      final Map<String, byte[]> remote = new HashMap<String, byte[]>();
+      remote.put("js/app.js", "const APP_VERSION = '2026-09-22.8';\\n".getBytes("UTF-8"));
+      remote.put("index.html", "<html><body><a href=\\"#x\\">link</a></body></html>".getBytes("UTF-8"));
+      boolean ok = Updater.applyUpdate(dest, "2026-09-22.7", new Updater.Fetcher() {
+        public byte[] get(String p) { return remote.get(p); }
+      });
+      System.out.print(ok + "," + new String(Files.readAllBytes(
+        new File(dest, "index.html").toPath()), "UTF-8"));
+    }`);
+  assert.strictEqual(out, 'false,old');
+});
+
+test('android: a real script and real markup are accepted', () => {
+  const out = updaterProbe(`
+    public static void main(String[] a) throws Exception {
+      System.out.print(Updater.looksLikeBuildFile("body{color:red}".getBytes("UTF-8"))
+        + "," + Updater.looksLikeBuildFile("".getBytes("UTF-8"))
+        + "," + Updater.versionIn("const APP_VERSION = '2026-09-22.7';\\n"));
+    }`);
+  assert.strictEqual(out, 'true,false,2026-09-22.7');
+});

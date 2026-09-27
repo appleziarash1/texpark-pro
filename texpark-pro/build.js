@@ -34,6 +34,18 @@ for (const f of ['db.js', 'voice.js', 'sync.js', 'app.js']) {
 }
 fs.copyFileSync(path.join(root, 'css', 'app.css'), path.join(outDir, 'css', 'app.css'));
 
+/* ---- 1a. build stamp for the APK's bundled-install check ---- */
+/* The APK carries its build inside assets/site, and version.txt is the stamp it
+   compares against the build already unpacked on the phone, so a fresh APK can
+   replace a stale download. The phone's *update* check reads the version out of
+   js/app.js instead, because that is a file the app truly needs and which no
+   host fallback can fake. */
+const APP_VERSION = (read('js/app.js').match(/APP_VERSION = '([^']+)'/) || [])[1]
+  || (html.match(/APP_VERSION = '([^']+)'/) || [])[1];
+if (!APP_VERSION) { console.error('could not find APP_VERSION'); process.exit(1); }
+fs.writeFileSync(path.join(outDir, 'version.txt'), APP_VERSION + '\n');
+console.log('wrote version.txt (' + APP_VERSION + ')');
+
 /* ---- 1b. the APK goes into the deployed site ---- */
 /* Hosting the APK is what gives it a link that outlives this sandbox: the
    owner can re-download it from <site>/TexparkPro.apk on any later phone.
