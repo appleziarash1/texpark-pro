@@ -260,10 +260,15 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   `make-hosting-zip.py` writes **no** `_redirects` so a missing file 404s instead of returning
   a valid-looking page — a catch-all rewrite is the one host setting that breaks the updater.
 - A JDK is not part of this image and `apt` has no `openjdk-*` package. `test/android.test.js`
-  needs `javac`/`java`, so on a fresh shell the 12 android tests report a **false failure** —
-  it is a missing tool, not broken code. Fix: download Adoptium 17 and point `JAVA_HOME` at it
-  (`JAVAC`/`JAVA` also work), then run `JAVA_HOME=/tmp/jdk-17.0.20.1+1 node --test test/android.test.js`.
-  The suite now says "javac not found" instead of an ENOENT stack so this is not misread as a regression.
+  and `test/native.test.js` need `javac`/`java` on `PATH`, so on a fresh shell they report a
+  **false failure** — it is a missing tool, not broken code. Fix:
+  `curl -sL -o /tmp/jdk.tar.gz https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse`,
+  unpack under `/tmp/jdk17`, then `export JAVA_HOME=/tmp/jdk17; export PATH="$JAVA_HOME/bin:$PATH"`.
+  Setting `JAVA_HOME` alone is not enough — the suite runs bare `javac`, so the directory has
+  to be on `PATH` too. Both suites say "javac not found" rather than throwing an ENOENT stack,
+  so this is not misread as a regression.
+  `/tmp` does not survive a terminal reset: after one, expect the two Java suites to fail until
+  the JDK is fetched again. The pure-Node suites are unaffected.
 - Demo: `demo.html` at the repo root pairs a QR for the APK with a QR for the web app, so the
   owner can install and open both without typing a hostname. Generate it — do not hand-edit it:
   `python3 make-demo.py` reads the host out of `MainActivity.DEFAULT_UPDATE_URL`, draws both
