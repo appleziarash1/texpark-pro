@@ -223,7 +223,15 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   `MainActivity.APP_VERSION` from it before compiling. If they drift, the app offers the same
   "update" on every launch.
 - `test/native.test.js` compiles the shipped `Json`, `Store` and `Voice` on a plain JVM and
-  runs the real classes against the real JS business rules (11 tests). **The voice tests earned
+  runs the real classes against the real JS business rules (15 tests). The shop's central
+  rule is driven through `Store.saveMemo` itself: a memo for a product with **no stock card at
+  all** must save, must create the card, must clamp `available` at 0, and must keep the whole
+  quantity as a reported shortfall. That rule used to live in `ScreensData`, where an
+  Android-only class could not be tested; it now lives in `Store` for that reason.
+- Two static checks guard what an emulator would otherwise catch: every `NavItem` must have
+  a matching `"<id>".equals(page)` branch (a menu entry with no screen opens blank), and no
+  source file may import `android.webkit` or call `window.print` in code (comments are
+  stripped first, since the removal is explained in them). **The voice tests earned
   their keep immediately**: the first version read the `3` out of the product name "Kids 3pcs"
   as the quantity and lost the spoken "5 piece", and matched no product at all. Matching is now
   per-word with the product's own words stripped before the quantity is read, and a tie

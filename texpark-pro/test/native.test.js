@@ -348,6 +348,32 @@ test('native: a memo saves and survives a reload, and creates the customer', () 
   assert.strictEqual(r.emptyRefused, true);
 });
 
+/* Static checks. There is no emulator here (no /dev/kvm), so a screen that never
+   got wired up cannot be caught by driving the app. These read the source instead,
+   and both catch a real shipping defect rather than a style preference. */
+const screensSrc = fs.readFileSync(path.join(SRC, 'Screens.java'), 'utf8');
+
+test('native: every menu item opens a screen, not a blank page', () => {
+  const ids = [...screensSrc.matchAll(/new NavItem\("([a-z]+)",/g)].map(m => m[1]);
+  assert.ok(ids.length >= 18, 'expected the full menu, found ' + ids.length);
+  const unhandled = ids.filter(id => id !== 'dashboard'
+    && !screensSrc.includes('"' + id + '".equals(page)'));
+  assert.deepStrictEqual(unhandled, [],
+    'menu items with no screen: ' + unhandled.join(', ') + ' would open blank');
+});
+
+test('native: nothing depends on a WebView or window.print any more', () => {
+  const java = fs.readdirSync(SRC).filter(f => f.endsWith('.java'))
+    .map(f => [f, fs.readFileSync(path.join(SRC, f), 'utf8')]);
+  // Strip comments first: the code explains why the WebView was removed, and that
+  // explanation must not be mistaken for the thing it warns about.
+  const code = src => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
+  const offenders = java.filter(([f, src]) =>
+    /import android\.webkit|WebViewClient|loadUrl\(|window\.print/.test(code(src)));
+  assert.deepStrictEqual(offenders.map(x => x[0]), [],
+    'a WebView or a print call is back; a memo would stop printing again');
+});
+
 test('native: memo numbers carry the device tag so PC and phone cannot collide', () => {
   const r = runNative({ op: 'rules' });
   assert.match(r.memoNo, /^TXP\/SM\/\d{4}\/\d{2}\/\d{2}-[A-Z0-9]{1,6}\d{3}$/);

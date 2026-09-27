@@ -2,8 +2,9 @@
 
 ## Ei app ta ki
 
-Ei APK-er **bhitor-e apnar puro app ta ache** — index.html, css, code, sob.
-Tai ei app ta **alada kono shell na**, puro app ta-i.
+Ei app ta **puro asol Android app** — WebView na. Prottek screen asol Android
+view diye toiri, ar apnar sob data phone-er **nijer database-e** thake, kono
+website na.
 
 Ei karon-e duta boro subidha:
 
@@ -11,8 +12,8 @@ Ei karon-e duta boro subidha:
 > **2. Internet na thakleo chole.** Dokane net na thakle-o memo, stock,
 > hisheb sob kaj korbe.
 
-Apnar data (memo, stock, customer, hisheb) apnar **phone-ei** thake. App-er
-file ba data kothao pathano hoy na.
+Apnar data (memo, stock, customer, hisheb) apnar **phone-ei** thake. App nijei
+chaile chara kono data kothao pathano hoy na.
 
 ---
 
@@ -42,29 +43,26 @@ Net firle app nijei pichon theke taaza version niye ney (nicher section-e).
 
 ---
 
-## Notun version kivabe ashe (nijei)
+## Notun version kivabe ashe
 
-Apni site-e kichu bodlale (notun feature, design, dam er hisheb), ar
-**Netlify-te abar drop korlen** — tarpor:
+Notun version site-e deoya hoy (host-er upore `TexparkPro.apk` ta thake).
+App kholar somoy nijei jiggesh kore — "notun kichu ache?" Thakle ek ta
+**dialog** ashe: **Download** chepun.
 
-- Apnar phone, MD-saheb-er phone, dokaner PC — **sob jaygay app nijei niye ney**.
-- App kholar somoy ekbar nijei jiggesh kore — "notun kichu ache?"
-- Thakle **nijei neme ney**, ar **porer bar** app khulle notun ta chalu hoy.
-
-Kakeo kichu pathate hobe na. "Update koro" bolte hobe na. Notun APK lagbe na.
-
-| Ja bodlabe | Ki korte hobe |
-|---|---|
-| App-er kono feature, design, memo, stock, profit er hisheb | **Site-e upload korun** — app nijei niye nibe |
-| App-er icon, app-er nam | Notun APK banate hobe |
-
-**Net na thakle?** Kono somossa nei — bhitorer version ta-i chole. Net firle
-porer bar nijei niye nibe.
+- **App nijei install korte pare na.** Android 8 theke ek ta app nijer APK
+  install korte pare na — ei ta Android-er niyom, kono durbalta na. Tai
+  Download chepuk, file ta neme asbe, tarpor **file ta tap korun** —
+  Android install korte bolbe (**Install** chepun).
+- **Apnar data muchbe na.** Update hole memo, stock, customer sob thake —
+  shudhu code ta notun hoy.
+- **Net na thakle?** Kono somossa nei — app chole, kichu jiggesh kore na.
+  Net firle porer bar nijei dekhbe.
 
 ### Update ta kokhono adhora theke jabe na
 
-Notun version nemar somoy ek ta file na asle, app ta **purono version-ei thake**.
-Adho-adhuri update kokhono boshbe na — mane app kokhono bhenge jabe na.
+Site-e notun APK na thakle, ba adha-adha nemar somoy kichu bhul hoile, app ta
+**purono version-ei thake**. Adho-adhuri update kokhono boshbe na — mane app
+kokhono bhenge jabe na.
 
 ---
 
@@ -75,8 +73,7 @@ App-er **Back button ta chhere dhore rakhun** (long press). Ek ta menu khulbe:
 | Menu-r jinis | Ki kore |
 |---|---|
 | **Update chek korun** | Notun version ache kina ekhoni dekhe ney |
-| **Update-er address bodlun** | Site-er address bodlanor jonno |
-| **Built-in app-e ferot jan** | Nemar kora version muche, APK-er bhitorer version chalu kore |
+| **Update-er address bodlun** | Je site theke update ashe, sei address bodlanor jonno |
 
 "Sob kichu abar thik korun" chepun — app abar gari-r moto chole jabe.
 **Apnar data muchbe na** — memo, stock, customer sob thake.
@@ -85,16 +82,18 @@ App-er **Back button ta chhere dhore rakhun** (long press). Ek ta menu khulbe:
 
 ## Data kothay thake?
 
-Bhoyer kichu nei — **data apnar phone-e-i thake** (`localStorage`).
-Site update korleo data **thake na hariye** — karon app khollar somoy
-shudhu **code** ashe, apnar data na.
+Bhoyer kichu nei — **data apnar phone-er nijer folder-e** thake (`getFilesDir()`),
+kono onno app eta porbe na. Site update korleo data **thake na hariye** — karon
+app khollar somoy shudhu **code** ashe, apnar data na.
 
 Kintu ei kotha gulo mone rakhben:
 
 - **Niyomito backup nin:** Settings → Backup / Data → Export. File ta
   Google Drive / email-e rakhen.
 - **App uninstall korle data jabe** — tai age backup nin.
-- **Restore korte:** Settings → Restore Backup → file ta bechhe nun.
+- **Restore korte:** Settings → Backup / Data → file ta bechhe nun. App
+  prottek save-er age ek ta **safety copy** o rakhe, tai bhul hoye gele-o
+  pichon-er obosthay ferot jawa jay.
 - **Play Store na, sideload** — tai "Unknown apps" permission ta lage. Eta
   nirapod jodi apni nijei APK ta install koren.
 
@@ -111,9 +110,9 @@ Kintu ei kotha gulo mone rakhben:
 - **Voice entry** kaj korbe: `RecognizerIntent` (Bangla) diye kotha ney, ar
   `TextToSpeech` diye uttor bole. Kono phone-e ei duita na thakle app tobuo
   chole, sudhu voice ta kaj korbe na.
-- **Print** app theke hoy na, ar lage-o na — apni bolechen phone theke print
-  korte hobe na. Memo ta phone-i dekhanor jonno, ar PC theke print korte chan
-  to web app ta khulun.
+- **Print** app theke hoy na. Apni bolechen phone theke print korte hobe na,
+  tai memo ta phone-i **dekhanor** jonno toiri — Memo History → memo → sob
+  kichu puro dekha jay. PC theke print korte chan to web app ta khulun.
 - **Backup export** kaj korbe: backup file app-er **nijer private folder**-e
   jome (`getFilesDir()`), kono onno app eta porbe na.
 
@@ -124,19 +123,23 @@ Ei app ta **puro native** — WebView na. Prottek screen asol Android view
 
 - memo/stock/customer — sob **app-er nijer folder-ei** JSON database-e thake,
   kono internet lage na, kono host down holeo app chole.
-- **Ekhane-i print kora jeto na** — WebView-e `window.print()` kichui kore na,
-  ar memo print kora dokan-er mukhyo kaj. Sei karone WebView ta bad diye app
-  ta native kora hoyeche (purono WebView shell-er kotha niche rakha hoyeche).
+- **Age WebView chilo, ekhon nei.** Purono version ta WebView-e site ta
+  dekhacho, ar tokhon duta asol somossa chilo: memo print kora jeto na
+  (`window.print()` WebView-e kichui kore na), ar phone-er asol keyboard,
+  date picker, voice — kichui thik moto kaj korto na. Sei karone app ta puro
+  native kora hoyeche.
+- **Kono screen khali asbe na.** `test/native.test.js` dekhe je menu-r prottek
+  item-er jonno ek ta screen ache, ar kono file WebView ba `window.print`
+  firiye aneni.
 
 ### APK-er bhitor ki bhore ache
 
 - `classes.dex` — puro native app-er code
 - `res/drawable/ic_launcher.png` — nijer icon
-- `version.txt` — alada file-e deploy folder-e thake (APK-er bhitor na);
-  phone eta host theke pore, ar er sathe nijer version milay
-
-Phone notun version khuje pay **`version.txt`** host theke — karon eta choto
-(APK-er 77 KB na), tai prottek launch-e check korte khub kom data lage.
+- `resources.arsc`, `res/` — icon ar Android-er resource
+- `version.txt` APK-er bhitor na — eta host-e thake, ar app kholar somoy
+  `js/app.js` theke version ta pore. Tarpor nijer version-er sathe milay:
+  notun hole dialog dey, na hole chup thake.
 
 ### Nijer APK ta notun kore banate chan?
 
