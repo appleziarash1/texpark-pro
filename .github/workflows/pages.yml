@@ -55,10 +55,6 @@ jobs:
           fi
 
       - uses: actions/configure-pages@v5
-        with:
-          # The repository token cannot call the Pages API directly, so the Pages
-          # site is turned on here, on the first run, by the workflow token.
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:

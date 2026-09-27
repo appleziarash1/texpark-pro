@@ -7,7 +7,10 @@ signs the APK: publishing it would let anyone sign an APK that Android accepts
 as an update to the installed one. Nothing outside this list ships.
 """
 import zipfile, os
-root = '/workspace/project'
+# Derived from this file's own location, not a fixed path: CI checks the repo out
+# under /home/runner/work, where a hardcoded /workspace/project makes the check
+# abort with FileNotFoundError and fail a green build.
+root = os.path.dirname(os.path.abspath(__file__))
 out = os.path.join(root, 'texpark-hosting.zip')
 
 SITE_FILES = [
