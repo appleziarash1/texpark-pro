@@ -19,10 +19,23 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const SRC = path.join(ROOT, 'android-src', 'com', 'texpark', 'pro', 'SiteUrl.java');
 const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'siteurl-'));
 
+/* Resolved once and reused, so setting JAVAC actually moves every javac call
+   rather than only the first one. */
+const JAVAC = process.env.JAVAC || 'javac';
+const JAVA = process.env.JAVA || (process.env.JAVA_HOME
+  ? path.join(process.env.JAVA_HOME, 'bin', 'java') : 'java');
+
 function compile() {
   if (!fs.existsSync(SRC)) throw new Error('missing ' + SRC);
-  const javac = process.env.JAVAC || 'javac';
-  execFileSync(javac, ['-nowarn', '-d', OUT, SRC], { stdio: 'pipe' });
+  try {
+    execFileSync(JAVAC, ['-nowarn', '-d', OUT, SRC], { stdio: 'pipe' });
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      throw new Error('javac not found (' + JAVAC + '). Install a JDK or point JAVAC at one; '
+        + 'otherwise these 12 tests report a false failure on a machine with no JDK.');
+    }
+    throw e;
+  }
 }
 
 // Compile once; every case below then runs against the real class.
@@ -46,8 +59,8 @@ function normalise(input) {
     }`;
   const p = path.join(OUT, 'Probe.java');
   fs.writeFileSync(p, script);
-  execFileSync('javac', ['-nowarn', '-cp', OUT, '-d', OUT, p], { stdio: 'pipe' });
-  return execFileSync('java', ['-cp', OUT, 'Probe', input], { encoding: 'utf8' });
+  execFileSync(JAVAC, ['-nowarn', '-cp', OUT, '-d', OUT, p], { stdio: 'pipe' });
+  return execFileSync(JAVA, ['-cp', OUT, 'Probe', input], { encoding: 'utf8' });
 }
 
 test('android: https is added when the owner leaves it out', () => {
@@ -109,7 +122,7 @@ test('android: null is refused', () => {
     }`;
   const p = path.join(OUT, 'NullProbe.java');
   fs.writeFileSync(p, script);
-  execFileSync('javac', ['-nowarn', '-cp', OUT, '-d', OUT, p], { stdio: 'pipe' });
-  const out = execFileSync('java', ['-cp', OUT, 'NullProbe'], { encoding: 'utf8' });
+  execFileSync(JAVAC, ['-nowarn', '-cp', OUT, '-d', OUT, p], { stdio: 'pipe' });
+  const out = execFileSync(JAVA, ['-cp', OUT, 'NullProbe'], { encoding: 'utf8' });
   assert.strictEqual(out, '<<null>>');
 });

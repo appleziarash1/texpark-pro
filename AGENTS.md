@@ -137,3 +137,11 @@ updates every installed phone** with no new APK. This is the user's explicit req
   long-press Back → change the stored address without losing data (data lives in WebView
   localStorage, not in the APK, so changing the address never wipes business data).
 - Guide: `ANDROID_BANGLA.txt`. Download page: `download.html` (APK button + explanation).
+- A JDK is not part of this image and `apt` has no `openjdk-*` package. `test/android.test.js`
+  needs `javac`/`java`, so on a fresh shell the 12 android tests report a **false failure** —
+  it is a missing tool, not broken code. Fix: download Adoptium 17 and point `JAVA_HOME` at it
+  (`JAVAC`/`JAVA` also work), then run `JAVA_HOME=/tmp/jdk-17.0.20.1+1 node --test test/android.test.js`.
+  The suite now says "javac not found" instead of an ENOENT stack so this is not misread as a regression.
+- Demo: `demo.html` at the repo root pairs a QR for the live app with a QR for the APK, so the
+  owner can open the app on his phone without typing a hostname. It says plainly that the sandbox
+  URL is temporary — Netlify is what makes it permanent.
