@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "texpark";
     private static final String KEY_URL = "site_url";
     /** Where newer builds come from. Changeable from the long-press Back menu. */
-    private static final String DEFAULT_UPDATE_URL = "https://keen-rolypoly-3f9aa4.netlify.app";
+    private static final String DEFAULT_UPDATE_URL = "https://appleziarash1.github.io/texpark-pro";
 
     private static final int REQ_FILE = 1001;
 
@@ -295,7 +295,7 @@ public class MainActivity extends Activity {
         final EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
         input.setSingleLine(true);
-        input.setHint("https://apnar-site.netlify.app");
+        input.setHint("https://appleziarash1.github.io/texpark-pro");
         input.setText(updateUrl());
 
         LinearLayout box = new LinearLayout(this);

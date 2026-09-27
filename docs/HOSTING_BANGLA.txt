@@ -1,37 +1,64 @@
 # Texpark Pro — permanent hosting (step by step)
 
-Ei folder ta-i pura app. Kono build lagbe na, kono backend lagbe na.
-Netlify ba Vercel er free account e upload korle **jiboneo off hobe na**.
+Ei repo-r **root ta-i pura app**. Kono build lagbe na, kono backend lagbe na.
+GitHub Pages e upload korle **jiboneo off hobe na** — ar sob cheye bhalo dike,
+Pages **nijei apnar site host kore**, alada kono account lagbe na.
 
 Login: `admin` / `admin123`
 
 Duita file:
-- `texpark-deploy/` = pura app (folder) — PWA/install kaj kore
+- repo root (`index.html`, `js/`, `css/`) = pura app (folder) — PWA/install kaj kore
 - `texpark-pro.html` = ek file e pura app — upload korte sohoj
   (kintu ei ek file theke "Add to Home screen" thik moto kaj na korte pare)
 
 ---
 
-## Sob cheye bhalo: Netlify Drop
+## Sob cheye bhalo: GitHub Pages (account lagbe na, alada kichu lagbe na)
 
-**Important — agee ei kotha ta jene nin:** Netlify te **login na kore** (anonymous) drag korle,
-site ta kichudin por nijei **password wall-er pichone chole jay**. Tokhon ei message dekhben:
+Apnar repo ta-i site. Root-e `index.html` ache, tai `/` khulei app chalu hoy.
+
+1. `https://github.com/appleziarash1/texpark-pro` khulun
+2. **Settings → Pages**
+3. Source: **Deploy from a branch**
+4. Branch: **main**, folder: **/ (root)** — Save
+5. 1-2 minute por link: `https://appleziarash1.github.io/texpark-pro`
+
+Bas. Erpor apni jakhon repo-te notun code push korben (ba GitHub-er website theke
+file edit korben), **site nijei update hobe** — abar kichu drop korte hobe na.
+APK-r update check-o ei link-e ache, tai phone-e notun build nijei chole ashbe.
+
+**Ekta kotha:** free plan-e Pages **public repo** te-i kaj kore. Repo public hole
+keu apnar code dekhte parbe — kintu **business data dekhte parbe na**. Data apnar
+phone-e ar apnar Google Sheet-e thake, duitai private. Ki dekha jay, ki jay na:
+- Dekha jay: code, layout, khali app
+- Dekha jay na: apnar memo, stock, customer, taka, Sheet-er data
+- Ei karon `Code.gs`-e Sheet ID ta royeche — keu ID peye gelo o **kono data
+  paben na**, karon Sheet ta private (login chara 401 ashe)
+
+---
+
+## Bikolpo: Netlify Drop (code na dekhate chan?)
+
+Repo private rakhতে chan, ba Netlify pochondo? Tahole ei ta:
+
+1. Free account khulun: https://app.netlify.com/signup (shudhu email lagbe)
+2. Login kora obosthay khulun: https://app.netlify.com/drop
+3. **`texpark-hosting.zip`** file ta drag kore chere din (APK-o ei tar bhitor ache)
+4. 20-30 second por ekta link pabben, e.g. `https://random-name-123.netlify.app`
+5. **Settings → Change site name** diye naam din, e.g. `texpark-pro`
+   -> link hobe `https://texpark-pro.netlify.app`
+6. Erpor phone-e APK-r update address ta ei link-e set korun (Back button der khon
+   chap diye menu theke)
+
+**Important — agee ei kotha ta jene nin:** Netlify te **login na kore** (anonymous)
+drag korle, site ta kichudin por nijei **password wall-er pichone chole jay**.
+Tokhon ei message dekhben:
 
 > Password protected site — Please enter your password to get access.
 
 Ei password ta apni set koren ni, tai apnar jana nei. Eta Netlify-r nijer kora kaj,
 ar free plan-e apni password ta bondho-o korte parben na (setting ta Pro plan-e ache).
-Tai **age free account khulun, tarpor drag korun** — tokhon site ta apnar thake,
-password wall ashe na, ar update-o korte parben.
-
-1. Free account khulun: https://app.netlify.com/signup (shudhu email lagbe)
-2. Login kora obosthay khulun: https://app.netlify.com/drop
-3. **`texpark-hosting.zip`** file ta drag kore chere din (APK-o ei tar bhitor ache)
-   (ba `texpark-deploy` **folder ta** — folder-er bhitore na dhuke, pura folder ta)
-4. 20-30 second por ekta link pabben, e.g. `https://random-name-123.netlify.app`
-5. **Settings → Change site name** diye naam din, e.g. `texpark-pro`
-   -> link hobe `https://texpark-pro.netlify.app`
-6. Ei link ta apnar permanent link. Phone-e ei link ta kholun.
+Tai **age free account khulun, tarpor drag korun**.
 
 **ZIP ta keno, folder ta keno?** Duitai cholbe. Kintu **folder-er ZIP** (`texpark-pro-download.zip`)
 drop korle 404 ashe, karon tar root-e `index.html` thake na — thake
@@ -46,11 +73,11 @@ Sandbox jodi bondho o hoy, app cholbe.
 `texpark-hosting.zip`-er bhitor **`TexparkPro.apk`** o ache. Tai deploy korar
 por ei link theke APK ta **jokhon khusi** abar download korte parben:
 
-    https://<apnar-site>.netlify.app/TexparkPro.apk
+    https://<apnar-site>/TexparkPro.apk
 
-Eta kaajer, karon sandbox-er link temporary, kintu Netlify-er site paka — tai
-APK-r link-o paka. Phone change korle, notun phone-e install korte hole, ba
-karo phone-e pathate hole — ei ek link-i jotheshto.
+Eta kaajer, karon sandbox-er link temporary, kintu site paka — tai APK-r link-o
+paka. Phone change korle, notun phone-e install korte hole, ba karo phone-e
+pathate hole — ei ek link-i jotheshto.
 
 ### 404 "Page not found" ashle ki korben
 
@@ -58,11 +85,10 @@ Ei message-er mane site ta cholche, kintu oi address-e kichu nei.
 
 1. **Root address (`/`) e 404?** Tahole hoyto vhul zip/folder drop kora hoyeche.
    `texpark-hosting.zip` (root-e index.html) abar drop korun.
-2. **Notun drop korchen?** 20-30 second opei thakun — Netlify deploy korte somoy ney.
-3. **Netlify Dashboard → apnar site → Deploys** tab → dekhen sobcheye last deploy ta
+2. **Notun drop korchen?** 20-30 second opei thakun — deploy korte somoy ney.
+3. **Dashboard → apnar site → Deploys** tab → dekhen sobcheye last deploy ta
    "Published" kina. "Failed" hole abar drop korun.
-4. Dhyan din: `https://apnar-site.netlify.app/` — session-e `texpark-pro-app/`
-   lekha jeno na jay. Root-e jaan.
+4. Dhyan din: address ta `/` e khuluk — `/texpark-pro-app/` e na.
 
 ### Keno account lagbe?
 
@@ -80,16 +106,20 @@ account-e claim kora ache — noile option ta lock thakbe.
 
 ---
 
-## Netlify te update kivabe korben
+## Update kivabe korben
 
-Code bodlale abar oi folder ta https://app.netlify.com/drop e chere din —
-purono site tar upore update hoye jabe (link same thakbe).
+**GitHub Pages:** repo-te code push korlei site nijei update hoy. Ar kichu lagbe na.
+APK-r update check-o ei link-e ache, tai phone-e notun build nijei chole ashbe.
+
+**Netlify:** code bodlale `node texpark-pro/build.js` chaliye `texpark-hosting.zip`
+abar banan, tarpor https://app.netlify.com/drop e chere din — purono site tar
+upore update hoye jabe (link same thakbe).
 
 ---
 
 ## Data kothay thake?
 
-Data apnar **phone/browser-e** thake (localStorage), Netlify te na.
+Data apnar **phone/browser-e** thake (localStorage), hosting-e na.
 Tai hosting bodlaleo data hariye jabe na — jeta oi browser e ache.
 Kintu:
 
