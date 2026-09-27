@@ -14,6 +14,11 @@ Three things have to hold, and none of them is visible from the source alone:
 3. The built APK must stamp the same version in MainActivity and in its dex.
    Without it the app offers the owner an "update" on every launch, because it
    compares the release against a number that never changes.
+
+4. demo.html must point at the address the app is actually built with, and its
+   QR codes must really decode to those addresses. This is the page the owner
+   scans to install the app, and it once kept a dead sandbox URL for weeks
+   because nothing checked it: the page looked perfectly fine and led nowhere.
 """
 import os, re, sys, zipfile
 
@@ -55,5 +60,37 @@ if os.path.isfile('TexparkPro.apk'):
         if stamp.encode('utf-8') not in z.read('classes.dex'):
             sys.exit('TexparkPro.apk does not carry version ' + stamp)
 
+# ---- 4. the install page must point where the app points, verifiably ---- */
+host = re.search(r'DEFAULT_UPDATE_URL\s*=\s*"([^"]+)"',
+                 open('android-src/com/texpark/pro/MainActivity.java',
+                      encoding='utf-8').read()).group(1)
+demo = open('demo.html', encoding='utf-8').read()
+app_url = host.rstrip('/') + '/'
+for want in (app_url, app_url + 'TexparkPro.apk'):
+    if want not in demo:
+        sys.exit('demo.html does not mention %s - the install page points somewhere '
+                 'the app is not built for' % want)
+if 'prod-runtime.all-hands.dev' in demo:
+    sys.exit('demo.html still carries a sandbox address; that link dies with the sandbox')
+
+codes = re.findall(r'<svg[^>]*>.*?</svg>', demo, re.S)
+printed = re.findall(r'class="url">([^<]+)<', demo)
+if len(codes) != len(printed):
+    sys.exit('demo.html has %d QR codes but %d printed URLs' % (len(codes), len(printed)))
+try:
+    import cairosvg, cv2, numpy as np
+except ImportError:
+    print('note: cairosvg/cv2 absent, demo.html QR codes not read back')
+else:
+    for svg in codes:
+        png = cairosvg.svg2png(bytestring=svg.encode(), output_width=800,
+                               output_height=800, background_color='white')
+        img = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_GRAYSCALE)
+        got, _, _ = cv2.QRCodeDetector().detectAndDecode(img)
+        if got not in printed:
+            sys.exit('a QR code in demo.html decodes to %r, which is not a URL the '
+                     'page prints - scanning it would mislead the owner' % got)
+
 print('index.html references resolve; version %s is consistent in app.js, sw.js, '
-      'MainActivity and the APK' % stamp)
+      'MainActivity and the APK; demo.html points at %s and its QR codes decode'
+      % (stamp, host))

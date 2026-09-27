@@ -264,6 +264,13 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   it is a missing tool, not broken code. Fix: download Adoptium 17 and point `JAVA_HOME` at it
   (`JAVAC`/`JAVA` also work), then run `JAVA_HOME=/tmp/jdk-17.0.20.1+1 node --test test/android.test.js`.
   The suite now says "javac not found" instead of an ENOENT stack so this is not misread as a regression.
-- Demo: `demo.html` at the repo root pairs a QR for the live app with a QR for the APK, so the
-  owner can open the app on his phone without typing a hostname. It says plainly that the sandbox
-  URL is temporary — Netlify is what makes it permanent.
+- Demo: `demo.html` at the repo root pairs a QR for the APK with a QR for the web app, so the
+  owner can install and open both without typing a hostname. Generate it — do not hand-edit it:
+  `python3 make-demo.py` reads the host out of `MainActivity.DEFAULT_UPDATE_URL`, draws both
+  codes with segno, decodes them back with cv2 and refuses to write a page if a code does not
+  read as a URL the page prints.
+  This page is a trap that already sprang once. It kept a sandbox address and a "Netlify is what
+  makes it permanent" note long after hosting had actually moved, and nothing noticed because a
+  QR that leads nowhere looks exactly like one that works. `ci/check-site.py` now fails if
+  `demo.html` disagrees with the app's host, mentions `prod-runtime.all-hands.dev`, or carries a
+  code that decodes to anything the page does not print.
