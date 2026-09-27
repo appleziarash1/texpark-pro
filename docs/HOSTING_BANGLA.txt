@@ -39,7 +39,7 @@ phone-e ar apnar Google Sheet-e thake, duitai private. Ki dekha jay, ki jay na:
 
 ## Bikolpo: Netlify Drop (code na dekhate chan?)
 
-Repo private rakhতে chan, ba Netlify pochondo? Tahole ei ta:
+Repo private rakhte chan, ba Netlify pochondo? Tahole ei ta:
 
 1. Free account khulun: https://app.netlify.com/signup (shudhu email lagbe)
 2. Login kora obosthay khulun: https://app.netlify.com/drop
@@ -126,6 +126,36 @@ Kintu:
 - **Backup nin:** Settings -> Backup / Data -> Export
 - Notun phone-e giye oi backup file ta "Restore" kore din
 - Browser cache clear korle data jete pare — tai backup niye rakha bhalo
+
+---
+
+## PC ar phone — duijonar data nijei mile jay
+
+Age PC-te memo likhle phone-e dekhate "fire aan" chap dite hote chilo.
+Ekhon ar dorkar nei: **app kholar shomoy nijei sheet theke notun data niye ashe**
+(login korar somoy, ar abar tab-e fire ashle).
+
+Ki kore:
+
+1. App khule login korun — nijer data age sheet-e pathay
+2. Tarpor sheet theke **sob device-er** data niye merge kore
+3. Merged data abar sheet-e pathay, jate porer device pura chobi pay
+
+Tai PC-te likha memo phone-e, ar phone-er memo PC-te — nijei chole ashbe.
+
+**Gurutto-purbo kotha:** merge hocche, *replace* na. Tai:
+
+- Dui device-e duita alada memo likhle **duitai thake**
+- Ek memo dui jaygay edit korle **porer ta jite jay**
+- Kono device theke memo delete korle **setha abar fire ashe na**
+- Sheet na khule, internet na thakleo app **pura kaj kore**; porer bar nijei mile jay
+
+**Bondho korte chan?** Settings -> Google Sheets Sync ->
+*"Nijei sheet theke notun data niye ashe"* — tik tule din.
+Tokhon shudhu apni chap dilei (Backup page -> "Ei device er backup fire aan") data nambe.
+
+**Ekta tuku poramorsho:** duito device ek shomoy-e sheet-e likhle, shesher ta bhalo.
+Tai ek device-e kaj korar por arek device-e jaoar age app ta ekbar khole nin.
 
 ---
 

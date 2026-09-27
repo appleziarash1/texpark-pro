@@ -773,6 +773,12 @@ tbody tr:hover td{background:#f7fafd}
             <button class="btn-light" onclick="testSync()">Test Sync</button>
             <button class="btn-light" onclick="syncRetryAll()">Retry all pending</button>
           </div>
+          <label style="margin-top:14px;display:flex;align-items:center;gap:9px">
+            <input id="stAutoPull" type="checkbox" style="width:auto" onchange="saveAutoPull()">
+            <span><b>Nijei sheet theke notun data niye ashe</b><br>
+            <span class="muted">Ei ta on thakle PC/phone kholar shomoy onno device-er lekha
+            data ekhane nijei chole ashbe — apnake chap dite hobe na.</span></span>
+          </label>
           <div id="syncTestOut" style="margin-top:10px;font-size:13px"></div>
         </div>
       </section>
@@ -979,16 +985,21 @@ const DEFAULT_SETTINGS = {
   warnOnShortStock: true,      // show a reminder when stock is not entered yet
   lowStockLevel: 10,
   vatPercent: 0,
-  autoBackup: true
+  autoBackup: true,
+  autoPull: true        // cloud theke notun data nijei niye asha
 };
 
 function blankDB() {
   return {
     version: 2,
+    /* Stable ids, not id(). These three seed rows exist on every fresh install, and
+       a random id per device meant two devices that had both merely *started* would
+       merge into six products under three names the first time they synced. A fixed
+       id makes the seed the same record everywhere, so it merges to one. */
     products: [
-      { id: id(), name: 'Kids 3pcs Set',     sku: 'K3S', category: 'Kids',   unit: 'pcs', rate: 220, cost: 165, vat: 0, reorderLevel: 10 },
-      { id: id(), name: 'Kids Girls Sweater',sku: 'KGS', category: 'Kids',   unit: 'pcs', rate: 145, cost: 108, vat: 0, reorderLevel: 10 },
-      { id: id(), name: 'Baby Keepers',      sku: 'BK',  category: 'Baby',   unit: 'pcs', rate: 55,  cost: 41,  vat: 0, reorderLevel: 10 }
+      { id: 'seed-k3s', name: 'Kids 3pcs Set',     sku: 'K3S', category: 'Kids',   unit: 'pcs', rate: 220, cost: 165, vat: 0, reorderLevel: 10 },
+      { id: 'seed-kgs', name: 'Kids Girls Sweater',sku: 'KGS', category: 'Kids',   unit: 'pcs', rate: 145, cost: 108, vat: 0, reorderLevel: 10 },
+      { id: 'seed-bk',  name: 'Baby Keepers',      sku: 'BK',  category: 'Baby',   unit: 'pcs', rate: 55,  cost: 41,  vat: 0, reorderLevel: 10 }
     ],
     suppliers: [],
     customers: [],
@@ -999,6 +1010,7 @@ function blankDB() {
     memos: [],
     deliveries: [],
     payments: [],     // customer receipts: {date, customerId, amount, method, note}
+    tombstones: [],   // {key, id, at} for records deleted on some device
     settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
     seq: { memo: 1, purchase: 1 }
   };
@@ -1035,6 +1047,7 @@ function migrate(d) {
   d.version = 2;
   ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'payments']
     .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
+  if (!Array.isArray(d.tombstones)) d.tombstones = [];
   d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
   d.settings.company = Object.assign({}, DEFAULT_SETTINGS.company, d.settings.company || {});
   d.seq = Object.assign({ memo: 1, purchase: 1 }, d.seq || {});
@@ -1060,16 +1073,241 @@ function migrate(d) {
   d.purchases.forEach(p => { p.items = p.items || []; p.subtotal = num(p.subtotal); p.paid = num(p.paid); p.due = num(p.due); });
   d.expenses.forEach(e => { e.amount = num(e.amount); });
   d.payments.forEach(p => { p.amount = num(p.amount); });
+  adoptSeedIds_(d);
   return d;
+}
+
+/* The three starter products used to get a random id per device. An install that
+   predates the stable ids still carries those random ones, and the first sync
+   would then show six rows for three products. Rename an *untouched* seed row to
+   the shared id and repoint every reference to it. A row the owner has edited, or
+   a name/sku that is not one of the seeds, is left exactly as it is - guessing
+   wrong there would silently move a memo or a stock card onto another product. */
+const SEED_IDS = { K3S: 'seed-k3s', KGS: 'seed-kgs', BK: 'seed-bk' };
+
+function adoptSeedIds_(d) {
+  const taken = {};
+  d.products.forEach(p => { if (p && p.id) taken[p.id] = true; });
+  const renames = {};
+  d.products.forEach(p => {
+    if (!p || !p.sku) return;
+    const target = SEED_IDS[String(p.sku).toUpperCase()];
+    if (!target || p.id === target || taken[target]) return;
+    const seed = blankDB().products.find(x => x.id === target);
+    if (!seed || p.name !== seed.name || num(p.rate) !== seed.rate) return;
+    renames[p.id] = target;
+    taken[target] = true;
+  });
+  const keys = Object.keys(renames);
+  if (!keys.length) return;
+  d.products.forEach(p => { if (p && renames[p.id]) p.id = renames[p.id]; });
+  d.stock.forEach(s => { if (s && renames[s.productId]) s.productId = renames[s.productId]; });
+  d.ledger.forEach(l => { if (l && renames[l.productId]) l.productId = renames[l.productId]; });
+  d.memos.forEach(m => (m.items || []).forEach(it => { if (it && renames[it.productId]) it.productId = renames[it.productId]; }));
+  d.purchases.forEach(p => (p.items || []).forEach(it => { if (it && renames[it.productId]) it.productId = renames[it.productId]; }));
+  d.stock = d.stock.filter((s, i, arr) => s && arr.findIndex(x => x && x.productId === s.productId) === i);
 }
 
 /* Single write path. Nothing mutates localStorage directly. */
 const SNAP_KEY = 'texpark_pro_snapshots';
 
+/* ============ change stamps + tombstones (so the cloud pull is a real merge) ============
+   Pulling the newest snapshot used to mean "replace everything with whatever the
+   PC last uploaded". Two things went wrong with that, and both are fixed here.
+
+   `at` on a record is when it last changed. Without it, an edit made on the phone
+   *after* the PC's last backup is overwritten by the PC's older copy the next time
+   the phone pulls. With it, the newer version of each record wins individually, so
+   both machines' work survives.
+
+   Deletion cannot be expressed by the record being absent, because absence is also
+   what a device that never saw the record looks like - and the other device's
+   snapshot would keep handing the deleted record back. So a delete writes a small
+   tombstone instead, and the record is filtered out at read time. Tombstones live
+   in their own list rather than in the collections, because a hidden record that is
+   still *in* memos[] would be silently dropped by the first .filter() that touches
+   it - before the tombstone had a chance to defeat the other device's copy.
+
+   `at` is stamped in commit(), the one point every write passes through, so no
+   caller can forget it. Comparisons are on the ISO string: every device stamps UTC
+   and the format is fixed-width, so a plain string compare is correct and does not
+   depend on which machine's clock does the merging. */
+const MERGE_KEYS = ['products', 'suppliers', 'customers', 'stock', 'ledger',
+                    'purchases', 'expenses', 'memos', 'deliveries', 'payments'];
+const TOMB_MAX = 4000;                 // plenty of history; stops unbounded growth
+
+/* A record without its change stamp - what "changed?" actually compares. */
+function bare_(o) {
+  const c = Object.assign({}, o);
+  delete c.at;
+  return c;
+}
+
+function indexOne_(arr) {
+  const m = {};
+  for (const rec of (Array.isArray(arr) ? arr : [])) if (rec && rec.id) m[rec.id] = rec;
+  return m;
+}
+
+function indexRecs_(d) {
+  const map = {};
+  for (const k of MERGE_KEYS) map[k] = indexOne_(d && d[k]);
+  return map;
+}
+
+function stampChanged_(now) {
+  const prev = lastCommitted;
+  if (!prev) return;                   // nothing to compare against (first commit)
+  for (const k of MERGE_KEYS) {
+    const before = prev[k] || {};
+    const live = indexOne_(db[k]);
+    for (const rid in live) {
+      const was = before[rid];
+      if (!was) { live[rid].at = live[rid].at || now; continue; }
+      if (JSON.stringify(bare_(live[rid])) !== JSON.stringify(bare_(was))) live[rid].at = now;
+    }
+    // Present in the last commit, gone now: that is a delete, wherever it happened.
+    for (const rid in before) if (!live[rid]) markDeleted_(k, rid, now);
+  }
+}
+
+/* ---------------------------- tombstones ---------------------------- */
+function tombList_(d) { return Array.isArray(d && d.tombstones) ? d.tombstones : []; }
+
+function markDeleted_(key, rid, at) {
+  const t = tombList_(db).slice();
+  const found = t.find(x => x.key === key && x.id === rid);
+  if (found) found.at = at; else t.push({ key, id: rid, at });
+  db.tombstones = t.slice(-TOMB_MAX);
+}
+
+/* True when d holds a tombstone for this record, from either device. */
+function isDeletedIn_(d, key, rid) {
+  return tombList_(d).some(x => x.key === key && x.id === rid);
+}
+
+/* Union of both sides' tombstones, newest timestamp per record. */
+function mergeTombstones_(a, b) {
+  const out = tombList_({ tombstones: a }).slice();
+  for (const t of tombList_({ tombstones: b })) {
+    const found = out.find(x => x.key === t.key && x.id === t.id);
+    if (found) { if (String(t.at || '') > String(found.at || '')) found.at = t.at; }
+    else out.push({ key: t.key, id: t.id, at: t.at });
+  }
+  return out.slice(-TOMB_MAX);
+}
+
+/* Where d2 has a newer version of a record, copy it into d1; where d1 is newer,
+   leave it. Records d1 has never seen are added, unless d1 holds a tombstone for
+   them - that is the case where a record deleted here comes back in the other
+   device's snapshot, and it must not be resurrected. */
+function mergeRecsInto_(d1, d2) {
+  const a = indexRecs_(d1), b = indexRecs_(d2);
+  for (const k of MERGE_KEYS) {
+    if (!Array.isArray(d1[k])) d1[k] = [];
+    for (const rid in b[k]) {
+      const other = b[k][rid], mine = a[k][rid];
+      if (!mine) {
+        if (!isDeletedIn_(d1, k, rid) && !isDeletedIn_(d2, k, rid)) d1[k].push(other);
+        continue;
+      }
+      // A tombstone is a delete, so it only wins while nothing newer was written.
+      if (String(other.at || '') > String(mine.at || '')) {
+        Object.keys(mine).forEach(key => { if (key !== 'id') delete mine[key]; });
+        Object.assign(mine, other);
+      }
+    }
+  }
+  return d1;
+}
+
+/* Retire every record a tombstone names, and drop tombstones older than any edit
+   that came after them (an edit after a delete is a deliberate re-create). */
+function applyTombstones_(d) {
+  const keep = [];
+  for (const t of tombList_(d)) {
+    const rec = indexOne_(d[t.key])[t.id];
+    if (!rec) { keep.push(t); continue; }
+    if (String(rec.at || '') > String(t.at || '')) continue;   // edited after delete
+    d[t.key] = (d[t.key] || []).filter(x => !(x && x.id === t.id));
+    keep.push(t);
+  }
+  d.tombstones = keep.slice(-TOMB_MAX);
+  return d;
+}
+
+/* The whole pull-side merge: newest record wins, deletions stick, then the stock
+   book is rebuilt from the ledger so it agrees with the memos that are left. */
+function mergeCloudInto_(incoming) {
+  mergeRecsInto_(db, incoming);
+  db.tombstones = mergeTombstones_(db.tombstones, incoming.tombstones);
+  applyTombstones_(db);
+  rebaseStockFromLedger();
+}
+
+/* Rebuild the stock book from the ledger, so it agrees with the memos that are
+   actually left after a merge. A recomputation rather than a second subtraction
+   pass: it discards whatever the sold/purchased counters had accumulated and
+   re-derives them, so two devices' counters cannot drift apart. Memos are the
+   source of truth by design (a memo must save even when stock was never entered),
+   so stock follows the memos rather than the reverse. */
+function rebaseStockFromLedger() {
+  const byProduct = {};
+  (db.ledger || []).forEach(l => {
+    if (!l || !l.productId) return;
+    // A product that was deleted has no ledger worth replaying: rebuilding its
+    // card from old movements would leave a row for "(deleted product)" on the
+    // stock page, which reads as stock the shop still owns.
+    if (!productById(l.productId)) return;
+    const b = byProduct[l.productId] || (byProduct[l.productId] = { opening: 0, purchased: 0, sold: 0 });
+    const q = num(l.qty);
+    if (l.type === 'Opening' || l.type === 'AutoAdd') b.opening += q;
+    else if (l.type === 'Purchase') b.purchased += q;
+    else if (l.type === 'Sale') b.sold += -q;
+    else if (l.type === 'SaleReturn') b.sold -= q;
+    else if (l.type === 'Adjustment' || l.type === 'Damage') b.purchased += q;
+  });
+  const cards = {};
+  (db.stock || []).forEach(s => { if (s && s.productId) cards[s.productId] = s; });
+  Object.keys(byProduct).forEach(pid => {
+    const t = byProduct[pid];
+    let s = cards[pid];
+    if (!s) { s = { id: id(), productId: pid, cost: 0 }; db.stock.push(s); cards[pid] = s; }
+    s.opening = num(t.opening);
+    s.purchased = num(t.purchased);
+    s.sold = num(t.sold);
+    s.available = stockAvailable(s);
+  });
+  (db.stock || []).forEach(s => { if (s) s.available = stockAvailable(s); });
+  dedupeStockCards_();
+}
+
+/* One card per product. A merge can leave two, because each device used to mint its
+   own random card id for the same product - the stock page would then list the same
+   product twice, once under each device's numbers. Later cards keep only a cost the
+   first one lacks. */
+function dedupeStockCards_() {
+  const seen = {};
+  db.stock = (db.stock || []).filter(s => {
+    if (!s || !s.productId) return false;
+    if (seen[s.productId]) {
+      if (!num(seen[s.productId].cost) && num(s.cost)) seen[s.productId].cost = s.cost;
+      return false;
+    }
+    seen[s.productId] = s;
+    return true;
+  });
+  return db.stock;
+}
+
 function commit() {
   try {
+    // Stamp what this save changed *before* it is written, so the copy going to
+    // disk (and later to the cloud) already carries the timestamps the merge needs.
+    stampChanged_(new Date().toISOString());
     snapshot();
     localStorage.setItem(KEY, JSON.stringify(db));
+    lastCommitted = indexRecs_(db);
   } catch (e) {
     alert('\u09A1\u09C7\u099F\u09BE \u09B8\u09C7\u09AD \u0995\u09B0\u09BE \u09AF\u09BE\u099A\u09CD\u099B\u09C7 \u09A8\u09BE: ' + e.message);
     return false;
@@ -1079,6 +1317,9 @@ function commit() {
   if (typeof window !== 'undefined') window.cloudDirty = true;
   return true;
 }
+
+/* The record index as of the last commit, so the next commit can tell what moved. */
+var lastCommitted = null;
 
 /* Rolling safety copies, kept newest-first. Lets a bad edit be undone. */
 function snapshot() {
@@ -2154,6 +2395,117 @@ function restoreFromJSONText(text, opts) {
   }
 }
 
+/* ===================== automatic pull (both directions, no button) =====================
+   Backup alone made the sheet a graveyard: everything this device ever did went up,
+   nothing ever came down, so the PC and the phone each showed only their own work
+   and the newest snapshot silently replaced the other's. cloudAutoSync() closes the
+   loop. It pushes first, then pulls every device's snapshot and merges.
+
+   Pushing first matters: if this machine's work only exists locally, a pull before
+   the push would merge the cloud over the top of it. Sending it up first makes the
+   cloud a superset, and the merge then has both sides of every record to compare.
+
+   The merge is per record, not per snapshot - see mergeCloudInto_ in db.js. Newer
+   wins, deletes stick, and nothing that only one side knew about is dropped. */
+
+const AUTOSYNC_KEY = 'texpark_pro_autosync_at';
+const AUTOSYNC_MIN_MS = 8000;          // one pull at a time; opening pages in a row is common
+var autoSyncBusy = false;
+
+function autosyncEnabled() {
+  return !!syncUrl() && !(db && db.settings && db.settings.autoPull === false);
+}
+
+/* Push the snapshot and wait for it. cloudBackupNow() queues the upload and returns
+   immediately, which is right for a button but wrong before a pull: the pull would
+   race the upload and read a cloud that does not have this machine's work yet. On
+   failure the queue still holds a copy via cloudBackupNow(), so nothing is lost. */
+async function pushBackupNow() {
+  const url = syncUrl();
+  if (!url) return false;
+  const payload = {
+    type: 'backup',
+    data: {
+      device: deviceTag(),
+      date: today(),
+      version: (typeof APP_VERSION === 'string' ? APP_VERSION : ''),
+      json: JSON.stringify(db)
+    }
+  };
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    const txt = await res.text();
+    let ok = false;
+    try { ok = JSON.parse(txt).success !== false; } catch (e) { ok = res.ok; }
+    if (ok) return true;
+  } catch (e) { /* fall through to the queue */ }
+  cloudBackupNow(true);
+  return false;
+}
+
+/* Called on login/open and whenever the tab becomes visible again, which is the
+   moment someone comes back to look at the numbers. */
+function cloudAutoSync(reason) {
+  if (!autosyncEnabled()) return;
+  // Only once someone is signed in. Running it over the login screen would rewrite
+  // the books under a user who has not yet chosen an account - and the login form
+  // itself is built from db, so it would flicker as the merge lands.
+  if (typeof session === 'undefined' || !session) return;
+  if (autoSyncBusy) return;
+  let last = 0;
+  try { last = Number(localStorage.getItem(AUTOSYNC_KEY) || 0); } catch (e) {}
+  if (Date.now() - last < AUTOSYNC_MIN_MS) return;
+  autoSyncBusy = true;
+  try { localStorage.setItem(AUTOSYNC_KEY, String(Date.now())); } catch (e) {}
+
+  // Flush what is already queued (memos, stock, deliveries) before reading the cloud.
+  try { syncFlush(); } catch (e) {}
+
+  pullAndMerge().catch(function () { /* offline is normal; the next open retries */ })
+    .then(function () { autoSyncBusy = false; });
+}
+
+/* One run of it, exposed so the tests can drive it without the timers. */
+async function pullAndMerge() {
+  const url = syncUrl();
+  if (!url) return { merged: false, reason: 'no url' };
+
+  // Ordered deliberately: our own state goes up first, so the pull that follows
+  // merges against a cloud that already contains this machine's work. Pulling
+  // first would let the merge overwrite a memo this device had not uploaded yet.
+  await pushBackupNow();
+
+  const res = await fetch(url + '?action=pullall', { method: 'GET' });
+  const text = await res.text();
+  let j = {};
+  try { j = JSON.parse(text); } catch (e) { throw new Error('Sheet theke thik response ashe ni'); }
+  if (!j.success) throw new Error(j.message || 'pull failed');
+  if (!j.json) return { merged: false, reason: 'cloud empty' };
+
+  let all = {};
+  try { all = JSON.parse(j.json); } catch (e) { return { merged: false, reason: 'bad payload' }; }
+
+  let merged = false;
+  for (const dev of Object.keys(all)) {
+    if (!all[dev]) continue;
+    let incoming = null;
+    try { incoming = JSON.parse(all[dev]); } catch (e) { continue; }
+    if (!incoming || typeof incoming !== 'object') continue;
+    if (!merged) { snapshot(); merged = true; }   // one safety copy before any merge
+    mergeCloudInto_(migrate(incoming));
+  }
+  if (!merged) return { merged: false, reason: 'nothing to merge' };
+  if (!commit()) return { merged: false, reason: 'save failed' };
+  // Push the merged result back up, so the other devices inherit what this one just
+  // learned instead of each machine holding a different half of the picture.
+  await pushBackupNow();
+  return { merged: true };
+}
+
 </script>
 <script>
 /* bundle 3 */
@@ -2161,7 +2513,7 @@ function restoreFromJSONText(text, opts) {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2026-09-22.8';
+const APP_VERSION = '2026-09-22.10';
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
@@ -2199,6 +2551,10 @@ function statBox(label, value, sub) {
 function boot() {
   db = loadDB();
   if (!db.users || !db.users.length) db.users = defaultUsers();
+  // The merge compares each commit against this index to see what moved, so it has
+  // to be seeded with what was actually loaded - otherwise the very first save
+  // would look like every record was created and stamp the lot with one timestamp.
+  lastCommitted = indexRecs_(db);
   syncLoad();
   buildLogin();
 }
@@ -2227,6 +2583,9 @@ function doLogin() {
   buildNav();
   nav('dashboard');
   syncFlush();
+  // Login is the moment the owner starts looking at the books, so bring the other
+  // machines' work down now rather than waiting for the next manual step.
+  cloudAutoSync('login');
 }
 
 function doLogout() { session = null; buildLogin(); }
@@ -3593,6 +3952,8 @@ function renderSettings() {
     if (e) e.value = c[k] || '';
   });
   document.getElementById('stSyncUrl').value = db.settings.syncUrl || '';
+  const ap = document.getElementById('stAutoPull');
+  if (ap) ap.checked = db.settings.autoPull !== false;
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
   const dt = document.getElementById('stDeviceTag');
   if (dt) dt.value = db.settings.deviceTag || '';
@@ -3653,7 +4014,19 @@ function saveCompany() {
 function saveSyncUrl() {
   db.settings.syncUrl = document.getElementById('stSyncUrl').value.trim();
   commit();
+  // A URL just typed in should take effect at once - the owner is at the settings
+  // screen precisely because they want the other machine's data to show up.
+  if (db.settings.syncUrl) cloudAutoSync('url saved');
   alert('Sync URL save hoyeche.');
+}
+
+function saveAutoPull() {
+  const on = document.getElementById('stAutoPull').checked;
+  db.settings.autoPull = !!on;
+  commit();
+  if (on) cloudAutoSync('turned on');
+  alert(on ? 'Auto-pull on — ekhon theke kholar shomoy sheet theke niye ashbe.'
+           : 'Auto-pull off — ekhon shudhu apni chap dilei sheet theke ashe.');
 }
 
 function toggleShortStockWarn(on) {
@@ -3846,10 +4219,15 @@ function syncNow() { syncRetryAll(); setTimeout(renderBackup, 1500); }
 /* ===================== boot ===================== */
 window.addEventListener('DOMContentLoaded', function () {
   boot();
-  window.addEventListener('online', () => syncFlush());
+  window.addEventListener('online', () => cloudAutoSync('online'));
   // Push a full cloud backup once a day when the app is opened, so at least one
   // recent restorable copy always exists off-device without anyone remembering.
   setTimeout(maybeDailyCloudBackup, 4000);
+  // Coming back to the tab is when stale numbers are most likely to be believed,
+  // so re-check the cloud then too - not only on a cold open.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) cloudAutoSync('visible');
+  });
   window.addEventListener('beforeunload', () => { if (cloudDirty) cloudBackupNow(true); });
 });
 

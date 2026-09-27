@@ -5,7 +5,7 @@
    The browser only installs a new service worker when this file's bytes
    change, so APP_VERSION must be bumped on every release. If it is not, phones
    keep serving the previous CSS and JS forever with no way to force an update. */
-const APP_VERSION = '2026-09-22.8';
+const APP_VERSION = '2026-09-22.10';
 const CACHE = 'texpark-pro-' + APP_VERSION;
 const ASSETS = [
   './',

@@ -167,3 +167,114 @@ function restoreFromJSONText(text, opts) {
     alert('Backup ta thik na: ' + e.message);
   }
 }
+
+/* ===================== automatic pull (both directions, no button) =====================
+   Backup alone made the sheet a graveyard: everything this device ever did went up,
+   nothing ever came down, so the PC and the phone each showed only their own work
+   and the newest snapshot silently replaced the other's. cloudAutoSync() closes the
+   loop. It pushes first, then pulls every device's snapshot and merges.
+
+   Pushing first matters: if this machine's work only exists locally, a pull before
+   the push would merge the cloud over the top of it. Sending it up first makes the
+   cloud a superset, and the merge then has both sides of every record to compare.
+
+   The merge is per record, not per snapshot - see mergeCloudInto_ in db.js. Newer
+   wins, deletes stick, and nothing that only one side knew about is dropped. */
+
+const AUTOSYNC_KEY = 'texpark_pro_autosync_at';
+const AUTOSYNC_MIN_MS = 8000;          // one pull at a time; opening pages in a row is common
+var autoSyncBusy = false;
+
+function autosyncEnabled() {
+  return !!syncUrl() && !(db && db.settings && db.settings.autoPull === false);
+}
+
+/* Push the snapshot and wait for it. cloudBackupNow() queues the upload and returns
+   immediately, which is right for a button but wrong before a pull: the pull would
+   race the upload and read a cloud that does not have this machine's work yet. On
+   failure the queue still holds a copy via cloudBackupNow(), so nothing is lost. */
+async function pushBackupNow() {
+  const url = syncUrl();
+  if (!url) return false;
+  const payload = {
+    type: 'backup',
+    data: {
+      device: deviceTag(),
+      date: today(),
+      version: (typeof APP_VERSION === 'string' ? APP_VERSION : ''),
+      json: JSON.stringify(db)
+    }
+  };
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    const txt = await res.text();
+    let ok = false;
+    try { ok = JSON.parse(txt).success !== false; } catch (e) { ok = res.ok; }
+    if (ok) return true;
+  } catch (e) { /* fall through to the queue */ }
+  cloudBackupNow(true);
+  return false;
+}
+
+/* Called on login/open and whenever the tab becomes visible again, which is the
+   moment someone comes back to look at the numbers. */
+function cloudAutoSync(reason) {
+  if (!autosyncEnabled()) return;
+  // Only once someone is signed in. Running it over the login screen would rewrite
+  // the books under a user who has not yet chosen an account - and the login form
+  // itself is built from db, so it would flicker as the merge lands.
+  if (typeof session === 'undefined' || !session) return;
+  if (autoSyncBusy) return;
+  let last = 0;
+  try { last = Number(localStorage.getItem(AUTOSYNC_KEY) || 0); } catch (e) {}
+  if (Date.now() - last < AUTOSYNC_MIN_MS) return;
+  autoSyncBusy = true;
+  try { localStorage.setItem(AUTOSYNC_KEY, String(Date.now())); } catch (e) {}
+
+  // Flush what is already queued (memos, stock, deliveries) before reading the cloud.
+  try { syncFlush(); } catch (e) {}
+
+  pullAndMerge().catch(function () { /* offline is normal; the next open retries */ })
+    .then(function () { autoSyncBusy = false; });
+}
+
+/* One run of it, exposed so the tests can drive it without the timers. */
+async function pullAndMerge() {
+  const url = syncUrl();
+  if (!url) return { merged: false, reason: 'no url' };
+
+  // Ordered deliberately: our own state goes up first, so the pull that follows
+  // merges against a cloud that already contains this machine's work. Pulling
+  // first would let the merge overwrite a memo this device had not uploaded yet.
+  await pushBackupNow();
+
+  const res = await fetch(url + '?action=pullall', { method: 'GET' });
+  const text = await res.text();
+  let j = {};
+  try { j = JSON.parse(text); } catch (e) { throw new Error('Sheet theke thik response ashe ni'); }
+  if (!j.success) throw new Error(j.message || 'pull failed');
+  if (!j.json) return { merged: false, reason: 'cloud empty' };
+
+  let all = {};
+  try { all = JSON.parse(j.json); } catch (e) { return { merged: false, reason: 'bad payload' }; }
+
+  let merged = false;
+  for (const dev of Object.keys(all)) {
+    if (!all[dev]) continue;
+    let incoming = null;
+    try { incoming = JSON.parse(all[dev]); } catch (e) { continue; }
+    if (!incoming || typeof incoming !== 'object') continue;
+    if (!merged) { snapshot(); merged = true; }   // one safety copy before any merge
+    mergeCloudInto_(migrate(incoming));
+  }
+  if (!merged) return { merged: false, reason: 'nothing to merge' };
+  if (!commit()) return { merged: false, reason: 'save failed' };
+  // Push the merged result back up, so the other devices inherit what this one just
+  // learned instead of each machine holding a different half of the picture.
+  await pushBackupNow();
+  return { merged: true };
+}

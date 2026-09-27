@@ -126,6 +126,29 @@ Now:
 - `saveBackup_` refuses payloads over ~49 KB (a Sheets cell holds 50,000 chars) loudly rather
   than letting Google truncate a half-backup.
 
+### Auto-pull: the two devices converge without a button
+Manual restore was not enough in practice — the owner wrote a memo on the phone and the PC
+kept showing yesterday's numbers until he remembered to press "fire aan". Now `cloudAutoSync()`
+runs on login, on `online`, and on `visibilitychange`, and does push → `?action=pullall` → merge
+→ push in that order (the push must be *awaited*; a queued push would race the pull and the
+merge would run against a cloud that does not yet hold this device's work).
+
+The merge is why records carry an `at` stamp and deletes leave a `del` tombstone; a pull that
+merges an identical snapshot must not bump those stamps, or every open would restamp everything
+and the two devices would rewrite each other forever. `test/merge.test.js` and
+`test/autopull.test.js` both assert the no-op case.
+
+Three latent duplicates had to be fixed for this to be safe, all found by the merge tests:
+- Seed products got random `id()`s per device, so two machines that had both merely *started*
+  merged into six products under three names. They now use fixed `seed-*` ids, and
+  `adoptSeedIds_()` renames an *untouched* legacy row (same name and rate) and repoints its memo
+  items, stock card and ledger entries. An edited seed row is left alone.
+- Each device minted its own random **stock card** id for the same product, so a merge left two
+  cards for one product and the stock page listed it twice. `dedupeStockCards_()` runs after
+  every rebase.
+- `rebaseStockFromLedger()` skips products that no longer exist, so deleting a product cannot
+  resurrect a "(deleted product)" row from old ledger movements.
+
 ### Permanent hosting: what is and is not possible here
 The sandbox URL is temporary and cannot be made permanent from inside. The user must host the
 built bundle themselves. `docs/HOSTING_BANGLA.txt` is the guide, the repo root is the folder,
@@ -149,11 +172,16 @@ the root `index.html` can be the app.
 - `node build.js` (in `texpark-pro/`) regenerates **both** the repo root and
   `../texpark-pro.html`. Always run this after changing source, or the shipped files drift.
   The script asserts the new cloud/device functions are present in the single file.
-- `npm test` runs `test/logic.test.js` (78), `test/sheet.test.js` (20), `test/e2e.test.js` (197),
-  then `node --test test/android.test.js` (12). Total 307.
+- `npm test` runs `test/logic.test.js` (84), `test/sheet.test.js` (28), `test/e2e.test.js` (205),
+  `test/merge.test.js` (33), `test/autopull.test.js` (15), then `node --test test/android.test.js`
+  (27). Total 392.
+- `test/merge.test.js` and `test/autopull.test.js` load `db.js` **and `sync.js`** into a `vm`
+  context each, so two "devices" can be run against one fake sheet and the merge is exercised as
+  two databases rather than as one.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
-- Current version: `2026-09-22.5` in both `sw.js` and `js/app.js` (bump both, then rebuild).
+- Current version: `2026-09-22.10` in both `sw.js` and `js/app.js` (bump both, then rebuild — the
+  e2e test fails if the two drift apart).
 
 ## Android app (added 2026-09-22)
 `TexparkPro.apk` — a WebView **shell**, deliberately not a copy of the app. The owner types his

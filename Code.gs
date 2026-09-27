@@ -79,7 +79,8 @@ function doGet(e) {
   // phone can be restored from the cloud instead of starting empty.
   try {
     const p = (e && e.parameter) || {};
-    if (String(p.action || '').toLowerCase() === 'pull') {
+    const action = String(p.action || '').toLowerCase();
+    if (action === 'pull' || action === 'pullall') {
       const ss = ss_();
       ensureAll_(ss);
       const sh = sheet_(ss, 'backup');
@@ -96,6 +97,16 @@ function doGet(e) {
         device: latest[k].device, date: latest[k].date, at: latest[k].at,
         bytes: String(latest[k].json || '').length
       }));
+      // ?action=pullall returns every device's newest snapshot in one reply, keyed
+      // by device. The new PC/phone needs all of them, not just one: its own data
+      // may live on the phone, while the memos it entered last week live on the PC.
+      // One round trip also means one moment in time, so two snapshots cannot be
+      // read either side of a write and merged as if they were consistent.
+      if (action === 'pullall') {
+        const jsons = {};
+        Object.keys(latest).forEach(k => { if (latest[k].json) jsons[latest[k].device] = latest[k].json; });
+        return out_({ success: true, devices: devs, json: JSON.stringify(jsons) });
+      }
       const want = String(p.device || '').trim();
       if (want && latest[want]) return out_({ success: true, device: want, date: latest[want].date, json: latest[want].json, devices: devs });
       return out_({ success: true, devices: devs, json: '' });

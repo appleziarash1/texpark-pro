@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2026-09-22.8';
+const APP_VERSION = '2026-09-22.10';
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
@@ -40,6 +40,10 @@ function statBox(label, value, sub) {
 function boot() {
   db = loadDB();
   if (!db.users || !db.users.length) db.users = defaultUsers();
+  // The merge compares each commit against this index to see what moved, so it has
+  // to be seeded with what was actually loaded - otherwise the very first save
+  // would look like every record was created and stamp the lot with one timestamp.
+  lastCommitted = indexRecs_(db);
   syncLoad();
   buildLogin();
 }
@@ -68,6 +72,9 @@ function doLogin() {
   buildNav();
   nav('dashboard');
   syncFlush();
+  // Login is the moment the owner starts looking at the books, so bring the other
+  // machines' work down now rather than waiting for the next manual step.
+  cloudAutoSync('login');
 }
 
 function doLogout() { session = null; buildLogin(); }
@@ -1434,6 +1441,8 @@ function renderSettings() {
     if (e) e.value = c[k] || '';
   });
   document.getElementById('stSyncUrl').value = db.settings.syncUrl || '';
+  const ap = document.getElementById('stAutoPull');
+  if (ap) ap.checked = db.settings.autoPull !== false;
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
   const dt = document.getElementById('stDeviceTag');
   if (dt) dt.value = db.settings.deviceTag || '';
@@ -1494,7 +1503,19 @@ function saveCompany() {
 function saveSyncUrl() {
   db.settings.syncUrl = document.getElementById('stSyncUrl').value.trim();
   commit();
+  // A URL just typed in should take effect at once - the owner is at the settings
+  // screen precisely because they want the other machine's data to show up.
+  if (db.settings.syncUrl) cloudAutoSync('url saved');
   alert('Sync URL save hoyeche.');
+}
+
+function saveAutoPull() {
+  const on = document.getElementById('stAutoPull').checked;
+  db.settings.autoPull = !!on;
+  commit();
+  if (on) cloudAutoSync('turned on');
+  alert(on ? 'Auto-pull on — ekhon theke kholar shomoy sheet theke niye ashbe.'
+           : 'Auto-pull off — ekhon shudhu apni chap dilei sheet theke ashe.');
 }
 
 function toggleShortStockWarn(on) {
@@ -1687,10 +1708,15 @@ function syncNow() { syncRetryAll(); setTimeout(renderBackup, 1500); }
 /* ===================== boot ===================== */
 window.addEventListener('DOMContentLoaded', function () {
   boot();
-  window.addEventListener('online', () => syncFlush());
+  window.addEventListener('online', () => cloudAutoSync('online'));
   // Push a full cloud backup once a day when the app is opened, so at least one
   // recent restorable copy always exists off-device without anyone remembering.
   setTimeout(maybeDailyCloudBackup, 4000);
+  // Coming back to the tab is when stale numbers are most likely to be believed,
+  // so re-check the cloud then too - not only on a cold open.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) cloudAutoSync('visible');
+  });
   window.addEventListener('beforeunload', () => { if (cloudDirty) cloudBackupNow(true); });
 });
 

@@ -21,16 +21,21 @@ const DEFAULT_SETTINGS = {
   warnOnShortStock: true,      // show a reminder when stock is not entered yet
   lowStockLevel: 10,
   vatPercent: 0,
-  autoBackup: true
+  autoBackup: true,
+  autoPull: true        // cloud theke notun data nijei niye asha
 };
 
 function blankDB() {
   return {
     version: 2,
+    /* Stable ids, not id(). These three seed rows exist on every fresh install, and
+       a random id per device meant two devices that had both merely *started* would
+       merge into six products under three names the first time they synced. A fixed
+       id makes the seed the same record everywhere, so it merges to one. */
     products: [
-      { id: id(), name: 'Kids 3pcs Set',     sku: 'K3S', category: 'Kids',   unit: 'pcs', rate: 220, cost: 165, vat: 0, reorderLevel: 10 },
-      { id: id(), name: 'Kids Girls Sweater',sku: 'KGS', category: 'Kids',   unit: 'pcs', rate: 145, cost: 108, vat: 0, reorderLevel: 10 },
-      { id: id(), name: 'Baby Keepers',      sku: 'BK',  category: 'Baby',   unit: 'pcs', rate: 55,  cost: 41,  vat: 0, reorderLevel: 10 }
+      { id: 'seed-k3s', name: 'Kids 3pcs Set',     sku: 'K3S', category: 'Kids',   unit: 'pcs', rate: 220, cost: 165, vat: 0, reorderLevel: 10 },
+      { id: 'seed-kgs', name: 'Kids Girls Sweater',sku: 'KGS', category: 'Kids',   unit: 'pcs', rate: 145, cost: 108, vat: 0, reorderLevel: 10 },
+      { id: 'seed-bk',  name: 'Baby Keepers',      sku: 'BK',  category: 'Baby',   unit: 'pcs', rate: 55,  cost: 41,  vat: 0, reorderLevel: 10 }
     ],
     suppliers: [],
     customers: [],
@@ -41,6 +46,7 @@ function blankDB() {
     memos: [],
     deliveries: [],
     payments: [],     // customer receipts: {date, customerId, amount, method, note}
+    tombstones: [],   // {key, id, at} for records deleted on some device
     settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
     seq: { memo: 1, purchase: 1 }
   };
@@ -77,6 +83,7 @@ function migrate(d) {
   d.version = 2;
   ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'payments']
     .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
+  if (!Array.isArray(d.tombstones)) d.tombstones = [];
   d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
   d.settings.company = Object.assign({}, DEFAULT_SETTINGS.company, d.settings.company || {});
   d.seq = Object.assign({ memo: 1, purchase: 1 }, d.seq || {});
@@ -102,16 +109,241 @@ function migrate(d) {
   d.purchases.forEach(p => { p.items = p.items || []; p.subtotal = num(p.subtotal); p.paid = num(p.paid); p.due = num(p.due); });
   d.expenses.forEach(e => { e.amount = num(e.amount); });
   d.payments.forEach(p => { p.amount = num(p.amount); });
+  adoptSeedIds_(d);
   return d;
+}
+
+/* The three starter products used to get a random id per device. An install that
+   predates the stable ids still carries those random ones, and the first sync
+   would then show six rows for three products. Rename an *untouched* seed row to
+   the shared id and repoint every reference to it. A row the owner has edited, or
+   a name/sku that is not one of the seeds, is left exactly as it is - guessing
+   wrong there would silently move a memo or a stock card onto another product. */
+const SEED_IDS = { K3S: 'seed-k3s', KGS: 'seed-kgs', BK: 'seed-bk' };
+
+function adoptSeedIds_(d) {
+  const taken = {};
+  d.products.forEach(p => { if (p && p.id) taken[p.id] = true; });
+  const renames = {};
+  d.products.forEach(p => {
+    if (!p || !p.sku) return;
+    const target = SEED_IDS[String(p.sku).toUpperCase()];
+    if (!target || p.id === target || taken[target]) return;
+    const seed = blankDB().products.find(x => x.id === target);
+    if (!seed || p.name !== seed.name || num(p.rate) !== seed.rate) return;
+    renames[p.id] = target;
+    taken[target] = true;
+  });
+  const keys = Object.keys(renames);
+  if (!keys.length) return;
+  d.products.forEach(p => { if (p && renames[p.id]) p.id = renames[p.id]; });
+  d.stock.forEach(s => { if (s && renames[s.productId]) s.productId = renames[s.productId]; });
+  d.ledger.forEach(l => { if (l && renames[l.productId]) l.productId = renames[l.productId]; });
+  d.memos.forEach(m => (m.items || []).forEach(it => { if (it && renames[it.productId]) it.productId = renames[it.productId]; }));
+  d.purchases.forEach(p => (p.items || []).forEach(it => { if (it && renames[it.productId]) it.productId = renames[it.productId]; }));
+  d.stock = d.stock.filter((s, i, arr) => s && arr.findIndex(x => x && x.productId === s.productId) === i);
 }
 
 /* Single write path. Nothing mutates localStorage directly. */
 const SNAP_KEY = 'texpark_pro_snapshots';
 
+/* ============ change stamps + tombstones (so the cloud pull is a real merge) ============
+   Pulling the newest snapshot used to mean "replace everything with whatever the
+   PC last uploaded". Two things went wrong with that, and both are fixed here.
+
+   `at` on a record is when it last changed. Without it, an edit made on the phone
+   *after* the PC's last backup is overwritten by the PC's older copy the next time
+   the phone pulls. With it, the newer version of each record wins individually, so
+   both machines' work survives.
+
+   Deletion cannot be expressed by the record being absent, because absence is also
+   what a device that never saw the record looks like - and the other device's
+   snapshot would keep handing the deleted record back. So a delete writes a small
+   tombstone instead, and the record is filtered out at read time. Tombstones live
+   in their own list rather than in the collections, because a hidden record that is
+   still *in* memos[] would be silently dropped by the first .filter() that touches
+   it - before the tombstone had a chance to defeat the other device's copy.
+
+   `at` is stamped in commit(), the one point every write passes through, so no
+   caller can forget it. Comparisons are on the ISO string: every device stamps UTC
+   and the format is fixed-width, so a plain string compare is correct and does not
+   depend on which machine's clock does the merging. */
+const MERGE_KEYS = ['products', 'suppliers', 'customers', 'stock', 'ledger',
+                    'purchases', 'expenses', 'memos', 'deliveries', 'payments'];
+const TOMB_MAX = 4000;                 // plenty of history; stops unbounded growth
+
+/* A record without its change stamp - what "changed?" actually compares. */
+function bare_(o) {
+  const c = Object.assign({}, o);
+  delete c.at;
+  return c;
+}
+
+function indexOne_(arr) {
+  const m = {};
+  for (const rec of (Array.isArray(arr) ? arr : [])) if (rec && rec.id) m[rec.id] = rec;
+  return m;
+}
+
+function indexRecs_(d) {
+  const map = {};
+  for (const k of MERGE_KEYS) map[k] = indexOne_(d && d[k]);
+  return map;
+}
+
+function stampChanged_(now) {
+  const prev = lastCommitted;
+  if (!prev) return;                   // nothing to compare against (first commit)
+  for (const k of MERGE_KEYS) {
+    const before = prev[k] || {};
+    const live = indexOne_(db[k]);
+    for (const rid in live) {
+      const was = before[rid];
+      if (!was) { live[rid].at = live[rid].at || now; continue; }
+      if (JSON.stringify(bare_(live[rid])) !== JSON.stringify(bare_(was))) live[rid].at = now;
+    }
+    // Present in the last commit, gone now: that is a delete, wherever it happened.
+    for (const rid in before) if (!live[rid]) markDeleted_(k, rid, now);
+  }
+}
+
+/* ---------------------------- tombstones ---------------------------- */
+function tombList_(d) { return Array.isArray(d && d.tombstones) ? d.tombstones : []; }
+
+function markDeleted_(key, rid, at) {
+  const t = tombList_(db).slice();
+  const found = t.find(x => x.key === key && x.id === rid);
+  if (found) found.at = at; else t.push({ key, id: rid, at });
+  db.tombstones = t.slice(-TOMB_MAX);
+}
+
+/* True when d holds a tombstone for this record, from either device. */
+function isDeletedIn_(d, key, rid) {
+  return tombList_(d).some(x => x.key === key && x.id === rid);
+}
+
+/* Union of both sides' tombstones, newest timestamp per record. */
+function mergeTombstones_(a, b) {
+  const out = tombList_({ tombstones: a }).slice();
+  for (const t of tombList_({ tombstones: b })) {
+    const found = out.find(x => x.key === t.key && x.id === t.id);
+    if (found) { if (String(t.at || '') > String(found.at || '')) found.at = t.at; }
+    else out.push({ key: t.key, id: t.id, at: t.at });
+  }
+  return out.slice(-TOMB_MAX);
+}
+
+/* Where d2 has a newer version of a record, copy it into d1; where d1 is newer,
+   leave it. Records d1 has never seen are added, unless d1 holds a tombstone for
+   them - that is the case where a record deleted here comes back in the other
+   device's snapshot, and it must not be resurrected. */
+function mergeRecsInto_(d1, d2) {
+  const a = indexRecs_(d1), b = indexRecs_(d2);
+  for (const k of MERGE_KEYS) {
+    if (!Array.isArray(d1[k])) d1[k] = [];
+    for (const rid in b[k]) {
+      const other = b[k][rid], mine = a[k][rid];
+      if (!mine) {
+        if (!isDeletedIn_(d1, k, rid) && !isDeletedIn_(d2, k, rid)) d1[k].push(other);
+        continue;
+      }
+      // A tombstone is a delete, so it only wins while nothing newer was written.
+      if (String(other.at || '') > String(mine.at || '')) {
+        Object.keys(mine).forEach(key => { if (key !== 'id') delete mine[key]; });
+        Object.assign(mine, other);
+      }
+    }
+  }
+  return d1;
+}
+
+/* Retire every record a tombstone names, and drop tombstones older than any edit
+   that came after them (an edit after a delete is a deliberate re-create). */
+function applyTombstones_(d) {
+  const keep = [];
+  for (const t of tombList_(d)) {
+    const rec = indexOne_(d[t.key])[t.id];
+    if (!rec) { keep.push(t); continue; }
+    if (String(rec.at || '') > String(t.at || '')) continue;   // edited after delete
+    d[t.key] = (d[t.key] || []).filter(x => !(x && x.id === t.id));
+    keep.push(t);
+  }
+  d.tombstones = keep.slice(-TOMB_MAX);
+  return d;
+}
+
+/* The whole pull-side merge: newest record wins, deletions stick, then the stock
+   book is rebuilt from the ledger so it agrees with the memos that are left. */
+function mergeCloudInto_(incoming) {
+  mergeRecsInto_(db, incoming);
+  db.tombstones = mergeTombstones_(db.tombstones, incoming.tombstones);
+  applyTombstones_(db);
+  rebaseStockFromLedger();
+}
+
+/* Rebuild the stock book from the ledger, so it agrees with the memos that are
+   actually left after a merge. A recomputation rather than a second subtraction
+   pass: it discards whatever the sold/purchased counters had accumulated and
+   re-derives them, so two devices' counters cannot drift apart. Memos are the
+   source of truth by design (a memo must save even when stock was never entered),
+   so stock follows the memos rather than the reverse. */
+function rebaseStockFromLedger() {
+  const byProduct = {};
+  (db.ledger || []).forEach(l => {
+    if (!l || !l.productId) return;
+    // A product that was deleted has no ledger worth replaying: rebuilding its
+    // card from old movements would leave a row for "(deleted product)" on the
+    // stock page, which reads as stock the shop still owns.
+    if (!productById(l.productId)) return;
+    const b = byProduct[l.productId] || (byProduct[l.productId] = { opening: 0, purchased: 0, sold: 0 });
+    const q = num(l.qty);
+    if (l.type === 'Opening' || l.type === 'AutoAdd') b.opening += q;
+    else if (l.type === 'Purchase') b.purchased += q;
+    else if (l.type === 'Sale') b.sold += -q;
+    else if (l.type === 'SaleReturn') b.sold -= q;
+    else if (l.type === 'Adjustment' || l.type === 'Damage') b.purchased += q;
+  });
+  const cards = {};
+  (db.stock || []).forEach(s => { if (s && s.productId) cards[s.productId] = s; });
+  Object.keys(byProduct).forEach(pid => {
+    const t = byProduct[pid];
+    let s = cards[pid];
+    if (!s) { s = { id: id(), productId: pid, cost: 0 }; db.stock.push(s); cards[pid] = s; }
+    s.opening = num(t.opening);
+    s.purchased = num(t.purchased);
+    s.sold = num(t.sold);
+    s.available = stockAvailable(s);
+  });
+  (db.stock || []).forEach(s => { if (s) s.available = stockAvailable(s); });
+  dedupeStockCards_();
+}
+
+/* One card per product. A merge can leave two, because each device used to mint its
+   own random card id for the same product - the stock page would then list the same
+   product twice, once under each device's numbers. Later cards keep only a cost the
+   first one lacks. */
+function dedupeStockCards_() {
+  const seen = {};
+  db.stock = (db.stock || []).filter(s => {
+    if (!s || !s.productId) return false;
+    if (seen[s.productId]) {
+      if (!num(seen[s.productId].cost) && num(s.cost)) seen[s.productId].cost = s.cost;
+      return false;
+    }
+    seen[s.productId] = s;
+    return true;
+  });
+  return db.stock;
+}
+
 function commit() {
   try {
+    // Stamp what this save changed *before* it is written, so the copy going to
+    // disk (and later to the cloud) already carries the timestamps the merge needs.
+    stampChanged_(new Date().toISOString());
     snapshot();
     localStorage.setItem(KEY, JSON.stringify(db));
+    lastCommitted = indexRecs_(db);
   } catch (e) {
     alert('\u09A1\u09C7\u099F\u09BE \u09B8\u09C7\u09AD \u0995\u09B0\u09BE \u09AF\u09BE\u099A\u09CD\u099B\u09C7 \u09A8\u09BE: ' + e.message);
     return false;
@@ -121,6 +353,9 @@ function commit() {
   if (typeof window !== 'undefined') window.cloudDirty = true;
   return true;
 }
+
+/* The record index as of the last commit, so the next commit can tell what moved. */
+var lastCommitted = null;
 
 /* Rolling safety copies, kept newest-first. Lets a bad edit be undone. */
 function snapshot() {

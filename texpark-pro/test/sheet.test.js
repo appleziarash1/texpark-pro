@@ -116,6 +116,21 @@ console.log('\n--- an unknown device gets a clear empty answer ---');
 const none = get({ action: 'pull', device: 'LAPTOP-X' });
 ok(none.success === true && !none.json, 'no snapshot means no payload, not an error');
 
+console.log('\n--- pullall hands back every device in one reply ---');
+const all = get({ action: 'pullall' });
+ok(all.success === true, 'pullall succeeds');
+ok(!!all.json, 'it returns a payload, not an empty string');
+const byDevice = JSON.parse(all.json);
+ok(typeof byDevice === 'object' && byDevice !== null, 'the payload is keyed by device');
+ok(!!byDevice.PC && !!byDevice.PH, 'both devices are present (' + Object.keys(byDevice).join(',') + ')');
+ok(JSON.parse(byDevice.PC).memos.length === 2, 'the PC snapshot is the full one');
+ok(JSON.parse(byDevice.PH).memos[0].memoNo.indexOf('-PH001') > 0, 'the phone snapshot is its own');
+/* The merge on the client needs both, so one call must carry both - a call that
+   quietly returned only the newest device would leave the other machine's work
+   permanently invisible on a fresh install. */
+ok(Object.keys(byDevice).length === all.devices.length, 'every listed device carries its snapshot');
+ok(all.devices.length === 2, 'and the device list still describes them');
+
 console.log('\n--- a bad payload is refused instead of wiping a backup ---');
 let threw = false;
 try { sandbox.saveBackup_(SS, { device: 'PC', date: '2026-09-22', json: '' }); } catch (e) { threw = true; }
