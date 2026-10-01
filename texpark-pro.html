@@ -2759,7 +2759,23 @@ async function pullAndMerge() {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.4';
+const APP_VERSION = '2027-01-01.5';
+
+/* Where the released build is published. Used only to tell an owner whose copy
+   was opened from a stale address where the current one lives. */
+const RELEASE_URL = 'https://appleziarash1.github.io/texpark-pro';
+
+/* Numeric version compare, so 2027-01-01.10 sorts above 2027-01-01.9. A plain
+   string compare puts .10 first, which is the wrong way round for releases. */
+function versionNewer(a, b) {
+  const parts = v => String(v || '').split(/[^0-9]+/).filter(s => s.length).map(Number);
+  const x = parts(a), y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const xi = i < x.length ? x[i] : 0, yi = i < y.length ? y[i] : 0;
+    if (xi !== yi) return xi > yi;
+  }
+  return false;
+}
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
@@ -4456,17 +4472,30 @@ function checkForUpdate() {
   const done = () => {
     const bust = url => fetch(url + '?v=' + Date.now(), { cache: 'reload' })
       .then(r => r.text()).catch(() => null);
-    Promise.all([bust('js/app.js'), bust('css/app.css')]).then(res => {
-      const js = res[0] || '', css = res[1] || '';
-      const serverJs = (js.match(/APP_VERSION = '([^']+)'/) || [])[1] || '?';
-      const hasPhoneFix = /iOS zooms the whole page in/.test(css);
-      say('<div class="vp-block"><b>Ei device e: ' + APP_VERSION + '</b>' +
-          'Server e ache: <b>' + serverJs + '</b>' +
-          (serverJs === APP_VERSION
-            ? '<br>Duitai same — apni latest version e achen.'
-            : '<br>Notun version ache! Reload korun.') +
-          '<br>Phone layout fix server e: ' + (hasPhoneFix ? 'ache' : 'nei') + '</div>');
-    });
+    Promise.all([bust('js/app.js'), bust('css/app.css'), bust(RELEASE_URL + '/js/app.js')])
+      .then(res => {
+        const js = res[0] || '', css = res[1] || '', released = res[2] || '';
+        const serverJs = (js.match(/APP_VERSION = '([^']+)'/) || [])[1] || '?';
+        const releasedJs = (released.match(/APP_VERSION = '([^']+)'/) || [])[1] || '';
+        const hasPhoneFix = /iOS zooms the whole page in/.test(css);
+        /* A copy opened from an address that stopped being updated - an old
+           mirror, a saved bookmark - sees its own host as current forever. The
+           released address is the tie-breaker, so the owner is told where the
+           new build actually is instead of being told he is up to date. */
+        const staleOrigin = releasedJs && releasedJs !== serverJs &&
+          versionNewer(releasedJs, serverJs);
+        say('<div class="vp-block"><b>Ei device e: ' + APP_VERSION + '</b>' +
+            'Ei address e ache: <b>' + serverJs + '</b>' +
+            (staleOrigin
+              ? '<br><b style="color:var(--red)">Ei address purono!</b> Notun version ' +
+                '<b>' + releasedJs + '</b> ache ekhane: ' +
+                '<a href="' + RELEASE_URL + '/" target="_blank">' + RELEASE_URL + '</a>' +
+                '<br>Sei link theke khulun, tarpor browser-e "Add to Home screen" korun.'
+              : serverJs === APP_VERSION
+                ? '<br>Duitai same — apni latest version e achen.'
+                : '<br>Notun version ache! Reload korun.') +
+            '<br>Phone layout fix server e: ' + (hasPhoneFix ? 'ache' : 'nei') + '</div>');
+      });
   };
 
   if (!navigator.serviceWorker || !navigator.serviceWorker.controller) { done(); return; }

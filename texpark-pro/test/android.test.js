@@ -12,6 +12,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 
@@ -144,7 +145,7 @@ test('android: Updater compiles without any Android import', () => {
 });
 
 // Drives the real Updater with a fake network and a real temp folder.
-function updaterProbe(body) {
+function updaterProbe(body, extraArgs) {
   const script = `
     import com.texpark.pro.Updater;
     import java.io.File;
@@ -158,7 +159,24 @@ function updaterProbe(body) {
   const p = path.join(OUT, 'UpProbe.java');
   fs.writeFileSync(p, script);
   execFileSync(JAVAC, ['-nowarn', '-cp', OUT, '-d', OUT, p], { stdio: 'pipe' });
-  return execFileSync(JAVA, ['-cp', OUT, 'UpProbe', OUT], { encoding: 'utf8' });
+  return execFileSync(JAVA, ['-cp', OUT, 'UpProbe', OUT].concat(extraArgs || []),
+    { encoding: 'utf8' });
+}
+
+/* Runs a throwaway HTTP server on a loopback port and hands its base URL to
+   `body`. Real sockets are used rather than a stubbed Fetcher because the bug
+   being guarded lives in how a host answers, not in the parsing. */
+function withServer(server, body) {
+  return new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const base = 'http://127.0.0.1:' + server.address().port;
+      Promise.resolve()
+        .then(() => body(base))
+        .then(v => { server.close(() => resolve(v)); },
+              e => { server.close(() => reject(e)); });
+    });
+  });
 }
 
 test('android: a newer version wins and an older one is refused', () => {

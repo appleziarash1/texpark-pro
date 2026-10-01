@@ -278,7 +278,7 @@ The shop sends parcels out and some come back, so there are now two books, not o
   two databases rather than as one.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
-- Current version: `2027-01-01.1` in `sw.js`, `js/app.js`, `version.txt` and
+- Current version: `2027-01-01.5` in `sw.js`, `js/app.js`, `version.txt` and
   `MainActivity.java` (bump them together, then rebuild — the e2e test fails if the two js
   files drift apart, and `ci/check-site.py` fails if the Java or the APK drifts too).
 
@@ -350,6 +350,30 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   survives only as the stamp the APK's own bundled build is compared by; `filelist.txt` is gone.
   `make-hosting-zip.py` writes **no** `_redirects` so a missing file 404s instead of returning
   a valid-looking page — a catch-all rewrite is the one host setting that breaks the updater.
+  **This rule has now regressed once.** The native-app rewrite (`75f3561`) reintroduced a bare
+  `root + "/version.txt"` read inside `hasNewerRelease`, undoing `253a0f2`. The docs, the tests
+  and the fix all still said `js/app.js`, so nothing caught it: the only symptom was an owner
+  whose phone never offered the build that already had his fix. `hasNewerRelease` is now a
+  one-line wrapper over `releaseVersionAt()`, which cannot read a version without passing the
+  bytes through `looksLikeBuildFile()` first. Guarded by
+  `android: the update check reads the app script, not version.txt`, which runs the real class
+  against a real socket that fakes `version.txt` with HTML.
+- **A stale mirror must not be able to hide a release.** An install can hold an address that
+  stopped being updated — the old WebView shell's default was
+  `https://keen-rolypoly-3f9aa4.netlify.app`, still up and still serving `2026-09-22.6`, with
+  `version.txt` answered by the HTML fallback. Such an install would never hear about a new
+  build. `MainActivity.releaseWithNewerApk()` therefore tries the owner's configured address
+  first and `DEFAULT_UPDATE_URL` second, and `updateUrl()` falls back to the old shell's prefs
+  (`texpark`/`site_url`) so a custom address the owner typed there survives the migration. The
+  web app does the same for a PWA opened from a stale origin: `checkForUpdate()` compares its own
+  `APP_VERSION` against `RELEASE_URL` and prints the released link instead of "you are up to
+  date". `versionNewer()` does the compare numerically, because `2027-01-01.10 > 2027-01-01.9`
+  as numbers but not as strings — the same trap `Updater.compareVersions` exists to avoid.
+- **`caches.addAll(ASSETS)` in `sw.js` install is a trap.** It rejects the entire install if a
+  single entry 404s, so the new worker never activates and the phone keeps serving the old CSS
+  and JS forever with nothing on screen to explain it. The install caches each asset
+  individually and tolerates a miss, except for `REQUIRED` (`index.html`, `js/app.js`), where a
+  miss still fails loudly — a half-cached app is worse than an old one.
 - A JDK is not part of this image and `apt` has no `openjdk-*` package. `test/android.test.js`
   and `test/native.test.js` need `javac`/`java` on `PATH`, so on a fresh shell they report a
   **false failure** — it is a missing tool, not broken code. Fix:

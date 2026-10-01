@@ -45,10 +45,20 @@ import java.util.Map;
 public class MainActivity extends Activity {
 
     /** Shown in Settings. build-apk.py rewrites this line to the built version. */
-    public static final String APP_VERSION = "2027-01-01.4";
+    public static final String APP_VERSION = "2027-01-01.5";
 
     private static final String PREFS = "texpark_pro_shell";
     private static final String KEY_URL = "update_url";
+
+    /**
+     * Where the WebView shell kept the same address before this app replaced it.
+     *
+     * The owner could have typed a custom address there. Reading it once means an
+     * install that came from the old shell does not silently start checking a
+     * different host than the one it was pointed at.
+     */
+    private static final String OLD_PREFS = "texpark";
+    private static final String OLD_KEY_URL = "site_url";
 
     /** Where the released APK lives, so an old install can still find a new one. */
     static final String DEFAULT_UPDATE_URL = "https://appleziarash1.github.io/texpark-pro";
@@ -401,6 +411,11 @@ public class MainActivity extends Activity {
     /** The address the owner keeps, editable in Settings so a moved site still works. */
     String updateUrl() {
         String u = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_URL, null);
+        if (u == null || u.isEmpty()) {
+            // An install that started life as the WebView shell has its address
+            // under the old key, and the owner may have typed a custom one there.
+            u = getSharedPreferences(OLD_PREFS, MODE_PRIVATE).getString(OLD_KEY_URL, null);
+        }
         return (u == null || u.isEmpty()) ? DEFAULT_UPDATE_URL : u;
     }
 
@@ -416,15 +431,34 @@ public class MainActivity extends Activity {
      * to dismiss.
      */
     private void checkForUpdateInBackground() {
-        final String url = updateUrl();
         new Thread(new Runnable() {
             public void run() {
-                if (!Updater.hasNewerRelease(url, APP_VERSION)) return;
+                final String url = releaseWithNewerApk();
+                if (url == null) return;
                 runOnUiThread(new Runnable() {
                     public void run() { offerDownloadOnly(url); }
                 });
             }
         }).start();
+    }
+
+    /**
+     * The first host that is publishing something newer than this build, or null.
+     *
+     * The owner's own address is tried first. The released address is tried after
+     * it, because an install pointed at a mirror that has since been frozen - or at
+     * a host that has gone away - would otherwise never hear about a new build and
+     * would sit on a version with a bug he already reported.
+     */
+    private String releaseWithNewerApk() {
+        String configured = updateUrl();
+        if (Updater.hasNewerRelease(configured, APP_VERSION)) return configured;
+        String released = DEFAULT_UPDATE_URL;
+        if (!trimSlash(released).equalsIgnoreCase(trimSlash(configured))
+                && Updater.hasNewerRelease(released, APP_VERSION)) {
+            return released;
+        }
+        return null;
     }
 
     /** Points at the newer APK. See {@link Updater#hasNewerRelease} for why the

@@ -64,6 +64,27 @@ Site-e notun APK na thakle, ba adha-adha nemar somoy kichu bhul hoile, app ta
 **purono version-ei thake**. Adho-adhuri update kokhono boshbe na — mane app
 kokhono bhenge jabe na.
 
+### Purono install jodi notun version na dekhay
+
+Ekta karon chilo, ar ekhon thik kora hoyeche: purono app ta **Netlify**-er ek
+address theke update khujto (`keen-rolypoly-3f9aa4.netlify.app`). Sei site ta
+ekhon ar update hoy na — sekhane version **2026-09-22.6** atke ache.
+
+Tai jodi apnar phone-er app bole "apni latest version e achen", kintu
+`Settings → App Update` e purono number dekhay:
+
+1. **Browser-e ei link ta khulun:**
+   `https://appleziarash1.github.io/texpark-pro/TexparkPro.apk`
+2. File ta neme ashbe — **tap korun**, tarpor **Install** chepun.
+   Apnar data thakbe (memo, stock, customer sob).
+3. Ar jodi browser-er app (Chrome-e "Add to Home screen") purono address theke
+   khola thake, **sei purono shortcut ta muchhe felun** — ar notun link ta
+   theke abar "Add to Home screen" korun.
+
+Notun app ta ekhon dutoi address-e dekhe: apnar nijer address age, na pele
+**asol release address** ta pore. Tai ekta purono mirror ar apnar update
+lukate parbe na.
+
 ---
 
 ## Kichu bhul hole — Back button-er menu
@@ -138,8 +159,11 @@ Ei app ta **puro native** — WebView na. Prottek screen asol Android view
 - `res/drawable/ic_launcher.png` — nijer icon
 - `resources.arsc`, `res/` — icon ar Android-er resource
 - `version.txt` APK-er bhitor na — eta host-e thake, ar app kholar somoy
-  `js/app.js` theke version ta pore. Tarpor nijer version-er sathe milay:
-  notun hole dialog dey, na hole chup thake.
+  **`js/app.js`** theke version ta pore (version.txt theke na). Tarpor nijer
+  version-er sathe milay: notun hole dialog dey, na hole chup thake.
+  `js/app.js` theke porar karon: kichu host jekono na-ja-path-ke `index.html`
+  diye uttor dey, tai `version.txt` ekta HTML page hisebe ashte pare — ar
+  seta pore app chirokal "up to date" bhebe thake.
 
 ### Nijer APK ta notun kore banate chan?
 

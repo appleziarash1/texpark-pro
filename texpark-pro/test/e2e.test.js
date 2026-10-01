@@ -617,11 +617,27 @@ ok(/mode === 'navigate'/.test(sw2), 'the page itself is treated as must-be-fresh
 // an updated worker should reload the open page instead of waiting for a manual refresh
 ok(/clients\.matchAll/.test(sw2) && /navigate/.test(sw2), 'an updated worker reloads the open page');
 ok(/skipWaiting/.test(sw2) && /clients\.claim/.test(sw2), 'the new worker takes over immediately');
+// one missing asset must not reject the whole install: caches.addAll() does
+// exactly that, and the phone then keeps the old worker - and the old app -
+// forever, with nothing on screen to explain it
+ok(!/addAll\(ASSETS\)/.test(sw2),
+   'assets are cached one by one, so a single 404 cannot pin the phone to the old build');
+ok(/REQUIRED/.test(sw2), 'the files the app cannot start without still fail the install loudly');
 // and there must be a way for the user to tell, and to force it
 ok(/function checkForUpdate/.test(appJs), 'Settings offers an update check');
 ok(/id="appVersion"/.test(html) && /id="updateOut"/.test(html), 'Settings shows the build it is running');
 ok(/checkForUpdate\(\)/.test(html), 'the update button is wired to the function');
 ok(/cache: 'reload'/.test(appJs), 'the check bypasses the cache instead of being fooled by it');
+// a copy opened from an address that stopped being updated must be told where
+// the current build is, not told it is up to date
+ok(/RELEASE_URL/.test(appJs), 'the released address is known to the app');
+ok(/staleOrigin/.test(appJs), 'a stale address is reported as stale');
+// the numeric compare, so .10 is not read as older than .9
+const vNewer = new Function('a', 'b', 'return (' +
+  (appJs.match(/function versionNewer[\s\S]*?\n}/) || ['return false'])[0] + ')(a, b)');
+ok(vNewer('2027-01-01.10', '2027-01-01.9'), '.10 counts as newer than .9');
+ok(!vNewer('2027-01-01.9', '2027-01-01.10'), '.9 does not count as newer than .10');
+ok(!vNewer('2027-01-01.5', '2027-01-01.5'), 'the same version is not newer than itself');
 // the stale-build bug itself: the phone fix must be present in the shipped css
 ok(/iOS zooms the whole page in/.test(fs.readFileSync(path.join(root, 'css/app.css'), 'utf8')),
    'the phone fix is really in the css that ships');

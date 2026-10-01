@@ -197,9 +197,13 @@ public final class Updater {
     /**
      * Whether the host is offering an APK newer than the one installed.
      *
-     * It asks for version.txt, the tiny stamp the release publishes, rather than
-     * the multi-megabyte APK: the check runs on every launch over a phone
-     * connection, and downloading an APK just to read a version would be absurd.
+     * The version is read out of js/app.js, never out of version.txt. A host
+     * configured with a catch-all rewrite answers any unknown path - version.txt
+     * included - with index.html, so a stamp read from there can be a page of
+     * HTML, compare as not-newer, and leave the phone on its old build forever
+     * with nothing on screen saying why. js/app.js is a file the app genuinely
+     * needs, so no fallback can fake it, and it is the same number the running
+     * app shows.
      *
      * A downloaded APK is never installed silently. Since Android 8 an app may not
      * install an APK from its own process - only the system installer may, after
@@ -211,31 +215,46 @@ public final class Updater {
      * check that cannot reach the host must never be reported as "up to date".
      */
     public static boolean hasNewerRelease(String baseUrl, String currentVersion) {
-        String root = baseUrl == null ? "" : baseUrl.trim();
-        while (root.endsWith("/")) root = root.substring(0, root.length() - 1);
-        if (root.isEmpty()) return false;
+        return compareVersions(releaseVersionAt(baseUrl), currentVersion) > 0;
+    }
+
+    /**
+     * The version a host is publishing, or "" when it is not publishing one.
+     *
+     * Nothing here trusts a file merely because it answered 200: the bytes have
+     * to look like the app script, not like a page a fallback rewrite handed out.
+     */
+    public static String releaseVersionAt(String baseUrl) {
+        String root = trimSlash(baseUrl);
+        if (root.isEmpty()) return "";
         java.net.HttpURLConnection c = null;
         try {
-            c = (java.net.HttpURLConnection) new java.net.URL(root + "/version.txt").openConnection();
+            c = (java.net.HttpURLConnection) new java.net.URL(root + "/" + VERSION_FILE).openConnection();
             c.setConnectTimeout(8000);
             c.setReadTimeout(8000);
             c.setUseCaches(false);
             c.setRequestProperty("Cache-Control", "no-cache");
-            if (c.getResponseCode() != 200) return false;
+            if (c.getResponseCode() != 200) return "";
             java.io.InputStream in = c.getInputStream();
-            String remote;
+            byte[] bytes;
             try {
-                remote = new String(readAll(in), "UTF-8").trim();
+                bytes = readAll(in);
             } finally {
                 in.close();
             }
-            if (remote.isEmpty()) return false;
-            return compareVersions(remote, currentVersion) > 0;
+            if (!looksLikeBuildFile(bytes)) return "";
+            return versionIn(new String(bytes, "UTF-8"));
         } catch (Exception e) {
-            return false;
+            return "";
         } finally {
             if (c != null) c.disconnect();
         }
+    }
+
+    private static String trimSlash(String s) {
+        String out = s == null ? "" : s.trim();
+        while (out.endsWith("/")) out = out.substring(0, out.length() - 1);
+        return out;
     }
 
     /**

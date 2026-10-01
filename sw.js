@@ -5,7 +5,7 @@
    The browser only installs a new service worker when this file's bytes
    change, so APP_VERSION must be bumped on every release. If it is not, phones
    keep serving the previous CSS and JS forever with no way to force an update. */
-const APP_VERSION = '2027-01-01.4';
+const APP_VERSION = '2027-01-01.5';
 const CACHE = 'texpark-pro-' + APP_VERSION;
 const ASSETS = [
   './',
@@ -20,8 +20,20 @@ const ASSETS = [
   './icon-512.png'
 ];
 
+/* Files the app cannot start without. If one of these is missing the install
+   should fail loudly, because a half-cached app is worse than an old one. */
+const REQUIRED = ['./index.html', './js/app.js'];
+
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => Promise.all(ASSETS.map(a =>
+        c.add(a).catch(err => {
+          if (REQUIRED.indexOf(a) >= 0) throw err;
+        })
+      )))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', e => {
