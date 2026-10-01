@@ -112,7 +112,7 @@ public final class Sync {
         data.put("device", store.deviceTag());
         data.put("date", Store.today());
         data.put("version", appVersion);
-        data.put("json", Json.write(store.db));
+        data.put("json", store.snapshotJson());
 
         Map<String, Object> payload = new LinkedHashMap<String, Object>();
         payload.put("type", "backup");
@@ -131,7 +131,7 @@ public final class Sync {
         data.put("device", store.deviceTag());
         data.put("date", Store.today());
         data.put("version", appVersion);
-        data.put("json", Json.write(store.db));
+        data.put("json", store.snapshotJson());
         Map<String, Object> payload = new LinkedHashMap<String, Object>();
         payload.put("type", "backup");
         payload.put("data", data);

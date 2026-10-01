@@ -43,7 +43,7 @@ function boot() {
   // The merge compares each commit against this index to see what moved, so it has
   // to be seeded with what was actually loaded - otherwise the very first save
   // would look like every record was created and stamp the lot with one timestamp.
-  lastCommitted = indexRecs_(db);
+  lastCommitted = frozenIndex_(db);
   syncLoad();
   buildLogin();
 }
@@ -1730,6 +1730,11 @@ function saveCompany() {
   db.settings.deviceTag = dtEl ? dtEl.value.trim() : '';
   db.settings.lowStockLevel = num(document.getElementById('stLowStock').value) || 10;
   db.settings.autoBackup = document.getElementById('stAutoBackup').checked;
+  // Stamp the edit, so the other machine can tell this settings value is newer than
+  // its own instead of the two of them trading the same field back and forth.
+  const now = new Date().toISOString();
+  db.settings.companyUpdatedAt = now;
+  db.settings.settingsUpdatedAt = now;
   commit();
   alert('Company setting save hoyeche.');
 }
@@ -1959,6 +1964,12 @@ window.addEventListener('DOMContentLoaded', function () {
     cloudAutoSync('visible');
   });
   window.addEventListener('pagehide', function () { if (cloudDirty) flushCloudPush(); });
+  /* The tab staying open is the normal way this app is used, and until now a change
+     made on the phone only appeared when the owner came back to the tab. Polling on
+     a timer closes that gap. It runs only while the tab is visible: a background tab
+     polling the sheet would spend the owner's data to update a screen nobody is
+     looking at. cloudAutoSync() itself keeps the once-per-8s floor. */
+  setInterval(function () { if (!document.hidden) cloudAutoSync('timer'); }, 30000);
 });
 
 const CLOUD_DAY_KEY = 'texpark_pro_cloud_backup_day';

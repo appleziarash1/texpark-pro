@@ -82,6 +82,10 @@ public class Screens {
 
     /** The memo being written, kept across rebuilds so typing is never lost. */
     MemoDraft draft = new MemoDraft();
+    /** The purchase being written, for the same reason. A poll that finds new data
+     *  rebuilds the screen, and a purchase half typed at that moment used to go with
+     *  it. */
+    PurchaseDraft purchase = new PurchaseDraft();
     /** Which memo an update form is for, if any. */
     String deliveryMemoId = null;
 
@@ -507,6 +511,31 @@ public class Screens {
                 out.add(it);
             }
             return out;
+        }
+    }
+
+    /** The purchase form's fields, held outside the view tree. The screen is rebuilt
+     *  whenever a sync brings something new, and an EditText that lives only in the
+     *  tree takes whatever was typed in it to the grave. */
+    public static class PurchaseDraft {
+        public String no = "";
+        public String date = "";
+        public String supplier = "";
+        public String product = "";
+        public String qty = "";
+        public String cost = "";
+        public String paid = "";
+        public String note = "";
+
+        public void reset(Store store) {
+            no = "";
+            date = Store.today();
+            supplier = "";
+            product = "";
+            qty = "";
+            cost = "";
+            paid = "";
+            note = "";
         }
     }
 }

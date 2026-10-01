@@ -225,18 +225,29 @@ public class ScreensMore {
 
     static View purchases(final Screens s) {
         final Store store = s.store;
+        final Screens.PurchaseDraft pd = s.purchase;
+        if (pd.date.isEmpty()) pd.date = Store.today();
+        if (pd.no.isEmpty()) pd.no = store.nextPurchaseNo();
         LinearLayout body = Ui.col(s.act);
         LinearLayout form = Ui.card(s.act, "Purchase");
-        final EditText no = Ui.field(s.act, "Purchase No.", store.nextPurchaseNo(),
+        final EditText no = Ui.field(s.act, "Purchase No.", pd.no,
                 InputType.TYPE_CLASS_TEXT);
-        final EditText date = s.dateField(Store.today(), "Date");
-        final EditText supplier = Ui.field(s.act, "Supplier Name", "", InputType.TYPE_CLASS_TEXT);
+        final EditText date = s.dateField(pd.date, "Date");
+        final EditText supplier = Ui.field(s.act, "Supplier Name", pd.supplier, InputType.TYPE_CLASS_TEXT);
         final EditText product = Ui.field(s.act, "Product name (existing or new)",
-                "", InputType.TYPE_CLASS_TEXT);
-        final EditText qty = Ui.number(s.act, "Qty", "");
-        final EditText cost = Ui.number(s.act, "Unit Cost (\u09F3)", "");
-        final EditText paid = Ui.number(s.act, "Paid Now (\u09F3)", "");
-        final EditText note = Ui.field(s.act, "Note", "", InputType.TYPE_CLASS_TEXT);
+                pd.product, InputType.TYPE_CLASS_TEXT);
+        final EditText qty = Ui.number(s.act, "Qty", pd.qty);
+        final EditText cost = Ui.number(s.act, "Unit Cost (\u09F3)", pd.cost);
+        final EditText paid = Ui.number(s.act, "Paid Now (\u09F3)", pd.paid);
+        final EditText note = Ui.field(s.act, "Note", pd.note, InputType.TYPE_CLASS_TEXT);
+        Ui.mirror(no, new Ui.Setter() { public void set(String v) { pd.no = v; } });
+        Ui.mirror(date, new Ui.Setter() { public void set(String v) { pd.date = v; } });
+        Ui.mirror(supplier, new Ui.Setter() { public void set(String v) { pd.supplier = v; } });
+        Ui.mirror(product, new Ui.Setter() { public void set(String v) { pd.product = v; } });
+        Ui.mirror(qty, new Ui.Setter() { public void set(String v) { pd.qty = v; } });
+        Ui.mirror(cost, new Ui.Setter() { public void set(String v) { pd.cost = v; } });
+        Ui.mirror(paid, new Ui.Setter() { public void set(String v) { pd.paid = v; } });
+        Ui.mirror(note, new Ui.Setter() { public void set(String v) { pd.note = v; } });
         form.addView(Ui.label(s.act, "Purchase No.")); form.addView(no);
         form.addView(Ui.label(s.act, "Date")); form.addView(date);
         form.addView(Ui.label(s.act, "Supplier")); form.addView(supplier);
@@ -295,6 +306,7 @@ public class ScreensMore {
                 store.list("purchases").add(pu);
                 store.map("seq").put("purchase", Long.valueOf((long) Store.num(store.map("seq").get("purchase")) + 1));
                 store.applyPurchaseToStock(pu);
+                pd.reset(store);
                 s.afterSave("Purchase save hoyeche, stock barche.");
             }
         });
@@ -912,6 +924,11 @@ public class ScreensMore {
                 set.put("memoPrefix", prefix.getText().toString().trim());
                 set.put("deviceTag", tagDev.getText().toString().trim());
                 set.put("lowStockLevel", Double.valueOf(Store.num(low.getText().toString())));
+                // Stamp the edit, so the other machine can tell this value is newer
+                // than its own instead of the two trading the same field forever.
+                String now = Store.nowIso();
+                set.put("companyUpdatedAt", now);
+                set.put("settingsUpdatedAt", now);
                 s.afterSave("Settings save hoyeche.");
             }
         });

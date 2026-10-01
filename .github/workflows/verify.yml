@@ -44,7 +44,8 @@ jobs:
       - name: Every path index.html asks for exists, and version.txt agrees
         run: python3 ci/check-site.py
 
-      - name: Hosting zip carries the site and no secrets
+      - name: Hosting and download zips carry the site and no secrets
         run: |
           python3 make-hosting-zip.py
+          python3 make-zip.py
           python3 ci/check-zip.py

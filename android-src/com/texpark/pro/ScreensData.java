@@ -50,20 +50,25 @@ public class ScreensData {
         LinearLayout head = Ui.card(s.act, "Memo");
         head.addView(Ui.label(s.act, "Memo No."));
         final EditText memoNo = Ui.field(s.act, "Memo No.", d.memoNo, InputType.TYPE_CLASS_TEXT);
+        Ui.mirror(memoNo, new Ui.Setter() { public void set(String v) { d.memoNo = v; } });
         head.addView(memoNo);
         head.addView(Ui.label(s.act, "Date"));
         final EditText date = s.dateField(d.date, "Date");
+        Ui.mirror(date, new Ui.Setter() { public void set(String v) { d.date = v; } });
         head.addView(date);
         head.addView(Ui.label(s.act, "Customer Name"));
         final EditText name = Ui.field(s.act, "Customer Name", d.customerName,
                 InputType.TYPE_CLASS_TEXT);
+        Ui.mirror(name, new Ui.Setter() { public void set(String v) { d.customerName = v; } });
         head.addView(name);
         head.addView(Ui.label(s.act, "Phone"));
         final EditText phone = Ui.field(s.act, "Phone", d.customerPhone, InputType.TYPE_CLASS_PHONE);
+        Ui.mirror(phone, new Ui.Setter() { public void set(String v) { d.customerPhone = v; } });
         head.addView(phone);
         head.addView(Ui.label(s.act, "Address"));
         final EditText addr = Ui.field(s.act, "Address", d.customerAddress,
                 InputType.TYPE_CLASS_TEXT);
+        Ui.mirror(addr, new Ui.Setter() { public void set(String v) { d.customerAddress = v; } });
         head.addView(addr);
         /* The saved customer list, one tap away. On a phone the owner should not have
            to retype a name he has already sold to - and picking one fills the phone
@@ -158,6 +163,9 @@ public class ScreensData {
                     updateTotals(s, d);
                 }
             };
+            Ui.mirror(qty, new Ui.Setter() { public void set(String v) { line.qty = v; updateTotals(s, d); } });
+            Ui.mirror(rate, new Ui.Setter() { public void set(String v) { line.rate = v; } });
+            Ui.mirror(cost, new Ui.Setter() { public void set(String v) { line.cost = v; } });
             qty.setOnFocusChangeListener(new View.OnFocusChangeListener() {
                 public void onFocusChange(View v, boolean has) { if (has) pickKeep(line); sync.run(); }
             });
@@ -211,6 +219,9 @@ public class ScreensData {
                 updateTotals(s, d);
             }
         };
+        Ui.mirror(disc, new Ui.Setter() { public void set(String v) { d.discount = v; updateTotals(s, d); } });
+        Ui.mirror(deliv, new Ui.Setter() { public void set(String v) { d.delivery = v; updateTotals(s, d); } });
+        Ui.mirror(adv, new Ui.Setter() { public void set(String v) { d.advance = v; updateTotals(s, d); } });
         for (EditText e : new EditText[]{disc, deliv, adv}) {
             e.setOnFocusChangeListener(new View.OnFocusChangeListener() {
                 public void onFocusChange(View v, boolean has) { if (has) recalc.run(); }
@@ -222,6 +233,7 @@ public class ScreensData {
         tot.addView(Ui.label(s.act, "Note (memo-te print hobe)"));
         final EditText note = Ui.field(s.act, "Note", d.note, InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        Ui.mirror(note, new Ui.Setter() { public void set(String v) { d.note = v; } });
         tot.addView(note);
         body.addView(tot);
 

@@ -341,3 +341,17 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   QR that leads nowhere looks exactly like one that works. `ci/check-site.py` now fails if
   `demo.html` disagrees with the app's host, mentions `prod-runtime.all-hands.dev`, or carries a
   code that decodes to anything the page does not print.
+- The catalog pages (`catalog/index.html`, `catalog/download.html`, `catalog/catalog-pro-v1.html`)
+  live in `catalog/`, so their links are **relative to that folder**: the root-level downloads are
+  `../TexparkPro.apk`, `../texpark-hosting.zip`, `../texpark-pro-download.zip`, `../texpark-pro.html`,
+  and the sibling pages are bare names (`download.html`, `catalog-pro-v1.html`). They were once
+  written as `./download.html` / `./TexparkPro.apk`, which resolved against the repo root and gave
+  the owner a 404 on every download button — a broken link is invisible in a rendered page, so
+  check the paths on disk (`python3` walk from the repo root) after touching these files.
+- `make-zip.py` builds `texpark-pro-download.zip` from an **allowlist**, never a walk of the repo
+  root. It used to `os.walk(root)` with `src = root`, which swept in `.git/` and
+  `android-keystore.jks` (the APK signing private key) and — because the walk reached the zip file
+  being written and recursed into it — grew the archive without bound instead of finishing. The
+  allowlist lives in `APP_FILES` / `APP_COPIES` / `TOP_FILES` / `CATALOG_FILES`; the catalog is
+  mirrored under `catalog/` in the zip so its `../` links still resolve offline. Keep the
+  `assert` block at the bottom — it is what fails a build that would publish the key or the history.

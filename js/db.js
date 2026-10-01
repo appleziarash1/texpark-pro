@@ -47,6 +47,7 @@ function blankDB() {
     deliveries: [],
     returns: [],      // parcels sent back: {memoId, qty, date, condition, ...}
     payments: [],     // customer receipts: {date, customerId, amount, method, note}
+    users: defaultUsers(),  // a fresh install always has a way in
     tombstones: [],   // {key, id, at} for records deleted on some device
     settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
     seq: { memo: 1, purchase: 1 }
@@ -82,7 +83,7 @@ function migrate(d) {
   const base = blankDB();
   if (!d || typeof d !== 'object') return base;
   d.version = 2;
-  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments']
+  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments', 'users']
     .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
   if (!Array.isArray(d.tombstones)) d.tombstones = [];
   d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
@@ -170,8 +171,20 @@ const SNAP_KEY = 'texpark_pro_snapshots';
    and the format is fixed-width, so a plain string compare is correct and does not
    depend on which machine's clock does the merging. */
 const MERGE_KEYS = ['products', 'suppliers', 'customers', 'stock', 'ledger',
-                    'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments'];
+                    'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments',
+                    'users'];
 const TOMB_MAX = 4000;                 // plenty of history; stops unbounded growth
+
+/* Settings travel between machines, but not all of them. These keys describe the
+   machine, not the business: the sync URL is how this device reaches the sheet and
+   the device tag is which machine this is. Syncing either would make the phone
+   adopt the PC's URL, or rename the PC to the phone - the two ways a merge can make
+   a device stop syncing at all. Everything else (company details, memo prefix,
+   low-stock level, VAT, auto-backup) is the business's, so it does sync.
+
+   `autoPull` is deliberately per-device too: switching auto-pull off on the phone
+   is a decision about the phone, and it must not silence the PC. */
+const LOCAL_SETTING_KEYS = ['syncUrl', 'deviceTag', 'autoPull'];
 
 /* A record without its change stamp - what "changed?" actually compares. */
 function bare_(o) {
@@ -189,6 +202,20 @@ function indexOne_(arr) {
 function indexRecs_(d) {
   const map = {};
   for (const k of MERGE_KEYS) map[k] = indexOne_(d && d[k]);
+  return map;
+}
+
+/* The same index over a detached copy of the records. stampChanged_ has to compare
+   this commit against the last one, and a plain index holds the live objects - so
+   an edit made in place (a password reset, a role change) looked identical to the
+   previous commit and was never stamped, never pushed, and never reached the other
+   machine. Freezing the copy is what makes an in-place edit visible. */
+function frozenIndex_(d) {
+  const map = {};
+  for (const k of MERGE_KEYS) {
+    const src = (d && d[k]) || [];
+    map[k] = indexOne_(JSON.parse(JSON.stringify(src)));
+  }
   return map;
 }
 
@@ -234,6 +261,63 @@ function mergeTombstones_(a, b) {
   return out.slice(-TOMB_MAX);
 }
 
+/* Business settings, newest wins. The whole settings object carries no per-record
+   stamp, so the device tag is compared against the value the other side sent: the
+   side that changed last is the side whose value the other one has not seen. */
+function mergeSettingsInto_(incoming) {
+  const inSet = (incoming && incoming.settings) || null;
+  if (!inSet || typeof inSet !== 'object') return;
+  const mine = db.settings || (db.settings = {});
+  const inCompany = inSet.company || {};
+  const myCompany = mine.company || (mine.company = {});
+  Object.keys(inCompany).forEach(k => {
+    const theirs = inCompany[k];
+    if (theirs === undefined || theirs === null || theirs === '') return;
+    const ours = myCompany[k];
+    if (ours === undefined || ours === null || ours === '') myCompany[k] = theirs;
+    else if (JSON.stringify(ours) !== JSON.stringify(theirs) &&
+             String(inSet.companyUpdatedAt || '') > String(mine.companyUpdatedAt || '')) {
+      myCompany[k] = theirs;
+    }
+  });
+  Object.keys(inSet).forEach(k => {
+    if (k === 'company' || LOCAL_SETTING_KEYS.indexOf(k) !== -1) return;
+    const theirs = inSet[k];
+    if (theirs === undefined || theirs === null) return;
+    const ours = mine[k];
+    if (ours === undefined || ours === null) { mine[k] = theirs; return; }
+    if (JSON.stringify(ours) === JSON.stringify(theirs)) return;
+    if (String(inSet.settingsUpdatedAt || '') > String(mine.settingsUpdatedAt || '')) mine[k] = theirs;
+  });
+  if (String(inSet.companyUpdatedAt || '') > String(mine.companyUpdatedAt || '')) {
+    mine.companyUpdatedAt = inSet.companyUpdatedAt;
+  }
+  if (String(inSet.settingsUpdatedAt || '') > String(mine.settingsUpdatedAt || '')) {
+    mine.settingsUpdatedAt = inSet.settingsUpdatedAt;
+  }
+}
+
+/* One account per username, whichever device created it. Two devices that each
+   started fresh both hold an `admin`, and the ids differ because they were random -
+   without this the merge produced two admins, and the login picked whichever came
+   first. The newest password and role win, so a password reset on the PC still
+   works on the phone. */
+function mergeUsersInto_() {
+  const seen = {};
+  const out = [];
+  (db.users || []).forEach(u => {
+    if (!u || !u.username) return;
+    const key = String(u.username).toLowerCase();
+    const prev = seen[key];
+    if (!prev) { seen[key] = u; out.push(u); return; }
+    if (String(u.at || '') > String(prev.at || '')) {
+      Object.keys(prev).forEach(k => { if (k !== 'id') delete prev[k]; });
+      Object.assign(prev, u);
+    }
+  });
+  db.users = out;
+}
+
 /* Where d2 has a newer version of a record, copy it into d1; where d1 is newer,
    leave it. Records d1 has never seen are added, unless d1 holds a tombstone for
    them - that is the case where a record deleted here comes back in the other
@@ -273,13 +357,17 @@ function applyTombstones_(d) {
   return d;
 }
 
-/* The whole pull-side merge: newest record wins, deletions stick, then the stock
-   book is rebuilt from the ledger so it agrees with the memos that are left. */
+/* The whole pull-side merge: newest record wins, deletions stick, business settings
+   follow the newer edit, accounts collapse to one per username, then the stock book
+   is rebuilt from the ledger so it agrees with the memos that are left. */
 function mergeCloudInto_(incoming) {
   mergeRecsInto_(db, incoming);
   db.tombstones = mergeTombstones_(db.tombstones, incoming.tombstones);
   applyTombstones_(db);
+  mergeUsersInto_();
+  mergeSettingsInto_(incoming);
   rebaseStockFromLedger();
+  ensureUsers_();
 }
 
 /* Rebuild the stock book from the ledger, so it agrees with the memos that are
@@ -348,7 +436,7 @@ function commit() {
     stampChanged_(new Date().toISOString());
     snapshot();
     localStorage.setItem(KEY, JSON.stringify(db));
-    lastCommitted = indexRecs_(db);
+    lastCommitted = frozenIndex_(db);
   } catch (e) {
     alert('\u09A1\u09C7\u099F\u09BE \u09B8\u09C7\u09AD \u0995\u09B0\u09BE \u09AF\u09BE\u099A\u09CD\u099B\u09C7 \u09A8\u09BE: ' + e.message);
     return false;
@@ -731,8 +819,14 @@ const PERMS = {
   accountant:['dashboard', 'history', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'supplier', 'backup']
 };
 
+/* A fresh install always has a way in; a merge that emptied users must not lock the
+   owner out of his own books. */
+function ensureUsers_() {
+  if (!Array.isArray(db.users) || !db.users.length) db.users = defaultUsers();
+}
+
 function defaultUsers() {
-  return [{ id: id(), username: 'admin', name: 'Administrator', pass: hash('admin123'), role: 'admin', active: true, createdAt: new Date().toISOString() }];
+  return [{ id: 'seed-admin', username: 'admin', name: 'Administrator', pass: hash('admin123'), role: 'admin', active: true, createdAt: new Date().toISOString() }];
 }
 
 var session = null;   // {userId, username, name, role}

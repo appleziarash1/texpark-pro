@@ -144,6 +144,24 @@ public final class Ui {
         return e;
     }
 
+    /** Mirrors every keystroke into the draft, the moment it is typed.
+     *
+     *  Reading an EditText only when it loses focus meant a rebuild that happened
+     *  while the owner was still typing - an incoming sync, a rotation - redrew the
+     *  form from a draft that had never heard of those characters, and the memo being
+     *  written came back blank. Writing through as it is typed removes the window
+     *  entirely. */
+    public static void mirror(final EditText e, final Setter into) {
+        e.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            public void afterTextChanged(android.text.Editable s) { into.set(s.toString()); }
+        });
+    }
+
+    /** What a mirrored field writes into. */
+    public interface Setter { void set(String value); }
+
     public static Button button(Context c, String text, int bg) {
         Button b = new Button(c);
         b.setText(text);

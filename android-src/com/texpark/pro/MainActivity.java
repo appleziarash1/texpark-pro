@@ -72,7 +72,11 @@ public class MainActivity extends Activity {
     private boolean pushScheduled = false;
     private final android.os.Handler syncHandler = new android.os.Handler();
     private Runnable pushTask;
+    private Runnable pollTask;
     private static final long PUSH_QUIET_MS = 2000L;
+    /** How often the open app re-reads the sheet. Matches the web tab's timer and
+     *  Sync.POLL_EVERY_MS, so neither side polls harder than the other. */
+    private static final long POLL_TICK_MS = 30000L;
 
     private static final int REQ_VOICE = 4001;
 
@@ -116,6 +120,42 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         autoSyncQuietly();
+        startPolling();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        stopPolling();
+        // Leaving the app is the moment a pending upload matters most: the owner is
+        // about to look at it from somewhere else, and the quiet period may not have
+        // elapsed yet.
+        if (pushScheduled) {
+            syncHandler.removeCallbacks(pushTask);
+            pushTask.run();
+        }
+    }
+
+    /** Polls the sheet every 30 seconds for as long as the app is on screen.
+     *  A shop phone is usually sitting open on the counter, and until now a memo
+     *  entered on the PC only appeared after the owner closed and reopened the app.
+     *  The poll stops in onPause, so it never runs behind the owner's back - a
+     *  background poll would spend his data to refresh a screen nobody is reading. */
+    private void startPolling() {
+        if (pollTask == null) {
+            pollTask = new Runnable() {
+                public void run() {
+                    autoSyncQuietly();
+                    syncHandler.postDelayed(pollTask, POLL_TICK_MS);
+                }
+            };
+        }
+        syncHandler.removeCallbacks(pollTask);
+        syncHandler.postDelayed(pollTask, POLL_TICK_MS);
+    }
+
+    private void stopPolling() {
+        if (pollTask != null) syncHandler.removeCallbacks(pollTask);
     }
 
     @Override
@@ -433,9 +473,15 @@ public class MainActivity extends Activity {
         lastPollAt = System.currentTimeMillis();
         new Thread(new Runnable() {
             public void run() {
+                String before = store.snapshotJson();
                 // pullAll pushes first and reports whether that upload worked, so
                 // there is no separate push here.
                 Sync.pullAll(store, url);
+                // Redraw only when the merge actually moved something. A rebuild on
+                // every poll would close whatever the owner had open and drop the
+                // caret out of the field he is typing in, every 30 seconds, for no
+                // reason at all on the many polls that find nothing new.
+                if (store.snapshotJson().equals(before)) return;
                 runOnUiThread(new Runnable() { public void run() { screens.render(); } });
             }
         }).start();
@@ -480,18 +526,6 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             public void run() { Sync.backupQuiet(store, url); }
         }).start();
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        // Leaving the app is the moment a pending upload matters most: the owner is
-        // about to look at it from somewhere else, and the quiet period may not have
-        // elapsed yet.
-        if (pushScheduled) {
-            syncHandler.removeCallbacks(pushTask);
-            pushTask.run();
-        }
     }
 
     /* ------------------------------------------------------------ backup files */

@@ -290,6 +290,98 @@ public class Driver {
       out.put("tag", tag);
       out.put("tagUnique", tag.length() > 2 && tag.startsWith("PH"));
       out.put("tagStable", tag.equals(st.deviceTag()));
+    } else if (op.equals("settingsSync")) {
+      /* Settings and users crossing between the PC and the phone, driven through
+         the real Store. The three ways this can lose data rather than merely fail:
+         a phone that adopts the PC's device tag renames its own memos, a phone that
+         adopts the PC's sync URL can be pointed at a dead script, and a merge that
+         duplicates the seed admin locks the owner out with "wrong password". */
+      out.put("startsOneAdmin", st.list("users").size() == 1);
+      out.put("adminId", Store.str(Store.rec(st.list("users").get(0)), "id"));
+
+      // The PC's snapshot: a new company name, a memo prefix, a lower stock level,
+      // a second user, and the PC's own sync URL and tag.
+      Map<String,Object> cloud = new LinkedHashMap<String,Object>();
+      Map<String,Object> cset = new LinkedHashMap<String,Object>();
+      Map<String,Object> ccomp = new LinkedHashMap<String,Object>();
+      ccomp.put("name", "TEXPARK BUYING HOUSE");
+      ccomp.put("phone", "01621-008204");
+      cset.put("company", ccomp);
+      cset.put("memoPrefix", "TXP/NEW/");
+      cset.put("lowStockLevel", 25.0);
+      cset.put("syncUrl", "https://script.google.com/macros/s/PC_ONLY/exec");
+      cset.put("deviceTag", "PC001");
+      cset.put("companyUpdatedAt", "2099-01-01T00:00:00.000Z");
+      cset.put("settingsUpdatedAt", "2099-01-01T00:00:00.000Z");
+      cloud.put("settings", cset);
+      cloud.put("users", new ArrayList<Object>());
+      Map<String,Object> cloudUser = new LinkedHashMap<String,Object>();
+      cloudUser.put("id", "seed-admin");
+      cloudUser.put("username", "admin");
+      cloudUser.put("name", "Administrator");
+      cloudUser.put("pass", Store.hash("admin123"));
+      cloudUser.put("role", "admin");
+      cloudUser.put("active", true);
+      ((List<Object>) cloud.get("users")).add(cloudUser);
+      Map<String,Object> salesman = new LinkedHashMap<String,Object>();
+      salesman.put("id", "u-rakib");
+      salesman.put("username", "rakib");
+      salesman.put("name", "Rakib");
+      salesman.put("pass", Store.hash("rakib123"));
+      salesman.put("role", "salesman");
+      salesman.put("active", true);
+      ((List<Object>) cloud.get("users")).add(salesman);
+
+      st.mergeCloudInto(cloud);
+      st.commit();
+
+      out.put("companyName", Store.str(st.company(), "name"));
+      out.put("companyPhone", Store.str(st.company(), "phone"));
+      out.put("memoPrefix", Store.str(st.settings(), "memoPrefix"));
+      out.put("lowStockLevel", Store.num(st.settings().get("lowStockLevel")));
+      out.put("keptDeviceTag", !"PC001".equals(st.deviceTag()));
+      out.put("keptOwnUrl", Store.str(st.settings(), "syncUrl").isEmpty());
+      out.put("userCount", st.list("users").size());
+      out.put("adminCount", countUser(st, "admin"));
+      out.put("hasRakib", hasUser(st, "rakib"));
+
+      // The new user can actually log in on this device.
+      out.put("rakibCanLogin", st.login("rakib", "rakib123"));
+
+      // A merge that repeats must not duplicate anything.
+      st.mergeCloudInto(cloud);
+      st.commit();
+      out.put("userCountAfterSecondMerge", st.list("users").size());
+
+      // A password reset on the PC reaches the phone: the change is in place, with
+      // no new record and no changed id, so only the change stamp can carry it.
+      cloudUser.put("pass", Store.hash("newpass99"));
+      cloudUser.put("at", "2099-02-01T00:00:00.000Z");
+      st.mergeCloudInto(cloud);
+      st.commit();
+      out.put("resetWorks", st.login("admin", "newpass99"));
+
+      // Two fresh installs must not become two admins.
+      Store other = new Store(new File(System.getProperty("java.io.tmpdir"),
+          "texpark-native-other-" + System.nanoTime()));
+      other.load();
+      st.mergeCloudInto(other.db);
+      st.commit();
+      other.mergeCloudInto(st.db);
+      other.commit();
+      out.put("stillOneAdmin", countUser(st, "admin") == 1);
+      out.put("otherOneAdmin", countUser(other, "admin") == 1);
+
+      // An empty users list on the other side must never lock this device out.
+      Map<String,Object> wiped = new LinkedHashMap<String,Object>();
+      wiped.put("users", new ArrayList<Object>());
+      wiped.put("settings", new LinkedHashMap<String,Object>());
+      st.mergeCloudInto(wiped);
+      st.commit();
+      out.put("stillHasLogin", st.list("users").size() >= 1);
+
+      // What is uploaded must never be a half-applied merge.
+      out.put("snapshotHasAdmin", st.snapshotJson().contains("\\"username\\":\\"admin\\""));
     } else if (op.equals("json")) {
       // numbers must survive a round trip without growing a decimal point
       Map<String,Object> d = new LinkedHashMap<String,Object>();
@@ -312,6 +404,16 @@ public class Driver {
   }
 
   static boolean hasAutoAdd(Store st) { return hasType(st, "AutoAdd"); }
+
+  static int countUser(Store st, String username) {
+    int n = 0;
+    for (Object o : st.list("users")) {
+      if (username.equals(Store.str(Store.rec(o), "username"))) n++;
+    }
+    return n;
+  }
+
+  static boolean hasUser(Store st, String username) { return countUser(st, username) > 0; }
 
   static boolean hasType(Store st, String type) {
     for (Object o : st.list("ledger")) {
@@ -517,4 +619,53 @@ test('native: nothing depends on a WebView or window.print any more', () => {
 test('native: memo numbers carry the device tag so PC and phone cannot collide', () => {
   const r = runNative({ op: 'rules' });
   assert.match(r.memoNo, /^TXP\/SM\/\d{4}\/\d{2}\/\d{2}-[A-Z0-9]{1,6}\d{3}$/);
+});
+
+test('native: company details typed on the PC arrive on the phone', () => {
+  const r = runNative({ op: 'settingsSync' });
+  assert.strictEqual(r.companyName, 'TEXPARK BUYING HOUSE', 'the company name came across');
+  assert.strictEqual(r.companyPhone, '01621-008204', 'so did the phone number');
+  assert.strictEqual(r.memoPrefix, 'TXP/NEW/', 'the memo prefix came across');
+  assert.strictEqual(r.lowStockLevel, 25, 'the low-stock level came across');
+});
+
+test('native: the phone keeps its own sync URL and device tag', () => {
+  const r = runNative({ op: 'settingsSync' });
+  // Adopting the PC's tag would rename this phone's memos; adopting its URL could
+  // point the phone at a script that does not exist for it.
+  assert.strictEqual(r.keptDeviceTag, true, 'the phone did not adopt the PC device tag');
+  assert.strictEqual(r.keptOwnUrl, true, 'the phone did not adopt the PC sync URL');
+});
+
+test('native: a user created on the web can log in on the phone', () => {
+  const r = runNative({ op: 'settingsSync' });
+  assert.strictEqual(r.hasRakib, true, 'the new user arrived');
+  assert.strictEqual(r.rakibCanLogin, true, 'and can actually log in');
+});
+
+test('native: merging never duplicates the seed admin', () => {
+  const r = runNative({ op: 'settingsSync' });
+  assert.strictEqual(r.startsOneAdmin, true, 'a fresh install has one admin');
+  assert.strictEqual(r.adminId, 'seed-admin', 'the seed admin has the shared, stable id');
+  assert.strictEqual(r.adminCount, 1, 'one admin after merging the PC');
+  assert.strictEqual(r.userCountAfterSecondMerge, r.userCount, 'a repeated merge adds nobody');
+  assert.strictEqual(r.stillOneAdmin, true, 'a second device does not become a second admin');
+  assert.strictEqual(r.otherOneAdmin, true, 'and neither does this one');
+});
+
+test('native: a password reset on the PC works on the phone', () => {
+  const r = runNative({ op: 'settingsSync' });
+  // The password changed in place: same id, same record, only the hash differs. If
+  // the change is not stamped the phone keeps the old password forever.
+  assert.strictEqual(r.resetWorks, true, 'the phone accepts the password set on the PC');
+});
+
+test('native: a merge can never leave a device with no users', () => {
+  const r = runNative({ op: 'settingsSync' });
+  assert.strictEqual(r.stillHasLogin, true, 'there is still an account to log in with');
+});
+
+test('native: what is uploaded is never a half-applied merge', () => {
+  const r = runNative({ op: 'settingsSync' });
+  assert.strictEqual(r.snapshotHasAdmin, true, 'the snapshot taken under the lock is complete');
 });

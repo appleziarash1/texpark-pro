@@ -1,36 +1,97 @@
-import zipfile, os
-root = '/workspace/project'
-src = root  # the repo root is the site
+"""Build texpark-pro-download.zip - the one file the owner hands around.
+
+An explicit allowlist, not a walk of the repo root. The root holds the app, the
+build tooling, .git, and android-keystore.jks - the private key that signs the
+APK. A walk swept all of it into the archive, and worse, the walk reached the
+zip being written and recursed into it, so the file grew without bound instead
+of finishing. Nothing outside this list ships.
+"""
+import os, zipfile
+
+# Derived from this file's own location, not a fixed path: CI checks the repo out
+# under /home/runner/work, where a hardcoded /workspace/project makes the check
+# abort with FileNotFoundError and fail a green build.
+root = os.path.dirname(os.path.abspath(__file__))
 out = os.path.join(root, 'texpark-pro-download.zip')
+app = os.path.join(root, 'texpark-pro')
+
+# The hostable app, as it sits in texpark-pro/. The launcher .bat files and
+# main.js/package.json are what make the PC copy double-clickable.
+APP_FILES = [
+    'index.html',
+    'css/app.css',
+    'js/app.js',
+    'js/db.js',
+    'js/sync.js',
+    'js/voice.js',
+    'sw.js',
+    'manifest.webmanifest',
+    'icon-192.png',
+    'icon-512.png',
+    'Code.gs',
+    'OPEN_APP.bat',
+    'START_APP.bat',
+    'CREATE_DESKTOP_SHORTCUT.bat',
+    'main.js',
+    'package.json',
+]
+# Copied in from elsewhere in the repo so the unzipped folder stands alone: the
+# guide is what the owner reads before hosting, the APK is the app itself, and
+# version.txt is written to the root by build.js, not into this folder.
+APP_COPIES = {
+    os.path.join(root, 'docs', 'HOSTING_BANGLA.txt'): 'HOSTING_BANGLA.txt',
+    os.path.join(root, 'TexparkPro.apk'): 'TexparkPro.apk',
+    os.path.join(root, 'version.txt'): 'version.txt',
+}
+TOP_FILES = {
+    os.path.join(root, 'texpark-pro.html'): 'texpark-pro.html',
+    os.path.join(root, 'TexparkPro.apk'): 'TexparkPro.apk',
+    os.path.join(root, 'ANDROID_BANGLA.txt'): 'ANDROID_BANGLA.txt',
+}
+# The catalog pages go in under catalog/, mirroring the deployed site. They link
+# to each other and up to the app with ../ paths, so flattening them to the zip
+# root would break every link in the offline copy.
+CATALOG_FILES = {
+    os.path.join(root, 'catalog', 'index.html'): 'catalog/index.html',
+    os.path.join(root, 'catalog', 'download.html'): 'catalog/download.html',
+    os.path.join(root, 'catalog', 'catalog-pro-v1.html'): 'catalog/catalog-pro-v1.html',
+}
+
 if os.path.exists(out):
     os.remove(out)
+
 z = zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED)
+try:
+    for name in APP_FILES:
+        full = os.path.join(app, name)
+        if not os.path.isfile(full):
+            raise SystemExit('missing from texpark-pro/: ' + name)
+        z.write(full, 'texpark-pro-app/' + name)
+    for full, arc in APP_COPIES.items():
+        if not os.path.isfile(full):
+            raise SystemExit('missing from the repo: ' + full)
+        z.write(full, 'texpark-pro-app/' + arc)
+    for full, arc in TOP_FILES.items():
+        if not os.path.isfile(full):
+            raise SystemExit('missing from the repo: ' + full)
+        z.write(full, arc)
+    for full, arc in CATALOG_FILES.items():
+        if not os.path.isfile(full):
+            raise SystemExit('missing from the repo: ' + full)
+        z.write(full, arc)
+finally:
+    z.close()
 
-def add(path, arc):
-    if os.path.isdir(path):
-        for r, d, files in os.walk(path):
-            for f in files:
-                add(os.path.join(r, f), os.path.join(arc, os.path.relpath(os.path.join(r, f), path)))
-    else:
-        z.write(path, arc)
-
-# the whole hostable app folder, with the friendly launcher inside it
-add(src, 'texpark-pro-app')
-for extra in ['OPEN_APP.bat', 'START_APP.bat', 'CREATE_DESKTOP_SHORTCUT.bat', 'main.js', 'package.json']:
-    p = os.path.join(root, 'texpark-pro', extra)
-    if os.path.exists(p):
-        z.write(p, 'texpark-pro-app/' + extra)
-# the single file for the phone, and the offline catalog
-z.write(os.path.join(root, 'texpark-pro.html'), 'texpark-pro.html')
-z.write(os.path.join(root, 'catalog', 'catalog-pro-v1.html'), 'catalog-pro-v1.html')
-# The APK and its guide. The copy inside texpark-pro-app/ is the one the deployed
-# site serves; this top-level copy is so the zip still stands alone if the app
-# folder is deleted. The guide is Android-specific and belongs only here.
-z.write(os.path.join(root, 'TexparkPro.apk'), 'TexparkPro.apk')
-z.write(os.path.join(root, 'ANDROID_BANGLA.txt'), 'ANDROID_BANGLA.txt')
-z.close()
-
-names = zipfile.ZipFile(out).namelist()
-for n in sorted(names):
+names = sorted(zipfile.ZipFile(out).namelist())
+for n in names:
     print(' ', n)
+
+# The key and the history must never travel in a file the owner passes around.
+assert not any(n.endswith('.jks') or '.git' in n or 'keystore' in n for n in names), \
+    'the signing key and the git history must never be published'
+assert 'texpark-pro-app/index.html' in names, 'the folder must hold the app'
+assert 'texpark-pro.html' in names, 'the single-file phone copy must ship'
+assert 'TexparkPro.apk' in names, 'the APK must ship so the download stands alone'
+assert 'catalog/index.html' in names, 'the offline catalog belongs in the zip'
+print('OK: no secrets, no build tooling')
 print('total', len(names), 'files,', round(os.path.getsize(out) / 1024), 'KB')

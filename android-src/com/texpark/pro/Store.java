@@ -32,10 +32,19 @@ public class Store {
 
     public static final String[] MERGE_KEYS = {
         "products", "suppliers", "customers", "stock", "ledger",
-        "purchases", "expenses", "memos", "deliveries", "returns", "payments"
+        "purchases", "expenses", "memos", "deliveries", "returns", "payments",
+        "users"
     };
     private static final int TOMB_MAX = 4000;
     private static final int SNAP_COUNT = 8;
+
+    /* Settings travel between machines, but not all of them. These describe the
+       machine, not the business: the sync URL is how this device reaches the sheet
+       and the device tag is which machine this is. Syncing either would make the
+       phone adopt the PC's URL or rename the PC to the phone - the two ways a merge
+       can make a device stop syncing altogether. autoPull is per-device on purpose:
+       turning it off on the phone must not silence the PC. */
+    public static final String[] LOCAL_SETTING_KEYS = {"syncUrl", "deviceTag", "autoPull"};
 
     /* ------------------------------------------------------------ state */
 
@@ -49,6 +58,12 @@ public class Store {
     private File dir;
     private String tagCache;
     private Listener listener;
+
+    /** Guards db between the UI thread (saving a memo) and the sync thread (merging
+     *  a pull). Without it a poll that landed mid-save could merge into the document
+     *  while it was being stamped and written, and the memo the owner had just
+     *  entered would go out to the sheet missing from the file. */
+    public final Object lock = new Object();
 
     public interface Listener { void onDataChanged(); }
 
@@ -76,15 +91,28 @@ public class Store {
             db = migrate(parsed instanceof Map ? cast(parsed) : null);
         }
         ensureUsers();
-        lastCommitted = indexRecs(db);
+        lastCommitted = frozenIndex(db);
     }
 
     /** A fresh install always has a way in; a wiped users list must not lock the owner out. */
     private void ensureUsers() {
-        List<Object> u = list("users");
-        if (u.isEmpty()) {
+        if (list("users").isEmpty()) {
             db.put("users", defaultUsers());
             commit();
+        }
+    }
+
+    /** The same guard without the write, for use in the middle of a merge: the caller
+     *  commits once at the end, and a second write here would race it. */
+    private void ensureUsersQuiet() {
+        if (list("users").isEmpty()) db.put("users", defaultUsers());
+    }
+
+    /** The document as it should be sent to the sheet, under the same lock that
+     *  guards writes: an upload must not serialise a half-applied merge. */
+    public String snapshotJson() {
+        synchronized (lock) {
+            return Json.write(db);
         }
     }
 
@@ -129,6 +157,12 @@ public class Store {
      * always present in what goes to disk.
      */
     public boolean commit() {
+        synchronized (lock) {
+            return commitLocked();
+        }
+    }
+
+    private boolean commitLocked() {
         try {
             // The app's private folder always exists on a real device, but a test or
             // a restore can point Store at a fresh path. Without this mkdir the
@@ -141,7 +175,7 @@ public class Store {
             stampChanged(nowIso());
             snapshot();
             writeFile(dataFile(), Json.write(db));
-            lastCommitted = indexRecs(db);
+            lastCommitted = frozenIndex(db);
             lastSaveError = null;
         } catch (Exception e) {
             lastSaveError = e.toString();
@@ -173,7 +207,7 @@ public class Store {
 
     public static String today() { return fmt("yyyy-MM-dd", new Date()); }
 
-    private static String nowIso() { return fmt("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", new Date()); }
+    public static String nowIso() { return fmt("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", new Date()); }
 
     private static String fmt(String pattern, Date d) {
         SimpleDateFormat f = new SimpleDateFormat(pattern, Locale.US);
@@ -295,10 +329,13 @@ public class Store {
         return Long.toHexString(h);
     }
 
+    /** The seed account uses a fixed id, shared by every device, for the same reason
+     *  the seed products do: two machines that have merely started up must merge to
+     *  one admin, not two. */
     public static List<Object> defaultUsers() {
         List<Object> u = new ArrayList<Object>();
         Map<String, Object> a = new LinkedHashMap<String, Object>();
-        a.put("id", id());
+        a.put("id", "seed-admin");
         a.put("username", "admin");
         a.put("name", "Administrator");
         a.put("pass", hash("admin123"));
@@ -994,6 +1031,21 @@ public class Store {
         return map;
     }
 
+    /** The same index over a detached copy of the records. stampChanged compares this
+     *  commit against the last one, and indexRecs holds the live objects - so an edit
+     *  made in place (a password reset, a role change) looked identical to the previous
+     *  commit and was never stamped, never pushed, and never reached the other machine.
+     *  Round-tripping through JSON is what makes an in-place edit visible. */
+    private static Map<String, Map<String, Map<String, Object>>> frozenIndex(Map<String, Object> d) {
+        Map<String, Map<String, Map<String, Object>>> map =
+            new LinkedHashMap<String, Map<String, Map<String, Object>>>();
+        for (String k : MERGE_KEYS) {
+            Object parsed = Json.read(Json.write(listOf(d, k)));
+            map.put(k, indexOne(Json.arr(parsed)));
+        }
+        return map;
+    }
+
     private void stampChanged(String now) {
         Map<String, Map<String, Map<String, Object>>> prev = lastCommitted;
         if (prev == null) return;
@@ -1108,10 +1160,88 @@ public class Store {
     }
 
     public void mergeCloudInto(Map<String, Object> incoming) {
+        synchronized (lock) {
+            mergeCloudIntoLocked(incoming);
+        }
+    }
+
+    private void mergeCloudIntoLocked(Map<String, Object> incoming) {
         mergeRecsInto(db, incoming);
         db.put("tombstones", mergeTombstones(list("tombstones"), listOf(incoming, "tombstones")));
         applyTombstones(db);
+        mergeUsersInto();
+        mergeSettingsInto(incoming);
         rebaseStockFromLedger();
+        ensureUsersQuiet();
+    }
+
+    /* Business settings, newest wins. The settings object carries no per-record
+       stamp, so the timestamps the writing device left behind are what says which
+       side changed last. A field the other side has never filled in is taken as-is,
+       which is what makes the owner's company details appear on a machine that was
+       installed later. */
+    @SuppressWarnings("unchecked")
+    private void mergeSettingsInto(Map<String, Object> incoming) {
+        Object raw = incoming == null ? null : incoming.get("settings");
+        if (!(raw instanceof Map)) return;
+        Map<String, Object> inSet = cast(raw);
+        Map<String, Object> mine = settings();
+        Map<String, Object> inCompany = cast(inSet.get("company"));
+        Map<String, Object> myCompany = company();
+        String inCompanyAt = str(inSet, "companyUpdatedAt");
+        String myCompanyAt = str(mine, "companyUpdatedAt");
+        for (Map.Entry<String, Object> e : inCompany.entrySet()) {
+            Object theirs = e.getValue();
+            if (theirs == null || String.valueOf(theirs).isEmpty()) continue;
+            Object ours = myCompany.get(e.getKey());
+            if (ours == null || String.valueOf(ours).isEmpty()) {
+                myCompany.put(e.getKey(), theirs);
+            } else if (!Json.write(ours).equals(Json.write(theirs)) && inCompanyAt.compareTo(myCompanyAt) > 0) {
+                myCompany.put(e.getKey(), theirs);
+            }
+        }
+        String inSettingsAt = str(inSet, "settingsUpdatedAt");
+        String mySettingsAt = str(mine, "settingsUpdatedAt");
+        for (Map.Entry<String, Object> e : inSet.entrySet()) {
+            String k = e.getKey();
+            if ("company".equals(k) || isLocalSetting(k)) continue;
+            Object theirs = e.getValue();
+            if (theirs == null) continue;
+            Object ours = mine.get(k);
+            if (ours == null) { mine.put(k, theirs); continue; }
+            if (Json.write(ours).equals(Json.write(theirs))) continue;
+            if (inSettingsAt.compareTo(mySettingsAt) > 0) mine.put(k, theirs);
+        }
+        if (inCompanyAt.compareTo(myCompanyAt) > 0) mine.put("companyUpdatedAt", inCompanyAt);
+        if (inSettingsAt.compareTo(mySettingsAt) > 0) mine.put("settingsUpdatedAt", inSettingsAt);
+    }
+
+    private static boolean isLocalSetting(String k) {
+        for (String s : LOCAL_SETTING_KEYS) if (s.equals(k)) return true;
+        return false;
+    }
+
+    /* One account per username, whichever device created it. Two machines that each
+       started fresh both hold an `admin` with different ids, and without this the
+       merge produced two admins and the login took whichever came first. The newest
+       record wins, so a password reset on the PC still works on the phone. */
+    @SuppressWarnings("unchecked")
+    private void mergeUsersInto() {
+        Map<String, Map<String, Object>> seen = new LinkedHashMap<String, Map<String, Object>>();
+        List<Object> out = new ArrayList<Object>();
+        for (Object o : list("users")) {
+            Map<String, Object> u = rec(o);
+            String un = str(u, "username").toLowerCase();
+            if (un.isEmpty()) continue;
+            Map<String, Object> prev = seen.get(un);
+            if (prev == null) { seen.put(un, u); out.add(u); continue; }
+            if (str(u, "at").compareTo(str(prev, "at")) > 0) {
+                List<String> keys = new ArrayList<String>(prev.keySet());
+                for (String k : keys) if (!"id".equals(k)) prev.remove(k);
+                for (Map.Entry<String, Object> oe : u.entrySet()) prev.put(oe.getKey(), oe.getValue());
+            }
+        }
+        db.put("users", out);
     }
 
     /** Rebuild the stock book from the ledger so it agrees with the memos actually
