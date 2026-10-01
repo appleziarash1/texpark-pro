@@ -233,6 +233,99 @@ saveMemo();
 eq(db.memos.find(m => m.id === lim.id).totalQty, 2, 'a confirmed edit saves the smaller memo');
 ok(db.returns.some(r => r.memoId === lim.id), 'the return records survive the memo edit');
 
+console.log('\n--- deleting a memo that had a return must restore stock exactly ---');
+/* Regression: reverseSaleFromStock used Math.max(0, ...) on `sold`. Reversing a memo
+   takes the whole memo qty out of `sold`, and the return's own entry then adds its
+   share back - so `sold` legitimately dips below zero mid-transaction. The clamp
+   swallowed the difference, leaving the shop short by the returned qty, and the
+   number jumped again after a sync because rebaseStockFromLedger does not clamp.
+   The invariant: once the memo and its return are both gone, stock is exactly what
+   it was before the memo existed. */
+const regProd = db.products[1];
+nav('stock');
+el('stockProduct').value = regProd.id;
+el('stockAddQty').value = '150';
+el('stockCost').value = '165';
+addStockPurchase();
+const baseAvail = num(findStock(regProd.id).available);
+const baseSold = num(findStock(regProd.id).sold);
+eq(baseAvail, 150, 'starting point: 150 on the shelf, nothing sold');
+
+nav('memo');
+newMemo();
+el('customerName').value = 'Delete Regression';
+el('customerPhone').value = '';
+memoDraft = { items: [{ productId: regProd.id, qty: 20, rate: 220, cost: 165, vat: 0 }] };
+saveMemo();
+const regMemo = db.memos.find(m => m.customerName === 'Delete Regression');
+eq(num(findStock(regProd.id).available), baseAvail - 20, 'the memo took 20 off the shelf');
+
+openReturn(regMemo.id);
+el('rtLine0').value = '5';
+el('rtCondition').value = 'good';
+saveReturn();
+eq(num(findStock(regProd.id).available), baseAvail - 15, 'the 5 returned came back on the shelf');
+
+triggers.alert.length = 0;
+deleteMemo(regMemo.id);
+eq(num(findStock(regProd.id).available), baseAvail,
+  'deleting the memo frees its whole 20, so stock is back to what it was before the memo');
+eq(num(findStock(regProd.id).sold), baseSold,
+  'the sold counter settles back where it started, not above it');
+ok(!db.memos.some(m => m.id === regMemo.id), 'the memo is gone');
+ok(!(db.returns || []).some(r => r.memoId === regMemo.id), 'its return records went with it');
+
+/* The same clamp also ran on the edit path, where the memo is reversed and re-applied
+   without the returns being touched. Re-saving a memo unchanged must not move stock. */
+nav('memo');
+newMemo();
+el('customerName').value = 'Edit Regression';
+memoDraft = { items: [{ productId: regProd.id, qty: 20, rate: 220, cost: 165, vat: 0 }] };
+saveMemo();
+const editRegMemo = db.memos.find(m => m.customerName === 'Edit Regression');
+openReturn(editRegMemo.id);
+el('rtLine0').value = '5';
+el('rtCondition').value = 'good';
+saveReturn();
+const afterReturn = num(findStock(regProd.id).available);
+editMemo(editRegMemo.id);
+memoDraft = { items: [{ productId: regProd.id, qty: 20, rate: 220, cost: 165, vat: 0 }] };
+el('customerName').value = 'Edit Regression';
+saveMemo();
+eq(num(findStock(regProd.id).available), afterReturn,
+  're-saving a memo at the same qty leaves stock untouched');
+editMemo(editRegMemo.id);
+memoDraft = { items: [{ productId: regProd.id, qty: 18, rate: 220, cost: 165, vat: 0 }] };
+el('customerName').value = 'Edit Regression';
+saveMemo();
+eq(num(findStock(regProd.id).available), afterReturn + 2,
+  'shrinking the memo by 2 puts exactly 2 back');
+triggers.alert.length = 0;
+deleteMemo(editRegMemo.id);
+eq(num(findStock(regProd.id).available), baseAvail,
+  'and deleting that memo returns stock to the starting point');
+
+/* The card and the ledger it is rebuilt from must agree. The old clamp made them
+   disagree, so a sync (which calls rebaseStockFromLedger) silently changed the
+   number the owner had just been looking at. */
+nav('memo');
+newMemo();
+el('customerName').value = 'Rebase Check';
+memoDraft = { items: [{ productId: regProd.id, qty: 30, rate: 220, cost: 165, vat: 0 }] };
+saveMemo();
+const rebMemo = db.memos.find(m => m.customerName === 'Rebase Check');
+openReturn(rebMemo.id);
+el('rtLine0').value = '7';
+el('rtCondition').value = 'good';
+saveReturn();
+const beforeRebase = num(findStock(regProd.id).available);
+const soldBeforeRebase = num(findStock(regProd.id).sold);
+rebaseStockFromLedger();
+eq(num(findStock(regProd.id).available), beforeRebase,
+  'a sync does not change available - the card and the ledger agree');
+eq(num(findStock(regProd.id).sold), soldBeforeRebase,
+  'and they agree on the sold counter too');
+
 console.log('\n--- returns sync to the sheet ---');
 const syncSrc = fs.readFileSync(path.join(root, 'js', 'sync.js'), 'utf8');
 ok(/function pushRecord|function syncPush/.test(syncSrc), 'the push path exists for a return');

@@ -394,6 +394,10 @@ function rebaseStockFromLedger() {
        subtracted from `sold` - the same slot a memo delete frees. A damaged one is
        not stock the shop can sell, so it never re-enters `sold`. */
     else if (l.type === 'Return') b.sold -= q;
+    /* The native app writes ReturnUndo where this build writes Sale for the same
+       event - a deleted return - and both apps share one sheet, so each has to
+       understand the other's spelling or a sync rebuilds `sold` wrongly. */
+    else if (l.type === 'ReturnUndo') b.sold -= q;
     else if (l.type === 'Adjustment' || l.type === 'Damage') b.purchased += q;
   });
   const cards = {};
@@ -648,11 +652,20 @@ function applySaleToStock(memo) {
   });
 }
 
+/* Undo a sale: the goods come back onto the shelf and the memo's qty leaves `sold`.
+   No clamp on the way down. `sold` is a running counter, and reversing a memo that
+   already had a return filed against it takes the full memo qty out here while the
+   return's own entry adds its share back - so it dips below zero mid-transaction and
+   the two entries net out correctly. Clamping swallowed the difference instead: a
+   memo of 20 with 5 returned left `sold` at 5 and available 5 short of what it was
+   before the memo. It also disagreed with rebaseStockFromLedger, which replays the
+   same ledger without clamping, so the number changed by itself after a sync.
+   available is what the owner sees, and that is clamped in stockAvailable. */
 function reverseSaleFromStock(memo) {
   memo.items.forEach(it => {
     const s = db.stock.find(x => x.productId === it.productId);
     if (!s) return;
-    s.sold = Math.max(0, num(s.sold) - num(it.qty));
+    s.sold = num(s.sold) - num(it.qty);
     s.available = stockAvailable(s);
     logStock(it.productId, 'SaleReturn', num(it.qty), memo.memoNo, 'Memo deleted');
   });
@@ -683,7 +696,10 @@ function applyReturnToStock(ret) {
     if (ret.condition === 'damaged') {
       logStock(it.productId, 'Damage', 0, ref, 'Parcel return - damaged, not sellable');
     } else {
-      s.sold = Math.max(0, num(s.sold) - num(it.qty));
+      /* No clamp, for the same reason as reverseSaleFromStock: rebaseStockFromLedger
+         subtracts the full return qty from `sold`, so clamping here would make the
+         card disagree with the ledger it is rebuilt from. */
+      s.sold = num(s.sold) - num(it.qty);
       logStock(it.productId, 'Return', num(it.qty), ref, (memo ? memo.customerName : '') + ' - parcel return');
     }
     s.available = stockAvailable(s);

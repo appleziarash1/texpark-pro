@@ -264,6 +264,55 @@ public class Driver {
       st = new Store(st.dbDir());
       st.load();
       out.put("returnCountAfterReload", st.list("returns").size());
+    } else if (op.equals("deleteMemo")) {
+      /* Deleting a memo that had a return filed against it. reverseSaleFromStock used
+         to clamp sold at zero, so the returned qty was swallowed and the shelf read
+         short; the web build had the same bug. Both must now restore stock exactly,
+         and the card must still agree with the ledger it is rebuilt from. */
+      st.list("returns").clear();
+      st.list("deliveries").clear();
+      st.list("ledger").clear();
+      st.list("memos").clear();
+      Map<String,Object> card = st.stockOf("seed-k3s");
+      card.put("opening", 150.0); card.put("purchased", 0.0); card.put("sold", 0.0);
+      card.put("available", Store.stockAvailable(card));
+      st.logStock("seed-k3s", "Opening", 150.0, "Test", "opening");
+      out.put("startAvailable", card.get("available"));
+
+      Map<String,Object> draft = new LinkedHashMap<String,Object>();
+      draft.put("customerName", "Delete Test");
+      draft.put("discount", "0"); draft.put("delivery", "0"); draft.put("advance", "0");
+      List<Object> items = new ArrayList<Object>();
+      Map<String,Object> it = new LinkedHashMap<String,Object>();
+      it.put("productId", "seed-k3s"); it.put("qty", 20.0); it.put("rate", 220.0);
+      it.put("cost", 100.0); it.put("vat", 0.0);
+      items.add(it);
+      Map<String,Object> memo = st.saveMemo(draft, items);
+      out.put("afterSale", st.findStock("seed-k3s").get("available"));
+
+      Map<String,Object> ret = new LinkedHashMap<String,Object>();
+      ret.put("id", Store.id()); ret.put("memoId", Store.str(memo, "id"));
+      ret.put("memoNo", Store.str(memo, "memoNo")); ret.put("date", Store.today());
+      ret.put("qty", 5.0); ret.put("condition", "good"); ret.put("note", "firse");
+      List<Object> lines = new ArrayList<Object>();
+      Map<String,Object> ln = new LinkedHashMap<String,Object>();
+      ln.put("productId", "seed-k3s"); ln.put("qty", 5.0);
+      lines.add(ln);
+      ret.put("lines", lines);
+      st.saveReturn(ret);
+      out.put("afterReturn", st.findStock("seed-k3s").get("available"));
+
+      st.deleteMemo(memo);
+      out.put("afterDelete", st.findStock("seed-k3s").get("available"));
+      out.put("soldAfterDelete", st.findStock("seed-k3s").get("sold"));
+      out.put("memosLeft", st.list("memos").size());
+      out.put("returnsLeft", st.list("returns").size());
+
+      /* The card and the ledger must agree: a sync rebuilds from the ledger, so a
+         clamped card would change the figure the owner was just looking at. */
+      st.rebaseStockFromLedger();
+      out.put("afterRebase", st.findStock("seed-k3s").get("available"));
+      out.put("soldAfterRebase", st.findStock("seed-k3s").get("sold"));
     } else if (op.equals("sync")) {
       /* The rules that decide whether the owner's edit actually left the phone.
          Every case here is one that used to be read as a success. */
@@ -602,6 +651,55 @@ test('native: a parcel return raises stock for good goods and records damaged on
   assert.strictEqual(r.pendingDeliveryPlusReturn, 0, '4 delivered + 6 returned = the whole memo');
   // Two returns were entered (one good, one damaged), so both must come back.
   assert.strictEqual(r.returnCountAfterReload, 2, 'returns survive a save and reload');
+});
+
+test('native: deleting a memo with a return restores stock exactly, like the web', () => {
+  const r = runNative({ op: 'deleteMemo' });
+  assert.strictEqual(r.startAvailable, 150, '150 on the shelf to start');
+  assert.strictEqual(r.afterSale, 130, 'the 20-piece memo took 20 off');
+  assert.strictEqual(r.afterReturn, 135, 'the 5 good returns came back on');
+  assert.strictEqual(r.afterDelete, 150,
+    'deleting the memo frees its whole 20 - the returned 5 must not be swallowed by a clamp');
+  assert.strictEqual(r.soldAfterDelete, 0, 'and the sold counter settles back at zero');
+  assert.strictEqual(r.memosLeft, 0, 'the memo is gone');
+  assert.strictEqual(r.returnsLeft, 0, 'its return records went with it');
+  assert.strictEqual(r.afterRebase, 150, 'a sync leaves the same figure - card and ledger agree');
+  assert.strictEqual(r.soldAfterRebase, 0, 'and they agree on sold');
+
+  /* And the same case in the web build, so the two cannot drift apart again. */
+  db = blankDB();
+  const p = db.products.find(x => x.id === 'seed-k3s') || db.products[0];
+  const base = 150;
+  db.memos = []; db.returns = []; db.deliveries = []; db.ledger = []; db.stock = [];
+  const card = stockOf(p.id);
+  card.opening = base; card.purchased = 0; card.sold = 0; card.available = stockAvailable(card);
+  logStock(p.id, 'Opening', base, 'Test', 'opening');
+  const memo = {
+    id: 'm-del', memoNo: 'TXP/SM/DEL-1', date: today(), customerName: 'Delete Test',
+    items: [{ productId: p.id, productName: p.name, qty: 20, rate: 220, cost: 100, vat: 0, amount: 4400 }],
+    totalQty: 20, subtotal: 4400, discount: 0, deliveryCharge: 0, vat: 0, grandTotal: 4400,
+    advance: 0, due: 4400, cogs: 2000, profit: 2400, note: ''
+  };
+  db.memos.push(memo);
+  applySaleToStock(memo);
+  const ret = {
+    id: 'r-del', memoId: memo.id, memoNo: memo.memoNo, date: today(),
+    items: [{ productId: p.id, productName: p.name, qty: 5 }], qty: 5,
+    condition: 'good', note: 'firse', returnedAt: new Date().toISOString()
+  };
+  db.returns.push(ret);
+  applyReturnToStock(ret);
+  assert.strictEqual(num(findStock(p.id).available), 135, 'web: the 5 returned came back on');
+  reverseSaleFromStock(memo);
+  reverseReturnFromStock(ret);
+  db.returns = db.returns.filter(x => x.id !== ret.id);
+  db.memos = db.memos.filter(x => x.id !== memo.id);
+  assert.strictEqual(num(findStock(p.id).available), base,
+    'web: the memo and its return together give back the full 20');
+  const beforeRebase = num(findStock(p.id).available);
+  rebaseStockFromLedger();
+  assert.strictEqual(num(findStock(p.id).available), beforeRebase,
+    'web: a sync leaves the same figure');
 });
 
 test('native: nothing depends on a WebView or window.print any more', () => {

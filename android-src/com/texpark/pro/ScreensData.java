@@ -455,8 +455,7 @@ public class ScreensData {
                             s.confirm("Ei memo ta muchhe felben? Stock abar firiye deya hobe.",
                                 new Runnable() {
                                     public void run() {
-                                        store.list("memos").remove(m);
-                                        store.reverseSaleFromStock(m);
+                                        store.deleteMemo(m);
                                         s.afterSave("Memo delete hoyeche, stock abar firiye deya hoyeche.");
                                     }
                                 });

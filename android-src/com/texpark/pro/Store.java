@@ -700,6 +700,29 @@ public class Store {
         return m;
     }
 
+    /** Delete a memo and undo everything it did to stock. The returns and deliveries
+     *  filed against it are real history, so they go with it - the web build does the
+     *  same, and leaving them behind would keep stock held out for a memo that no
+     *  longer exists. */
+    public void deleteMemo(Map<String, Object> m) {
+        reverseSaleFromStock(m);
+        String mid = str(m, "id");
+        List<Object> keepD = new ArrayList<Object>();
+        for (Object o : list("deliveries")) {
+            if (!mid.equals(str(rec(o), "memoId"))) keepD.add(o);
+        }
+        db.put("deliveries", keepD);
+        List<Object> keepR = new ArrayList<Object>();
+        for (Object o : list("returns")) {
+            Map<String, Object> r = rec(o);
+            if (mid.equals(str(r, "memoId"))) reverseReturnFromStock(r);
+            else keepR.add(o);
+        }
+        db.put("returns", keepR);
+        list("memos").remove(m);
+        commit();
+    }
+
     public void applySaleToStock(Map<String, Object> memo) {
         List<Object> items = memo.get("items") instanceof List ? listOf(memo, "items") : new ArrayList<Object>();
         for (Object io : items) {
@@ -712,6 +735,15 @@ public class Store {
         }
     }
 
+    /** Undo a sale: the goods come back onto the shelf and the memo's qty leaves
+     *  `sold`. No clamp on the way down. `sold` is a running counter, and reversing
+     *  a memo that already had a return filed against it takes the full memo qty out
+     *  here while the return's own entry adds its share back, so it dips below zero
+     *  mid-transaction and the two net out. Clamping swallowed the difference - a
+     *  memo of 20 with 5 returned left `sold` 5 too high. It also disagreed with
+     *  rebaseStockFromLedger, which replays the same ledger without clamping, so the
+     *  figure moved by itself after a sync. available is what the owner sees, and
+     *  that is clamped in stockAvailable. */
     public void reverseSaleFromStock(Map<String, Object> memo) {
         List<Object> items = listOf(memo, "items");
         for (Object io : items) {
@@ -719,7 +751,7 @@ public class Store {
             String pid = str(it, "productId");
             Map<String, Object> s = findStock(pid);
             if (s == null) continue;
-            s.put("sold", Double.valueOf(Math.max(0, num(s.get("sold")) - num(it.get("qty")))));
+            s.put("sold", Double.valueOf(num(s.get("sold")) - num(it.get("qty"))));
             s.put("available", Double.valueOf(stockAvailable(s)));
             logStock(pid, "SaleReturn", num(it.get("qty")), str(memo, "memoNo"), "Memo deleted");
         }
@@ -764,7 +796,9 @@ public class Store {
             if (q <= 0) continue;
             String pid = str(it, "productId");
             Map<String, Object> s = stockOf(pid);
-            s.put("sold", Double.valueOf(Math.max(0, num(s.get("sold")) - q)));
+            /* No clamp, for the same reason as reverseSaleFromStock: the ledger
+             *  replay subtracts the full return qty from `sold`. */
+            s.put("sold", Double.valueOf(num(s.get("sold")) - q));
             s.put("available", Double.valueOf(stockAvailable(s)));
             logStock(pid, "Return", q, str(ret, "memoNo"), "Parcel return (" + str(ret, "condition") + ")");
         }
@@ -1264,6 +1298,15 @@ public class Store {
             else if ("Purchase".equals(type)) b.put("purchased", num(b.get("purchased")) + q);
             else if ("Sale".equals(type)) b.put("sold", num(b.get("sold")) - q);
             else if ("SaleReturn".equals(type)) b.put("sold", num(b.get("sold")) - q);
+            /* A parcel that came back sellable is no longer sold, the same slot a memo
+             *  delete frees. A damaged one never re-enters `sold`. This case was missing
+             *  here while the web build had it, so a sync on the phone rebuilt `sold` too
+             *  high and the shop read short by the returned qty. */
+            else if ("Return".equals(type)) b.put("sold", num(b.get("sold")) - q);
+            /* The native app writes ReturnUndo where the web writes Sale for the same
+             *  event (a deleted return), and the two apps share one sheet, so each must
+             *  understand the other's entry or a sync would rebuild `sold` wrongly. */
+            else if ("ReturnUndo".equals(type)) b.put("sold", num(b.get("sold")) - q);
             else if ("Adjustment".equals(type) || "Damage".equals(type)) b.put("purchased", num(b.get("purchased")) + q);
         }
         Map<String, Map<String, Object>> cards = new LinkedHashMap<String, Map<String, Object>>();
