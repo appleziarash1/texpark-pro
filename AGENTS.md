@@ -74,6 +74,28 @@ Entering the 60 later lands on top of those sales by itself (100 received → av
 card that is short can still be corrected. `saveStockEdit()` still refuses to set sold below
 the qty real memos prove was sold.
 
+### Third bug the owner named: a return was swallowed when its memo was deleted
+Deleting or editing a memo that already had a return filed against it left the shelf short by
+the returned qty — 145 instead of 150 for a 20-piece memo with 5 returned. `sold` is a
+**running counter**, not a physical quantity, and both `reverseSaleFromStock` and
+`applyReturnToStock` clamped it at 0. Reversing a memo takes the whole memo qty out of `sold`,
+while the return's own entry adds its share back, so `sold` dips below zero mid-transaction and
+the two net out. The clamp swallowed exactly the returned qty instead. `available` is the number
+the owner sees, and that stays clamped in `stockAvailable`. The same clamp sat in the native
+`Store.reverseSaleFromStock` / `applyReturnToStock`.
+The clamp also fought `rebaseStockFromLedger()`, which replays the same ledger **without**
+clamping: a sync therefore changed the figure the owner was just looking at. The invariant to
+test is that the card and the ledger agree — `rebaseStockFromLedger()` must not move `available`
+or `sold`.
+Two more native-only divergences were hiding behind that one:
+- `Store.rebaseStockFromLedger()` had **no `Return` case at all**, so a phone sync rebuilt `sold`
+  too high by the returned qty.
+- The phone writes `ReturnUndo` where the web writes `Sale` for the same event (a deleted
+  return). Both apps share one sheet, so **both builds must understand both spellings** — check
+  `rebaseStockFromLedger` on both sides whenever a ledger type is added.
+Native memo delete now goes through `Store.deleteMemo()`, which takes the memo's returns and
+deliveries with it, matching the web build's `deleteMemo()`.
+
 ### Second bug the owner named: the caret jumped out of the box
 `memoSet()` called `renderMemoLines()`, which replaced `memoRows.innerHTML` on every keystroke —
 so after the first digit the box lost focus and typing stopped. Now:
@@ -271,9 +293,16 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   (widgets), `Store` (data + business rules), `Json`, `Sync` (Sheets backup/pull), `Voice`
   (spoken-sentence parsing), `Updater`/`SiteUrl`. Plain framework APIs only — no AndroidX,
   so there is no dependency resolution and no Gradle download.
-- Build: `ANDROID_HOME=/opt/android-sdk python3 build-apk.py` → `TexparkPro.apk` (~77 KB),
+- Build: `ANDROID_HOME=/opt/android-sdk python3 build-apk.py` → `TexparkPro.apk` (~85 KB),
   signed with `android-keystore.jks`. **Keep that keystore** — a different one makes the new
   APK a different app, so it will not install over the old one.
+- The SDK is **not** preinstalled and `/opt` is not writable for the agent user. Set one up under
+  a writable path and point `ANDROID_HOME` at it: unzip
+  `commandlinetools-linux-*_latest.zip` from `dl.google.com/android/repository/` with Python's
+  `zipfile` (there is no `unzip` binary), `chmod +x` the tools in `cmdline-tools/latest/bin`,
+  then `sdkmanager --sdk_root=<sdk> "platforms;android-34" "build-tools;35.0.0"`. JDK 17 is
+  needed too. Any version bump **must** rebuild the APK before pushing, or `ci/check-site.py`
+  fails the push with "TexparkPro.apk does not carry version ...".
 - The version is stamped in three places by the build and checked by `ci/check-site.py`:
   `build.js` writes `version.txt` from `js/app.js`, and `build-apk.py` rewrites
   `MainActivity.APP_VERSION` from it before compiling. If they drift, the app offers the same
