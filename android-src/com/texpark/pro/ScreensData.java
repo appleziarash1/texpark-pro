@@ -701,10 +701,13 @@ public class ScreensData {
                     p.put("sku", sku.getText().toString().trim());
                     p.put("category", cat.getText().toString().trim());
                     p.put("unit", unit.getText().toString().trim());
-                    p.put("cost", Double.valueOf(Store.num(cost.getText().toString())));
                     p.put("rate", Double.valueOf(Store.num(rate.getText().toString())));
                     p.put("vat", Double.valueOf(Store.num(vat.getText().toString())));
                     p.put("reorderLevel", Double.valueOf(Store.num(reorder.getText().toString())));
+                    /* stockCost() prefers the stock card over the product, so a buying
+                       price typed here was ignored by every later memo until the card
+                       was rewritten too - profit kept using the old cost. */
+                    s.store.setProductCost(p, Store.num(cost.getText().toString()));
                     s.afterSave("Product update hoyeche.");
                 }
             })

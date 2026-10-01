@@ -266,19 +266,39 @@ The shop sends parcels out and some come back, so there are now two books, not o
 - The return qty is capped at what is still pending, so a memo cannot be returned twice
   over. A memo itself is never blocked by stock - that rule is unchanged.
 
+## The buying price lives twice (the "profit ulta palta" bug, fixed 2026-10-01)
+`stockCost(productId)` reads the **stock card first** and only falls back to the product:
+`num(s?.cost) || num(p?.cost)`. The Products page writes `p.cost`. So correcting a buying price
+there changed nothing on a product that already had a stock card - the card kept the old figure
+and every later memo reported profit against it. The owner experienced this as profit going the
+wrong way: he typed the real buying price and the margin stayed put.
+
+Both writers now update the card as well, and neither is allowed to write a 0 over a known cost:
+- web: `saveProductEdit()` in `js/app.js`
+- phone: `Store.setProductCost()` in `android-src/.../Store.java`, called from `ScreensData`
+
+`test/cost.test.js` drives the web path; `test/native.test.js` drives `Store.setProductCost`
+on a JVM. The same trap can be entered from the other side - a selling price once typed into the
+stock card's Unit Cost outranks the product forever - and a corrected product price now clears it.
+
 ## Build + test commands
+
 - `node build.js` (in `texpark-pro/`) regenerates **both** the repo root and
   `../texpark-pro.html`. Always run this after changing source, or the shipped files drift.
   The script asserts the new cloud/device functions are present in the single file.
-- `npm test` runs `test/logic.test.js` (84), `test/sheet.test.js` (28), `test/e2e.test.js` (205),
-  `test/merge.test.js` (33), `test/autopull.test.js` (15), then `node --test test/android.test.js`
-  (27). Total 392.
+- `npm test` runs `test/logic.test.js` (84), `test/sheet.test.js` (28), `test/e2e.test.js` (212),
+  `test/cost.test.js` (11), `test/journey.test.js` (19), `test/autopull.test.js` (22),
+  `test/return.test.js` (51), then `node --test test/android.test.js` (27) and
+  `node --test test/native.test.js` (26). Total 480.
+- `test/cost.test.js` and `test/journey.test.js` both drive the **real `app.js`** through the DOM
+  shim: the first pins the buying price reaching the stock card, the second walks the owner's own
+  path (add product, pick it on a memo, read the profit) so a UI-level regression is caught.
 - `test/merge.test.js` and `test/autopull.test.js` load `db.js` **and `sync.js`** into a `vm`
   context each, so two "devices" can be run against one fake sheet and the merge is exercised as
   two databases rather than as one.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
-- Current version: `2027-01-01.5` in `sw.js`, `js/app.js`, `version.txt` and
+- Current version: `2027-01-01.6` in `sw.js`, `js/app.js`, `version.txt` and
   `MainActivity.java` (bump them together, then rebuild — the e2e test fails if the two js
   files drift apart, and `ci/check-site.py` fails if the Java or the APK drifts too).
 

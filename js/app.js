@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.5';
+const APP_VERSION = '2027-01-01.6';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -1267,6 +1267,12 @@ function saveProductEdit() {
   p.rate = num(document.getElementById('epRate').value);
   p.vat = num(document.getElementById('epVat').value);
   p.reorderLevel = num(document.getElementById('epReorder').value);
+  /* The buying price lives in two places - the product and the stock card - and
+     stockCost() reads the card first. Without this the price the owner just typed
+     on the Products page was silently ignored by every later memo, so profit kept
+     using the old cost: a product bought at 120 still reported the margin of 100. */
+  const s = db.stock.find(x => x.productId === p.id);
+  if (s && num(p.cost) > 0) s.cost = num(p.cost);
   commit();
   closeProduct();
 }

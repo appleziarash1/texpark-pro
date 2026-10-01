@@ -610,6 +610,15 @@ public class Store {
         return sc != 0 ? sc : (p == null ? 0 : num(p.get("cost")));
     }
 
+    /** Sets a product's buying price, and keeps the stock card's copy in step.
+     *  stockCost() reads the card first, so a correction typed on the Products
+     *  page used to be ignored by every later memo and profit kept the old cost. */
+    public void setProductCost(Map<String, Object> p, double cost) {
+        p.put("cost", Double.valueOf(cost));
+        Map<String, Object> card = findStock(str(p, "id"));
+        if (card != null && cost > 0) card.put("cost", Double.valueOf(cost));
+    }
+
     /** Append-only movement log - every change stays traceable. */
     public void logStock(String productId, String type, double qty, String ref, String note) {
         Map<String, Object> l = new LinkedHashMap<String, Object>();

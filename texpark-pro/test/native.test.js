@@ -431,6 +431,28 @@ public class Driver {
 
       // What is uploaded must never be a half-applied merge.
       out.put("snapshotHasAdmin", st.snapshotJson().contains("\\"username\\":\\"admin\\""));
+    } else if (op.equals("costEdit")) {
+      /* The buying price lives on the product AND on the stock card, and
+         stockCost() reads the card first. Correcting the price on the Products
+         page must therefore reach the card, or profit keeps the old cost. */
+      Map<String,Object> p = st.productById("seed-k3s");
+      List<Object> items = new ArrayList<Object>();
+      Map<String,Object> it = new LinkedHashMap<String,Object>();
+      it.put("productId", "seed-k3s"); it.put("qty", 1.0); it.put("rate", 220.0);
+      it.put("cost", 165.0); it.put("vat", 0.0);
+      items.add(it);
+      Map<String,Object> draft = new LinkedHashMap<String,Object>();
+      draft.put("customerName", "Rahim");
+      draft.put("discount", "0"); draft.put("delivery", "0"); draft.put("advance", "0");
+      st.saveMemo(draft, items);                       // creates the stock card at 165
+      out.put("cardBefore", st.stockCost("seed-k3s"));
+      st.setProductCost(p, 180);                       // the correction on Products
+      out.put("productAfter", Store.num(p.get("cost")));
+      out.put("cardAfter", st.stockCost("seed-k3s"));
+      out.put("cardRecord", st.findStock("seed-k3s").get("cost"));
+      // A zero must not erase a known cost.
+      st.setProductCost(p, 0);
+      out.put("afterZero", st.stockCost("seed-k3s"));
     } else if (op.equals("json")) {
       // numbers must survive a round trip without growing a decimal point
       Map<String,Object> d = new LinkedHashMap<String,Object>();
@@ -523,6 +545,19 @@ test('native: memo money maths matches the web', () => {
   assert.strictEqual(r.due, 1050);
   assert.strictEqual(r.cogs, 825);
   assert.strictEqual(r.profit, 325);
+});
+
+test('native: correcting the buying price reaches the stock card', () => {
+  /* The web and the phone both keep the buying price twice. If the correction
+     only lands on the product, stockCost() keeps returning the card's old figure
+     and every later memo reports the wrong profit - which the owner sees as
+     profit going the wrong way. */
+  const r = runNative({ op: 'costEdit' });
+  assert.strictEqual(r.cardBefore, 165, 'the card starts on the original buying price');
+  assert.strictEqual(r.productAfter, 180, 'the product carries the correction');
+  assert.strictEqual(r.cardAfter, 180, 'stockCost follows the correction');
+  assert.strictEqual(r.cardRecord, 180, 'the stock card itself was rewritten');
+  assert.strictEqual(r.afterZero, 180, 'a zero does not erase a known buying price');
 });
 
 test('native: purchase uses weighted-average cost, not the latest price', () => {
