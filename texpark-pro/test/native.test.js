@@ -200,6 +200,70 @@ public class Driver {
       st = new Store(st.dbDir());
       st.load();
       out.put("memoCountAfterReload", st.list("memos").size());
+    } else if (op.equals("returns")) {
+      /* The parcel-return rules, driven through the real Store methods the Android
+         delivery screen calls. A return must raise the shelf for good goods only,
+         and must stop the parcel reading as pending delivery. */
+      st.list("returns").clear();
+      st.list("deliveries").clear();
+      Map<String,Object> draft = new LinkedHashMap<String,Object>();
+      draft.put("customerName", "Return Test");
+      draft.put("discount", "0"); draft.put("delivery", "0"); draft.put("advance", "0");
+      List<Object> items = new ArrayList<Object>();
+      Map<String,Object> it = new LinkedHashMap<String,Object>();
+      it.put("productId", "seed-k3s"); it.put("qty", 10.0); it.put("rate", 220.0);
+      it.put("cost", 100.0); it.put("vat", 0.0);
+      items.add(it);
+      Map<String,Object> card = st.stockOf("seed-k3s");
+      card.put("opening", 30.0);
+      card.put("available", Store.stockAvailable(card));
+      out.put("availableBeforeSale", card.get("available"));
+      Map<String,Object> memo = st.saveMemo(draft, items);
+      out.put("memoSaved", memo != null);
+      out.put("availableAfterSale", st.findStock("seed-k3s").get("available"));
+      out.put("pendingFresh", st.pendingQtyOf(memo));
+
+      Map<String,Object> ret = new LinkedHashMap<String,Object>();
+      ret.put("id", Store.id()); ret.put("memoId", Store.str(memo, "id"));
+      ret.put("memoNo", Store.str(memo, "memoNo")); ret.put("date", Store.today());
+      ret.put("qty", 4.0); ret.put("condition", "good"); ret.put("note", "firse");
+      List<Object> lines = new ArrayList<Object>();
+      Map<String,Object> ln = new LinkedHashMap<String,Object>();
+      ln.put("productId", "seed-k3s"); ln.put("qty", 4.0);
+      lines.add(ln);
+      ret.put("lines", lines);
+      st.saveReturn(ret);
+      out.put("availableAfterReturn", st.findStock("seed-k3s").get("available"));
+      out.put("pendingAfterReturn", st.pendingQtyOf(memo));
+      out.put("returnCount", st.list("returns").size());
+      out.put("ledgerHasReturn", hasType(st, "Return"));
+
+      // A damaged parcel is recorded but must not become sellable stock.
+      Map<String,Object> bad = new LinkedHashMap<String,Object>();
+      bad.put("id", Store.id()); bad.put("memoId", Store.str(memo, "id"));
+      bad.put("memoNo", Store.str(memo, "memoNo")); bad.put("date", Store.today());
+      bad.put("qty", 2.0); bad.put("condition", "damaged"); bad.put("note", "vanga");
+      bad.put("lines", lines);
+      st.saveReturn(bad);
+      out.put("availableAfterDamaged", st.findStock("seed-k3s").get("available"));
+      out.put("pendingAfterDamaged", st.pendingQtyOf(memo));
+
+      // Undoing a good return takes the goods back off the shelf.
+      st.reverseReturnFromStock(ret);
+      out.put("availableAfterUndo", st.findStock("seed-k3s").get("available"));
+
+      // Delivery and return share the pending figure, so they cannot double-count.
+      Map<String,Object> dl = new LinkedHashMap<String,Object>();
+      dl.put("id", Store.id()); dl.put("memoId", Store.str(memo, "id"));
+      dl.put("memoNo", Store.str(memo, "memoNo")); dl.put("date", Store.today());
+      dl.put("qty", 4.0); dl.put("delivered", 0.0);
+      st.list("deliveries").add(dl);
+      out.put("pendingDeliveryPlusReturn", st.pendingQtyOf(memo));
+      // A memo carrying returns must survive a save/reload like any other record.
+      st.commit();
+      st = new Store(st.dbDir());
+      st.load();
+      out.put("returnCountAfterReload", st.list("returns").size());
     } else if (op.equals("sync")) {
       /* The rules that decide whether the owner's edit actually left the phone.
          Every case here is one that used to be read as a success. */
@@ -247,9 +311,11 @@ public class Driver {
     return String.format(java.util.Locale.US, "%.2f", n);
   }
 
-  static boolean hasAutoAdd(Store st) {
+  static boolean hasAutoAdd(Store st) { return hasType(st, "AutoAdd"); }
+
+  static boolean hasType(Store st, String type) {
     for (Object o : st.list("ledger")) {
-      if ("AutoAdd".equals(Store.str(o, "type"))) return true;
+      if (type.equals(Store.str(o, "type"))) return true;
     }
     return false;
   }
@@ -415,6 +481,25 @@ test('native: a sync only counts as a success when the sheet accepted the upload
   // overwrite each other's books.
   assert.strictEqual(r.tagUnique, true, 'the fallback device tag is unique per install: ' + r.tag);
   assert.strictEqual(r.tagStable, true, 'the tag is minted once and kept, so memo numbers stay stable');
+});
+
+test('native: a parcel return raises stock for good goods and records damaged ones', () => {
+  const r = runNative({ op: 'returns' });
+  assert.strictEqual(r.availableBeforeSale, 30, '30 on the shelf before the sale');
+  assert.strictEqual(r.availableAfterSale, 20, 'selling 10 leaves 20');
+  assert.strictEqual(r.pendingFresh, 10, 'all 10 start out pending');
+  assert.strictEqual(r.availableAfterReturn, 24, '4 good returns are back on the shelf');
+  assert.strictEqual(r.pendingAfterReturn, 6, 'a returned parcel is no longer pending');
+  assert.strictEqual(r.returnCount, 1, 'the return is its own record');
+  assert.strictEqual(r.ledgerHasReturn, true, 'the return is written to the stock ledger');
+  assert.strictEqual(r.availableAfterDamaged, 24, 'damaged goods never become sellable stock');
+  assert.strictEqual(r.pendingAfterDamaged, 4, 'but the damaged parcel still left the customer');
+  assert.strictEqual(r.availableAfterUndo, 20, 'undoing a good return takes the goods back off');
+  // Delivery and return share one pending figure - counting them separately is what
+  // would make a returned parcel read as still out for delivery.
+  assert.strictEqual(r.pendingDeliveryPlusReturn, 0, '4 delivered + 6 returned = the whole memo');
+  // Two returns were entered (one good, one damaged), so both must come back.
+  assert.strictEqual(r.returnCountAfterReload, 2, 'returns survive a save and reload');
 });
 
 test('native: nothing depends on a WebView or window.print any more', () => {

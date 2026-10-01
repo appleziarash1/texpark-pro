@@ -277,6 +277,13 @@ tbody tr:hover td{background:#f7fafd}
 .side button:hover{background:rgba(255,255,255,.12);color:#fff}
 .side button.active{background:rgba(255,255,255,.18);color:#fff}
 .side button .ic{display:inline-block;width:20px}
+/* Per-product return lines: the product name on the left, a small qty box on the
+   right, so a partial return is one tap per line on a phone. */
+.rtline{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-top:6px;background:#fff}
+.rtline>span:first-child{font-weight:600;font-size:13.5px}
+.rtline input{width:90px;text-align:right}
+
 </style>
 </head><body>
 
@@ -375,10 +382,16 @@ tbody tr:hover td{background:#f7fafd}
             <div><label>Memo No.</label><input id="memoNo" readonly></div>
             <div><label>Date</label><input id="memoDate" type="date"></div>
             <div><label>Select saved customer</label><select id="memoCustList" onchange="pickMemoCustomer(this.value)"></select></div>
-            <div><label>Customer Name *</label><input id="customerName"></div>
+            <div><label>Customer Name *</label>
+              <input id="customerName" list="customerNames" autocomplete="off"
+                     placeholder="Likhun - age save thakle nijei dhore felbe"
+                     oninput="memoCustomerCheck()">
+              <datalist id="customerNames"></datalist>
+            </div>
             <div><label>Phone</label><input id="customerPhone"></div>
             <div><label>Address</label><input id="customerAddress"></div>
           </div>
+          <div id="memoCustHint"></div>
 
           <div class="row" style="margin-top:12px">
             <button class="btn-primary" onclick="addMemoLine()">+ Add Product Row</button>
@@ -462,6 +475,13 @@ tbody tr:hover td{background:#f7fafd}
             <span class="muted" style="font-size:12.5px">Memo select korle update form khulbe.</span>
           </div>
           <div id="deliveryTable"></div>
+        </div>
+
+        <div class="card">
+          <h2>Parcel Return</h2>
+          <div class="muted">Return hoye asha parcel. Good condition hole product abar stock e uthe jabe;
+            damaged hole stock e available hisebe uthbe na.</div>
+          <div id="returnTable" style="margin-top:10px"></div>
         </div>
       </section>
 
@@ -856,6 +876,32 @@ tbody tr:hover td{background:#f7fafd}
   </div>
 </div>
 
+<div id="returnModal" class="modal" onclick="if(event.target===this)closeReturn()">
+  <div class="modal-card">
+    <h2>Parcel Return</h2>
+    <div class="muted" id="rtInfo"></div>
+    <input id="rtMemo" type="hidden">
+    <div class="formgrid" style="margin-top:12px">
+      <div><label>Return Date</label><input id="rtDate" type="date"></div>
+      <div><label>Total Return Qty</label><input id="rtQty" type="number" min="0" oninput="returnQtyChanged()"></div>
+      <div><label>Condition</label>
+        <select id="rtCondition" onchange="returnTotals()">
+          <option value="good">Good - abar bikri hobe</option>
+          <option value="damaged">Damaged - bikri hobe na</option>
+        </select>
+      </div>
+      <div><label>Note</label><input id="rtNote" placeholder="Karon / driver"></div>
+    </div>
+    <div class="muted" style="margin-top:10px;font-size:12.5px">Kon product koto firloo - proyojon hole alada alada din.</div>
+    <div id="rtLines"></div>
+    <div id="rtHint" class="note"></div>
+    <div class="modal-actions">
+      <button class="btn-light" onclick="closeReturn()">Cancel</button>
+      <button class="btn-pink" onclick="saveReturn()">Save Return</button>
+    </div>
+  </div>
+</div>
+
 <div id="deliveryModal" class="modal" onclick="if(event.target===this)closeDelivery()">
   <div class="modal-card">
     <h2>Update Delivery</h2>
@@ -1009,6 +1055,7 @@ function blankDB() {
     expenses: [],     // {date, head, amount, note}
     memos: [],
     deliveries: [],
+    returns: [],      // parcels sent back: {memoId, qty, date, condition, ...}
     payments: [],     // customer receipts: {date, customerId, amount, method, note}
     tombstones: [],   // {key, id, at} for records deleted on some device
     settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
@@ -1045,7 +1092,7 @@ function migrate(d) {
   const base = blankDB();
   if (!d || typeof d !== 'object') return base;
   d.version = 2;
-  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'payments']
+  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments']
     .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
   if (!Array.isArray(d.tombstones)) d.tombstones = [];
   d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
@@ -1133,7 +1180,7 @@ const SNAP_KEY = 'texpark_pro_snapshots';
    and the format is fixed-width, so a plain string compare is correct and does not
    depend on which machine's clock does the merging. */
 const MERGE_KEYS = ['products', 'suppliers', 'customers', 'stock', 'ledger',
-                    'purchases', 'expenses', 'memos', 'deliveries', 'payments'];
+                    'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments'];
 const TOMB_MAX = 4000;                 // plenty of history; stops unbounded growth
 
 /* A record without its change stamp - what "changed?" actually compares. */
@@ -1265,6 +1312,10 @@ function rebaseStockFromLedger() {
     else if (l.type === 'Purchase') b.purchased += q;
     else if (l.type === 'Sale') b.sold += -q;
     else if (l.type === 'SaleReturn') b.sold -= q;
+    /* A parcel that came back in sellable condition is no longer sold, so it is
+       subtracted from `sold` - the same slot a memo delete frees. A damaged one is
+       not stock the shop can sell, so it never re-enters `sold`. */
+    else if (l.type === 'Return') b.sold -= q;
     else if (l.type === 'Adjustment' || l.type === 'Damage') b.purchased += q;
   });
   const cards = {};
@@ -1477,7 +1528,7 @@ function logStock(productId, type, qty, ref, note) {
     at: new Date().toISOString(),
     date: today(),
     productId,
-    type,                     // Opening | Purchase | Sale | SaleReturn | Adjustment | Damage
+    type,                     // Opening | Purchase | Sale | SaleReturn | Return | Damage | Adjustment
     qty: num(qty),            // +in / -out
     balance: stockAvailable(db.stock.find(x => x.productId === productId)),
     ref: ref || '',
@@ -1526,6 +1577,54 @@ function reverseSaleFromStock(memo) {
     s.sold = Math.max(0, num(s.sold) - num(it.qty));
     s.available = stockAvailable(s);
     logStock(it.productId, 'SaleReturn', num(it.qty), memo.memoNo, 'Memo deleted');
+  });
+}
+
+/* How much of a memo is still out with the customer: sold, minus what has been
+   delivered, minus what has come back. A return is stock the shop holds again, so
+   it must not count as still being with the customer. */
+function deliveredQtyOf(memoId) {
+  return (db.deliveries || []).filter(x => x.memoId === memoId).reduce((a, x) => a + num(x.qty), 0);
+}
+function returnedQtyOf(memoId) {
+  return (db.returns || []).filter(x => x.memoId === memoId).reduce((a, x) => a + num(x.qty), 0);
+}
+function pendingQtyOf(memo) {
+  return Math.max(0, num(memo.totalQty) - deliveredQtyOf(memo.id) - returnedQtyOf(memo.id));
+}
+
+/* A return puts the goods back into the stock book. `condition` decides whether they
+   can be sold again: 'good' frees the sale, 'damaged' records the loss and keeps the
+   goods out of available, so a damaged parcel never looks like sellable stock. */
+function applyReturnToStock(ret) {
+  const memo = db.memos.find(m => m.id === ret.memoId);
+  const ref = memo ? memo.memoNo : (ret.memoNo || '');
+  (ret.items || []).forEach(it => {
+    if (!it.productId || num(it.qty) <= 0) return;
+    const s = stockOf(it.productId);
+    if (ret.condition === 'damaged') {
+      logStock(it.productId, 'Damage', 0, ref, 'Parcel return - damaged, not sellable');
+    } else {
+      s.sold = Math.max(0, num(s.sold) - num(it.qty));
+      logStock(it.productId, 'Return', num(it.qty), ref, (memo ? memo.customerName : '') + ' - parcel return');
+    }
+    s.available = stockAvailable(s);
+  });
+}
+
+/* Undo a return: the goods go back out again, so the sale stands once more. */
+function reverseReturnFromStock(ret) {
+  const memo = db.memos.find(m => m.id === ret.memoId);
+  const ref = memo ? memo.memoNo : (ret.memoNo || '');
+  (ret.items || []).forEach(it => {
+    if (!it.productId || num(it.qty) <= 0) return;
+    const s = db.stock.find(x => x.productId === it.productId);
+    if (!s) return;
+    if (ret.condition !== 'damaged') {
+      s.sold = num(s.sold) + num(it.qty);
+      logStock(it.productId, 'Sale', -num(it.qty), ref, 'Return cancelled');
+    }
+    s.available = stockAvailable(s);
   });
 }
 
@@ -2550,7 +2649,7 @@ async function pullAndMerge() {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.2';
+const APP_VERSION = '2027-01-01.3';
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
@@ -2755,7 +2854,7 @@ function renderDashboard() {
 
 function pendingDeliveryHTML() {
   const rows = db.memos.map(m => {
-    const d = db.deliveries.filter(x => x.memoId === m.id).reduce((a, x) => a + num(x.qty), 0);
+    const d = deliveredQtyOf(m.id) + returnedQtyOf(m.id);
     return { m, pend: num(m.totalQty) - d };
   }).filter(x => x.pend > 0).slice(-8);
   if (!rows.length) return '<div class="empty">Nothing pending delivery</div>';
@@ -2773,6 +2872,9 @@ function newMemo() {
   document.getElementById('memoNo').value = nextMemoNo();
   document.getElementById('memoDate').value = today();
   ['customerName', 'customerPhone', 'customerAddress', 'memoNote'].forEach(i => document.getElementById(i).value = '');
+  const hint = document.getElementById('memoCustHint');
+  if (hint) { hint.innerHTML = ''; hint.className = ''; }
+  renderCustomerOptions();
   document.getElementById('memoDiscount').value = 0;
   document.getElementById('memoDeliveryCharge').value = 0;
   document.getElementById('memoAdvance').value = 0;
@@ -2926,6 +3028,69 @@ function calcMemo() {
   memoSyncLines();
 }
 
+/* The owner has hundreds of customers and could not remember who was already saved,
+   so typing a name has to recognise it. Matching is on the normalised name: case,
+   extra spaces and a stray 'Md.'/'Mst.' must not make one customer look like two. */
+function nameKey_(v) {
+  return String(v || '').toLowerCase()
+    .replace(/\b(md|mst|mrs|mr|miss)\.?\s*/g, '')
+    .replace(/[^\w\u0980-\u09FF]+/g, ' ')
+    .trim();
+}
+
+function customerMatch(name) {
+  const k = nameKey_(name);
+  if (!k) return null;
+  const all = db.customers || [];
+  return all.find(c => nameKey_(c.name) === k) || null;
+}
+
+/* Names already used in a memo but never added to the customer list (the memo is the
+   source of truth, so this happens), plus the saved list. */
+function customerNameList() {
+  const seen = {}, out = [];
+  const push = (n) => { const k = nameKey_(n); if (k && !seen[k]) { seen[k] = 1; out.push(String(n).trim()); } };
+  (db.customers || []).forEach(c => push(c.name));
+  (db.memos || []).forEach(m => push(m.customerName));
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+function renderCustomerOptions() {
+  const dl = document.getElementById('customerNames');
+  if (dl) dl.innerHTML = customerNameList().map(n => '<option value="' + esc(n) + '"></option>').join('');
+}
+
+/* Called as the name is typed: fills in the phone and address from the saved record
+   and says plainly whether this customer is already saved. */
+function memoCustomerCheck() {
+  renderCustomerOptions();
+  const box = document.getElementById('memoCustHint');
+  const name = (document.getElementById('customerName').value || '').trim();
+  if (!box) return;
+  if (!name) { box.innerHTML = ''; box.className = ''; return; }
+  const c = customerMatch(name);
+  if (c) {
+    const phone = document.getElementById('customerPhone');
+    const addr = document.getElementById('customerAddress');
+    // Only fill what is empty - never overwrite what the owner typed.
+    if (phone && !phone.value.trim() && c.phone) phone.value = c.phone;
+    if (addr && !addr.value.trim() && c.address) addr.value = c.address;
+    const ms = (db.memos || []).filter(m => m.customerName === c.name);
+    const due = customerDue(c).due;
+    box.className = 'note good';
+    box.innerHTML = '&#10003; Ei customer age theke save ache (' + esc(c.name) + ')' +
+      (c.phone ? ' - ' + esc(c.phone) : '') +
+      ' | Memo: ' + ms.length +
+      (num(due) !== 0 ? ' | Baki: ' + money(due) : '');
+    return;
+  }
+  const inMemo = (db.memos || []).some(m => nameKey_(m.customerName) === nameKey_(name));
+  box.className = 'note warn';
+  box.innerHTML = inMemo
+    ? 'Ei name-e memo ache kintu customer list-e nei - save korle list-e bose jabe.'
+    : 'Notun customer - save korle customer list-e bose jabe.';
+}
+
 function pickMemoCustomer(cid) {
   const c = db.customers.find(x => x.id === cid);
   if (!c) return;
@@ -2970,12 +3135,29 @@ function saveMemo() {
     savedAt: new Date().toISOString()
   };
 
+  /* A memo that was already partly delivered or returned cannot be shrunk below what
+     has already gone out and come back: the delivery and return records are real
+     history and would otherwise point at quantities the memo no longer has. */
+  if (prev) {
+    const out = deliveredQtyOf(prev.id) + returnedQtyOf(prev.id);
+    if (out > num(memo.totalQty)) {
+      if (!confirm('Ei memo-te ' + out + ' qty already delivery/return hoye geche, ' +
+        'kintu notun total ' + num(memo.totalQty) + '.\n' +
+        'Memo save korle delivery/return hiseb mile na - Delivery page theke thik korte hobe.\n' +
+        'Save korben?')) return;
+    }
+  }
   if (prev) { reverseSaleFromStock(prev); Object.assign(prev, memo); }
   else db.memos.push(memo);
   applySaleToStock(memo);
 
-  const c = db.customers.find(x => x.name.toLowerCase() === name.toLowerCase() && (x.phone || '') === memo.customerPhone);
+  const c = customerMatch(name);
   if (!c) db.customers.push({ id: id(), name, phone: memo.customerPhone, address: memo.customerAddress });
+  else {
+    // Fill in what the saved record is missing, but never overwrite what is there.
+    if (!c.phone && memo.customerPhone) c.phone = memo.customerPhone;
+    if (!c.address && memo.customerAddress) c.address = memo.customerAddress;
+  }
 
   if (!commit()) return;
 
@@ -3012,13 +3194,13 @@ function renderHistory() {
     ? '<div class="tablewrap"><table><thead><tr><th>Memo No</th><th>Date</th><th>Customer</th><th class="right">Qty</th>' +
       '<th class="right">Grand</th><th class="right">Profit</th><th class="right">Due</th><th>Delivery</th><th></th></tr></thead><tbody>' +
       arr.map(m => {
-        const d = db.deliveries.filter(x => x.memoId === m.id).reduce((a, x) => a + num(x.qty), 0);
-        const st = d >= num(m.totalQty) ? 'ok' : d ? 'warn' : 'danger';
+        const d = deliveredQtyOf(m.id), r = returnedQtyOf(m.id);
+        const st = pendingQtyOf(m) <= 0 ? 'ok' : (d || r) ? 'warn' : 'danger';
         return '<tr><td>' + esc(m.memoNo) + '</td><td>' + m.date + '</td><td>' + esc(m.customerName) + '</td>' +
           '<td class="right">' + m.totalQty + '</td><td class="right">' + money(m.grandTotal) + '</td>' +
           '<td class="right"><b class="' + (num(m.profit) >= 0 ? 'green' : 'red') + '">' + money(m.profit) + '</b></td>' +
           '<td class="right">' + money(m.due) + '</td>' +
-          '<td><span class="pill ' + st + '">' + d + '/' + m.totalQty + '</span></td>' +
+          '<td><span class="pill ' + st + '">' + d + '/' + m.totalQty + (r ? ' <b class="red">R' + r + '</b>' : '') + '</span></td>' +
           '<td><button class="btn-light btn-sm" onclick="viewMemo(\'' + m.id + '\')">View</button> ' +
           '<button class="btn-light btn-sm" onclick="editMemo(\'' + m.id + '\')">Edit</button> ' +
           '<button class="btn-light btn-sm" onclick="printMemoById(\'' + m.id + '\')">Print</button> ' +
@@ -3039,6 +3221,7 @@ function editMemo(mid) {
   document.getElementById('customerName').value = m.customerName;
   document.getElementById('customerPhone').value = m.customerPhone || '';
   document.getElementById('customerAddress').value = m.customerAddress || '';
+  memoCustomerCheck();
   document.getElementById('memoDiscount').value = m.discount || 0;
   document.getElementById('memoDeliveryCharge').value = m.deliveryCharge || 0;
   document.getElementById('memoAdvance').value = m.advance || 0;
@@ -3056,6 +3239,8 @@ function deleteMemo(mid) {
   if (!confirm('Memo ' + m.memoNo + ' delete korben? Stock abar phiriye deya hobe.')) return;
   reverseSaleFromStock(m);
   db.deliveries = db.deliveries.filter(d => d.memoId !== m.id);
+  (db.returns || []).filter(r => r.memoId === m.id).forEach(reverseReturnFromStock);
+  db.returns = (db.returns || []).filter(r => r.memoId !== m.id);
   db.memos = db.memos.filter(x => x.id !== mid);
   if (editingMemoId === mid) newMemo();
   if (!commit()) return;
@@ -3127,37 +3312,69 @@ function memoSheet(m) {
     '<div class="sign"><div>Customer Signature</div><div>Authorized Signature</div></div></div>';
 }
 
-/* ===================== delivery ===================== */
+/* ===================== delivery & return ===================== */
+/* One row per memo, with the two things that can happen to a parcel: it is
+   delivered, or it comes back. They are separate records and separate totals, and
+   both are subtracted from what is still out with the customer. */
 function renderDelivery() {
   const rows = db.memos.map(m => {
-    const d = db.deliveries.filter(x => x.memoId === m.id).reduce((a, x) => a + num(x.qty), 0);
-    return { m, d, pend: num(m.totalQty) - d };
+    const d = deliveredQtyOf(m.id), r = returnedQtyOf(m.id);
+    return { m, d, r, pend: pendingQtyOf(m) };
   }).slice().reverse();
   document.getElementById('deliveryTable').innerHTML = rows.length
     ? '<div class="tablewrap"><table><thead><tr><th>Memo</th><th>Customer</th><th>Phone</th><th class="right">Sold</th>' +
-      '<th class="right">Delivered</th><th class="right">Pending</th><th>Status</th><th>Driver</th><th>Vehicle</th><th>Receiver</th></tr></thead><tbody>' +
+      '<th class="right">Delivered</th><th class="right">Return</th><th class="right">Pending</th><th>Status</th>' +
+      '<th>Driver</th><th>Vehicle</th><th>Receiver</th><th></th></tr></thead><tbody>' +
       rows.map(x => {
-        const st = x.pend <= 0 ? 'ok' : x.d ? 'warn' : 'danger';
+        const st = x.pend <= 0 ? 'ok' : (x.d || x.r) ? 'warn' : 'danger';
+        const label = x.pend <= 0 ? (x.r >= num(x.m.totalQty) ? 'Returned' : 'Delivered')
+          : (x.d || x.r) ? 'Partial' : 'Pending';
         return '<tr><td>' + esc(x.m.memoNo) + '</td><td>' + esc(x.m.customerName) + '</td>' +
           '<td>' + esc(x.m.customerPhone || '') + '</td><td class="right">' + x.m.totalQty + '</td>' +
-          '<td class="right">' + x.d + '</td><td class="right"><b>' + x.pend + '</b></td>' +
-          '<td><span class="pill ' + st + '">' + (x.pend <= 0 ? 'Delivered' : x.d ? 'Partial' : 'Pending') + '</span> ' +
-          '<button class="btn-light btn-sm" onclick="openDelivery(\'' + x.m.id + '\')">Update</button></td>' +
-          '<td>' + esc(x.m.driver || '-') + '</td><td>' + esc(x.m.vehicle || '-') + '</td><td>' + esc(x.m.receiver || '-') + '</td></tr>';
+          '<td class="right">' + x.d + '</td>' +
+          '<td class="right">' + (x.r ? '<b class="red">' + x.r + '</b>' : '0') + '</td>' +
+          '<td class="right"><b>' + x.pend + '</b></td>' +
+          '<td><span class="pill ' + st + '">' + label + '</span></td>' +
+          '<td>' + esc(x.m.driver || '-') + '</td><td>' + esc(x.m.vehicle || '-') + '</td>' +
+          '<td>' + esc(x.m.receiver || '-') + '</td>' +
+          '<td><button class="btn-light btn-sm" onclick="openDelivery(\'' + x.m.id + '\')">Deliver</button> ' +
+          '<button class="btn-pink btn-sm" onclick="openReturn(\'' + x.m.id + '\')">Return</button></td></tr>';
       }).join('') + '</tbody></table></div>'
     : '<div class="empty">No memos</div>';
-  document.getElementById('deliveryMemoSel').innerHTML = '<option value="">- select memo -</option>' +
+  const sel = document.getElementById('deliveryMemoSel');
+  if (sel) sel.innerHTML = '<option value="">- select memo -</option>' +
     db.memos.slice().reverse().map(m => '<option value="' + m.id + '">' + esc(m.memoNo) + ' - ' + esc(m.customerName) + '</option>').join('');
+
+  /* The return list is its own table: a returned parcel is a record the owner has to
+     be able to find again, not just a number inside the delivery row. */
+  const rets = (db.returns || []).slice().reverse();
+  const rt = document.getElementById('returnTable');
+  if (rt) rt.innerHTML = rets.length
+    ? '<div class="tablewrap"><table><thead><tr><th>Date</th><th>Memo</th><th>Customer</th><th>Products</th>' +
+      '<th class="right">Qty</th><th>Condition</th><th>Note</th><th></th></tr></thead><tbody>' +
+      rets.map(x => {
+        const m = db.memos.find(y => y.id === x.memoId);
+        return '<tr><td>' + esc(x.date) + '</td><td>' + esc(m ? m.memoNo : (x.memoNo || '-')) + '</td>' +
+          '<td>' + esc(m ? m.customerName : '-') + '</td>' +
+          '<td>' + (x.items || []).map(i => esc(i.productName) + ' x' + num(i.qty)).join(', ') + '</td>' +
+          '<td class="right">' + num(x.qty) + '</td>' +
+          '<td><span class="pill ' + (x.condition === 'damaged' ? 'danger' : 'ok') + '">' +
+            (x.condition === 'damaged' ? 'Damaged' : 'Good - stock e utheche') + '</span></td>' +
+          '<td>' + esc(x.note || '') + '</td>' +
+          '<td><button class="btn-danger btn-sm" onclick="deleteReturn(\'' + x.id + '\')">Delete</button></td></tr>';
+      }).join('') + '</tbody></table></div>'
+    : '<div class="empty">Kono return nei</div>';
 }
 
 function openDelivery(mid) {
   const m = db.memos.find(x => x.id === mid);
   if (!m) return;
-  const d = db.deliveries.filter(x => x.memoId === mid).reduce((a, x) => a + num(x.qty), 0);
+  const d = deliveredQtyOf(mid);
   document.getElementById('dlMemo').value = m.id;
   document.getElementById('dlInfo').innerHTML = esc(m.memoNo) + ' - ' + esc(m.customerName) +
-    ' | Sold ' + m.totalQty + ' | Delivered ' + d + ' | Pending <b>' + (num(m.totalQty) - d) + '</b>';
-  document.getElementById('dlQty').value = Math.max(0, num(m.totalQty) - d);
+    ' | Sold ' + m.totalQty + ' | Delivered ' + d + ' | Return ' + returnedQtyOf(mid) +
+    ' | Pending <b>' + pendingQtyOf(m) + '</b>';
+  document.getElementById('dlQty').value = pendingQtyOf(m);
   document.getElementById('dlDriver').value = m.driver || '';
   document.getElementById('dlVehicle').value = m.vehicle || '';
   document.getElementById('dlReceiver').value = m.receiver || '';
@@ -3171,19 +3388,20 @@ function saveDelivery() {
   const q = num(document.getElementById('dlQty').value);
   const m = db.memos.find(x => x.id === mid);
   if (!m) return alert('Memo select korun.');
-  const already = db.deliveries.filter(x => x.memoId === mid).reduce((a, x) => a + num(x.qty), 0);
   if (q <= 0) return alert('Delivery qty din.');
-  if (already + q > num(m.totalQty)) {
-    return alert('Delivery qty memo qty-er beshi hote pare na. Baki: ' + (num(m.totalQty) - already));
-  }
+  if (q > pendingQtyOf(m)) return alert('Delivery qty pending-er beshi hote pare na. Baki: ' + pendingQtyOf(m));
+  const already = deliveredQtyOf(mid);
   db.deliveries.push({
     id: id(), memoId: mid, qty: q, date: today(),
     driver: document.getElementById('dlDriver').value.trim(),
     vehicle: document.getElementById('dlVehicle').value.trim(),
     receiver: document.getElementById('dlReceiver').value.trim(),
-    note: document.getElementById('dlNote').value.trim(),
-    status: already + q >= num(m.totalQty) ? 'Delivered' : 'Partial'
+    note: document.getElementById('dlNote').value.trim()
   });
+  /* Status is decided after the record is in, from what is actually still pending -
+     writing 'Delivered' unconditionally made every partial delivery read as complete. */
+  const pend = pendingQtyOf(m);
+  db.deliveries[db.deliveries.length - 1].status = pend <= 0 ? 'Delivered' : 'Partial';
   m.driver = document.getElementById('dlDriver').value.trim();
   m.vehicle = document.getElementById('dlVehicle').value.trim();
   m.receiver = document.getElementById('dlReceiver').value.trim();
@@ -3191,12 +3409,127 @@ function saveDelivery() {
   if (!commit()) return;
   syncPush('delivery', {
     memoNumber: m.memoNo, customer: m.customerName, qty: q, deliveredQty: already + q,
-    pendingQty: num(m.totalQty) - already - q, deliveryDate: today(),
+    pendingQty: pend, deliveryDate: today(),
     driver: m.driver, vehicle: m.vehicle, receiver: m.receiver,
-    status: already + q >= num(m.totalQty) ? 'Delivered' : 'Partial', note: m.deliveryNote
+    status: pend <= 0 ? 'Delivered' : 'Partial', note: m.deliveryNote
   }, 'Delivery ' + m.memoNo);
   closeDelivery();
   alert('Delivery update hoyeche.');
+}
+
+/* ===================== parcel return ===================== */
+/* The shop has many parcels coming back, so a return is entered as a record of its
+   own. The qty box takes a whole-memo return or a partial one, and each product gets
+   its own box when only some lines came back. */
+function openReturn(mid) {
+  const m = db.memos.find(x => x.id === mid);
+  if (!m) return;
+  const pend = pendingQtyOf(m);
+  document.getElementById('rtMemo').value = m.id;
+  document.getElementById('rtInfo').innerHTML = esc(m.memoNo) + ' - ' + esc(m.customerName) +
+    ' | Sold ' + m.totalQty + ' | Delivered ' + deliveredQtyOf(mid) +
+    ' | Age return ' + returnedQtyOf(mid) + ' | Return korte parben: <b>' + pend + '</b>';
+  document.getElementById('rtDate').value = today();
+  document.getElementById('rtCondition').value = 'good';
+  document.getElementById('rtNote').value = '';
+  document.getElementById('rtQty').value = pend;
+  renderReturnLines(m);
+  /* Fill the per-product boxes from the total, not the other way round: returnTotals
+     would read the empty boxes and reset the total to 0. */
+  returnQtyChanged();
+  document.getElementById('returnModal').classList.add('show');
+}
+function closeReturn() { document.getElementById('returnModal').classList.remove('show'); }
+
+function renderReturnLines(m) {
+  document.getElementById('rtLines').innerHTML = m.items.map((it, i) =>
+    '<div class="rtline"><span>' + esc(it.productName) + '</span>' +
+    '<span class="muted">sold ' + num(it.qty) + '</span>' +
+    '<input id="rtLine' + i + '" type="number" min="0" max="' + num(it.qty) + '" value="0" ' +
+    'oninput="returnTotals()"></div>').join('');
+}
+
+/* The per-product boxes and the single qty box stay in step: whichever the owner
+   touches, the other follows. Typing a total splits it across the lines, and typing
+   lines adds up to the total. */
+function returnTotals() {
+  const m = db.memos.find(x => x.id === document.getElementById('rtMemo').value);
+  if (!m) return;
+  let sum = 0;
+  m.items.forEach((it, i) => {
+    const el = document.getElementById('rtLine' + i);
+    if (!el) return;
+    if (num(el.value) > num(it.qty)) el.value = num(it.qty);
+    if (num(el.value) < 0) el.value = 0;
+    sum += num(el.value);
+  });
+  const qtyEl = document.getElementById('rtQty');
+  if (qtyEl && document.activeElement !== qtyEl) qtyEl.value = sum;
+  const cond = document.getElementById('rtCondition').value;
+  document.getElementById('rtHint').innerHTML = cond === 'damaged'
+    ? 'Damaged: stock e available hisebe uthbe na, loss hisebe lekha hobe.'
+    : 'Good: product abar stock e available hisebe uthe jabe.';
+}
+function returnQtyChanged() {
+  const m = db.memos.find(x => x.id === document.getElementById('rtMemo').value);
+  if (!m) return;
+  let left = Math.max(0, num(document.getElementById('rtQty').value));
+  m.items.forEach((it, i) => {
+    const el = document.getElementById('rtLine' + i);
+    if (!el) return;
+    const take = Math.min(left, num(it.qty));
+    el.value = take;
+    left -= take;
+  });
+  returnTotals();
+}
+
+function saveReturn() {
+  const mid = document.getElementById('rtMemo').value;
+  const m = db.memos.find(x => x.id === mid);
+  if (!m) return alert('Memo select korun.');
+  const items = m.items.map((it, i) => ({
+    productId: it.productId, productName: it.productName,
+    qty: num((document.getElementById('rtLine' + i) || {}).value)
+  })).filter(x => x.productId && x.qty > 0);
+  const total = items.reduce((a, x) => a + x.qty, 0);
+  if (!total) return alert('Return qty din.');
+  if (total > pendingQtyOf(m)) {
+    return alert('Return qty pending-er beshi hote pare na. Baki: ' + pendingQtyOf(m));
+  }
+  const ret = {
+    id: id(), memoId: mid, memoNo: m.memoNo, date: document.getElementById('rtDate').value || today(),
+    items, qty: total,
+    condition: document.getElementById('rtCondition').value === 'damaged' ? 'damaged' : 'good',
+    note: document.getElementById('rtNote').value.trim(),
+    returnedAt: new Date().toISOString()
+  };
+  db.returns.push(ret);
+  /* Stock moves here, at save time, so the Stock page shows the goods back the moment
+     the parcel is entered. */
+  applyReturnToStock(ret);
+  if (!commit()) return;
+  syncPush('return', {
+    memoNumber: m.memoNo, customer: m.customerName, qty: total,
+    returnedQty: returnedQtyOf(mid), pendingQty: pendingQtyOf(m), returnDate: ret.date,
+    condition: ret.condition, note: ret.note,
+    products: items.map(x => x.productName + ' x' + x.qty).join(', ')
+  }, 'Return ' + m.memoNo);
+  closeReturn();
+  alert('Return save hoyeche.' + (ret.condition === 'good'
+    ? '\nStock e available hisebe uthe geche.'
+    : '\nDamaged - stock e available hisebe uthe ni (loss hisebe lekha hoyeche).'));
+}
+
+function deleteReturn(rid) {
+  const r = (db.returns || []).find(x => x.id === rid);
+  if (!r) return;
+  if (!confirm('Ei return delete korben? Stock abar age-r moto hoye jabe.')) return;
+  reverseReturnFromStock(r);
+  db.returns = db.returns.filter(x => x.id !== rid);
+  if (!commit()) return;
+  syncPush('return_delete', { returnId: rid, memoNumber: r.memoNo }, 'Return delete ' + (r.memoNo || ''));
+  alert('Return delete hoyeche.');
 }
 
 /* ===================== customers ===================== */
@@ -4106,7 +4439,7 @@ function renderBackup() {
     ['Products', db.products.length], ['Customers', db.customers.length],
     ['Suppliers', db.suppliers.length], ['Sales Memos', db.memos.length],
     ['Purchases', db.purchases.length], ['Expenses', db.expenses.length],
-    ['Payments', db.payments.length], ['Deliveries', db.deliveries.length],
+    ['Payments', db.payments.length], ['Deliveries', db.deliveries.length], ['Returns', (db.returns || []).length],
     ['Stock movements', db.ledger.length], ['Users', db.users.length]
   ];
   document.getElementById('dataCounts').innerHTML =

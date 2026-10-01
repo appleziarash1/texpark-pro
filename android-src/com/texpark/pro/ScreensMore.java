@@ -342,6 +342,126 @@ public class ScreensMore {
         }
         body.addView(list);
 
+        /* Parcels coming back. Kept apart from delivery on purpose: the owner needs
+           to see what went out and what came back as two separate books. */
+        LinearLayout rets = Ui.card(s.act, "Parcel Return");
+        rets.addView(Ui.cells(s.act, new String[]{"MEMO", "DATE", "QTY", "CONDITION"},
+            new float[]{3f, 2.4f, 1.6f, 2.6f}, Ui.NAVY, true));
+        for (Object o : store.list("returns")) {
+            final Map<String, Object> r = Store.rec(o);
+            rets.addView(Ui.cells(s.act,
+                new String[]{Store.str(r, "memoNo"), Store.str(r, "date"),
+                             Ui.qty(r.get("qty")), Store.str(r, "condition")},
+                new float[]{3f, 2.4f, 1.6f, 2.6f},
+                "good".equals(Store.str(r, "condition")) ? Ui.GREEN : Ui.AMBER, true));
+            LinearLayout line = Ui.row(s.act);
+            line.addView(Ui.label(s.act, Store.str(r, "note")));
+            Button del = Ui.ghost(s.act, "Delete");
+            del.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    store.reverseReturnFromStock(r);
+                    store.list("returns").remove(r);
+                    s.afterSave("Return delete hoyeche, stock thik kora hoyeche.");
+                }
+            });
+            line.addView(del);
+            rets.addView(line);
+        }
+        if (store.list("returns").isEmpty()) {
+            rets.addView(Ui.label(s.act, "Ekhono return nei."));
+        }
+        body.addView(rets);
+
+        /* Enter a return for any memo that still has something with the customer. */
+        final List<String> rMemoIds = new ArrayList<String>();
+        final List<String> rMemoNos = new ArrayList<String>();
+        for (Object o : store.list("memos")) {
+            Map<String, Object> m = Store.rec(o);
+            if (store.pendingQtyOf(m) > 0) {
+                rMemoIds.add(Store.str(m, "id"));
+                rMemoNos.add(Store.str(m, "memoNo") + " \u2022 " + Store.str(m, "customerName")
+                    + " \u2022 " + Ui.qty(store.pendingQtyOf(m)) + " baki");
+            }
+        }
+        if (!rMemoIds.isEmpty()) {
+            LinearLayout addR = Ui.card(s.act, "+ Parcel Return");
+            final int[] chosen = {0};
+            final Button rpicker = Ui.ghost(s.act, rMemoNos.get(0));
+            final EditText rqty = Ui.number(s.act, "Return Qty", "");
+            final EditText rnote = Ui.field(s.act, "Note (kotha theke firse)", "", InputType.TYPE_CLASS_TEXT);
+            final String[] conditions = {"good", "damaged"};
+            final String[] condition = {"good"};
+            final Button rcond = Ui.ghost(s.act, "Condition: Good");
+            rpicker.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    s.choose("Memo bachun", rMemoNos, new Screens.OnText() {
+                        public void on(String idx) {
+                            chosen[0] = (int) Store.num(idx);
+                            rpicker.setText(rMemoNos.get(chosen[0]));
+                            Map<String, Object> m = ScreensData.findMemo(store, rMemoIds.get(chosen[0]));
+                            rqty.setText(Ui.qty(store.pendingQtyOf(m)));
+                        }
+                    });
+                }
+            });
+            rcond.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    s.choose("Condition bachun", new ArrayList<String>(java.util.Arrays.asList(conditions)),
+                        new Screens.OnText() {
+                            public void on(String idx) {
+                                condition[0] = conditions[(int) Store.num(idx)];
+                                rcond.setText("Condition: " + ("good".equals(condition[0]) ? "Good" : "Damaged"));
+                            }
+                        });
+                }
+            });
+            Button rsave = Ui.primary(s.act, "Save Return");
+            rsave.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    Map<String, Object> m = ScreensData.findMemo(store, rMemoIds.get(chosen[0]));
+                    if (m == null) { s.afterSave("Memo pawa jay ni."); return; }
+                    double q = Store.num(rqty.getText().toString());
+                    double pend = store.pendingQtyOf(m);
+                    if (q <= 0) { s.afterSave("Return qty din."); return; }
+                    if (q > pend) { s.afterSave("Return qty baki " + Ui.qty(pend) + "-er beshi hote pare na."); return; }
+                    Map<String, Object> r = new LinkedHashMap<String, Object>();
+                    r.put("id", Store.id());
+                    r.put("memoId", Store.str(m, "id"));
+                    r.put("memoNo", Store.str(m, "memoNo"));
+                    r.put("customerName", Store.str(m, "customerName"));
+                    r.put("date", Store.today());
+                    r.put("qty", Double.valueOf(q));
+                    r.put("condition", condition[0]);
+                    r.put("note", rnote.getText().toString().trim());
+                    /* Per-product lines, so stock rises for the right products even
+                       when only some lines of a memo came back. */
+                    List<Object> lines = new ArrayList<Object>();
+                    double left = q;
+                    for (Object io : Json.arr(m.get("items"))) {
+                        Map<String, Object> it = Store.rec(io);
+                        double take = Math.min(left, Store.num(it.get("qty")));
+                        if (take <= 0) break;
+                        Map<String, Object> ln = new LinkedHashMap<String, Object>();
+                        ln.put("productId", Store.str(it, "productId"));
+                        ln.put("productName", Store.str(it, "productName"));
+                        ln.put("qty", Double.valueOf(take));
+                        lines.add(ln);
+                        left -= take;
+                    }
+                    r.put("lines", lines);
+                    store.saveReturn(r);
+                    s.afterSave("Return save hoyeche" +
+                        ("good".equals(condition[0]) ? ", stock-e jog hoyeche." : ", stock-e jog hoy ni (damaged)."));
+                }
+            });
+            addR.addView(rpicker);
+            addR.addView(Ui.label(s.act, "Return Qty")); addR.addView(rqty);
+            addR.addView(rcond);
+            addR.addView(Ui.label(s.act, "Note")); addR.addView(rnote);
+            addR.addView(rsave);
+            body.addView(addR);
+        }
+
         // Create a delivery for a memo that has none yet.
         final List<String> memoNos = new ArrayList<String>();
         final List<String> memoIds = new ArrayList<String>();

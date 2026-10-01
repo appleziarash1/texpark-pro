@@ -65,6 +65,38 @@ public class ScreensData {
         final EditText addr = Ui.field(s.act, "Address", d.customerAddress,
                 InputType.TYPE_CLASS_TEXT);
         head.addView(addr);
+        /* The saved customer list, one tap away. On a phone the owner should not have
+           to retype a name he has already sold to - and picking one fills the phone
+           and address from the record that is already there. */
+        final List<String> custNames = new ArrayList<String>();
+        final List<Map<String, Object>> custRecs = new ArrayList<Map<String, Object>>();
+        for (Object o : store.list("customers")) {
+            Map<String, Object> c = Store.rec(o);
+            String cn = Store.str(c, "name").trim();
+            if (cn.isEmpty()) continue;
+            custNames.add(cn);
+            custRecs.add(c);
+        }
+        if (!custNames.isEmpty()) {
+            Button pickCust = Ui.ghost(s.act, "Saved customer bachun (" + custNames.size() + ")");
+            pickCust.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    s.choose("Customer bachun", custNames, new Screens.OnText() {
+                        public void on(String idx) {
+                            Map<String, Object> c = custRecs.get((int) Store.num(idx));
+                            name.setText(Store.str(c, "name"));
+                            if (phone.getText().toString().trim().isEmpty()) {
+                                phone.setText(Store.str(c, "phone"));
+                            }
+                            if (addr.getText().toString().trim().isEmpty()) {
+                                addr.setText(Store.str(c, "address"));
+                            }
+                        }
+                    });
+                }
+            });
+            head.addView(pickCust);
+        }
         body.addView(head);
 
         /* ---- items ---- */

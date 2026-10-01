@@ -32,7 +32,7 @@ public class Store {
 
     public static final String[] MERGE_KEYS = {
         "products", "suppliers", "customers", "stock", "ledger",
-        "purchases", "expenses", "memos", "deliveries", "payments"
+        "purchases", "expenses", "memos", "deliveries", "returns", "payments"
     };
     private static final int TOMB_MAX = 4000;
     private static final int SNAP_COUNT = 8;
@@ -258,6 +258,7 @@ public class Store {
         d.put("expenses", new ArrayList<Object>());
         d.put("memos", new ArrayList<Object>());
         d.put("deliveries", new ArrayList<Object>());
+        d.put("returns", new ArrayList<Object>());
         d.put("payments", new ArrayList<Object>());
         d.put("tombstones", new ArrayList<Object>());
         d.put("users", defaultUsers());
@@ -687,6 +688,74 @@ public class Store {
         }
     }
 
+    /* ------------------------- delivery / parcel return ------------------------- */
+
+    public double deliveredQtyOf(String memoId) {
+        double q = 0;
+        for (Object o : list("deliveries")) {
+            Map<String, Object> d = rec(o);
+            if (str(d, "memoId").equals(memoId)) q += num(d.get("qty"));
+        }
+        return q;
+    }
+
+    public double returnedQtyOf(String memoId) {
+        double q = 0;
+        for (Object o : list("returns")) {
+            Map<String, Object> r = rec(o);
+            if (str(r, "memoId").equals(memoId)) q += num(r.get("qty"));
+        }
+        return q;
+    }
+
+    /** What is still with the customer: sold, minus what has gone out, minus what
+     *  has come back. A return counts here, so a returned parcel stops reading as
+     *  pending delivery the way it did before returns existed. */
+    public double pendingQtyOf(Map<String, Object> memo) {
+        if (memo == null) return 0;
+        return Math.max(0, num(memo.get("totalQty"))
+            - deliveredQtyOf(str(memo, "id")) - returnedQtyOf(str(memo, "id")));
+    }
+
+    /** Goods coming back onto the shelf. Damaged goods are recorded but not made
+     *  sellable, so the stock figure stays truthful. */
+    public void applyReturnToStock(Map<String, Object> ret) {
+        if (!"good".equals(str(ret, "condition"))) return;
+        for (Object io : listOf(ret, "lines")) {
+            Map<String, Object> it = rec(io);
+            double q = num(it.get("qty"));
+            if (q <= 0) continue;
+            String pid = str(it, "productId");
+            Map<String, Object> s = stockOf(pid);
+            s.put("sold", Double.valueOf(Math.max(0, num(s.get("sold")) - q)));
+            s.put("available", Double.valueOf(stockAvailable(s)));
+            logStock(pid, "Return", q, str(ret, "memoNo"), "Parcel return (" + str(ret, "condition") + ")");
+        }
+    }
+
+    public void reverseReturnFromStock(Map<String, Object> ret) {
+        if (!"good".equals(str(ret, "condition"))) return;
+        for (Object io : listOf(ret, "lines")) {
+            Map<String, Object> it = rec(io);
+            double q = num(it.get("qty"));
+            if (q <= 0) continue;
+            String pid = str(it, "productId");
+            Map<String, Object> s = findStock(pid);
+            if (s == null) continue;
+            s.put("sold", Double.valueOf(num(s.get("sold")) + q));
+            s.put("available", Double.valueOf(stockAvailable(s)));
+            logStock(pid, "ReturnUndo", -q, str(ret, "memoNo"), "Return deleted");
+        }
+    }
+
+    /** Record a parcel coming back. Stock rises for good goods, and the record is
+     *  kept even for damaged ones so the shop can show the customer what happened. */
+    public Map<String, Object> saveReturn(Map<String, Object> ret) {
+        applyReturnToStock(ret);
+        list("returns").add(ret);
+        return ret;
+    }
+
     public void applyPurchaseToStock(Map<String, Object> purchase) {
         for (Object io : listOf(purchase, "items")) {
             Map<String, Object> it = rec(io);
@@ -708,11 +777,12 @@ public class Store {
     /** Grand = Subtotal - Discount + Delivery + VAT. Due = Grand - Advance. */
     public static Map<String, Object> memoMath(List<Object> items, double discountIn,
                                                double deliveryIn, double advanceIn) {
-        double subtotal = 0, cogs = 0, vat = 0;
+        double subtotal = 0, cogs = 0, vat = 0, totalQty = 0;
         for (Object io : items) {
             Map<String, Object> it = rec(io);
             double qty = num(it.get("qty")), rate = num(it.get("rate"));
             double amount = round2(qty * rate);
+            totalQty += qty;
             it.put("qty", Double.valueOf(qty));
             it.put("rate", Double.valueOf(rate));
             it.put("amount", Double.valueOf(amount));
@@ -727,6 +797,9 @@ public class Store {
         double advance = Math.min(Math.max(0, advanceIn), grand);
         double due = round2(grand - advance);
         Map<String, Object> m = new LinkedHashMap<String, Object>();
+        /* totalQty is what delivery and return are measured against, so it is part of
+           the memo maths rather than something each screen adds up for itself. */
+        m.put("totalQty", Double.valueOf(totalQty));
         m.put("subtotal", Double.valueOf(subtotal));
         m.put("discount", Double.valueOf(discount));
         m.put("deliveryCharge", Double.valueOf(delivery));

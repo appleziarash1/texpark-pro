@@ -45,6 +45,7 @@ function blankDB() {
     expenses: [],     // {date, head, amount, note}
     memos: [],
     deliveries: [],
+    returns: [],      // parcels sent back: {memoId, qty, date, condition, ...}
     payments: [],     // customer receipts: {date, customerId, amount, method, note}
     tombstones: [],   // {key, id, at} for records deleted on some device
     settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
@@ -81,7 +82,7 @@ function migrate(d) {
   const base = blankDB();
   if (!d || typeof d !== 'object') return base;
   d.version = 2;
-  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'payments']
+  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments']
     .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
   if (!Array.isArray(d.tombstones)) d.tombstones = [];
   d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
@@ -169,7 +170,7 @@ const SNAP_KEY = 'texpark_pro_snapshots';
    and the format is fixed-width, so a plain string compare is correct and does not
    depend on which machine's clock does the merging. */
 const MERGE_KEYS = ['products', 'suppliers', 'customers', 'stock', 'ledger',
-                    'purchases', 'expenses', 'memos', 'deliveries', 'payments'];
+                    'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments'];
 const TOMB_MAX = 4000;                 // plenty of history; stops unbounded growth
 
 /* A record without its change stamp - what "changed?" actually compares. */
@@ -301,6 +302,10 @@ function rebaseStockFromLedger() {
     else if (l.type === 'Purchase') b.purchased += q;
     else if (l.type === 'Sale') b.sold += -q;
     else if (l.type === 'SaleReturn') b.sold -= q;
+    /* A parcel that came back in sellable condition is no longer sold, so it is
+       subtracted from `sold` - the same slot a memo delete frees. A damaged one is
+       not stock the shop can sell, so it never re-enters `sold`. */
+    else if (l.type === 'Return') b.sold -= q;
     else if (l.type === 'Adjustment' || l.type === 'Damage') b.purchased += q;
   });
   const cards = {};
@@ -513,7 +518,7 @@ function logStock(productId, type, qty, ref, note) {
     at: new Date().toISOString(),
     date: today(),
     productId,
-    type,                     // Opening | Purchase | Sale | SaleReturn | Adjustment | Damage
+    type,                     // Opening | Purchase | Sale | SaleReturn | Return | Damage | Adjustment
     qty: num(qty),            // +in / -out
     balance: stockAvailable(db.stock.find(x => x.productId === productId)),
     ref: ref || '',
@@ -562,6 +567,54 @@ function reverseSaleFromStock(memo) {
     s.sold = Math.max(0, num(s.sold) - num(it.qty));
     s.available = stockAvailable(s);
     logStock(it.productId, 'SaleReturn', num(it.qty), memo.memoNo, 'Memo deleted');
+  });
+}
+
+/* How much of a memo is still out with the customer: sold, minus what has been
+   delivered, minus what has come back. A return is stock the shop holds again, so
+   it must not count as still being with the customer. */
+function deliveredQtyOf(memoId) {
+  return (db.deliveries || []).filter(x => x.memoId === memoId).reduce((a, x) => a + num(x.qty), 0);
+}
+function returnedQtyOf(memoId) {
+  return (db.returns || []).filter(x => x.memoId === memoId).reduce((a, x) => a + num(x.qty), 0);
+}
+function pendingQtyOf(memo) {
+  return Math.max(0, num(memo.totalQty) - deliveredQtyOf(memo.id) - returnedQtyOf(memo.id));
+}
+
+/* A return puts the goods back into the stock book. `condition` decides whether they
+   can be sold again: 'good' frees the sale, 'damaged' records the loss and keeps the
+   goods out of available, so a damaged parcel never looks like sellable stock. */
+function applyReturnToStock(ret) {
+  const memo = db.memos.find(m => m.id === ret.memoId);
+  const ref = memo ? memo.memoNo : (ret.memoNo || '');
+  (ret.items || []).forEach(it => {
+    if (!it.productId || num(it.qty) <= 0) return;
+    const s = stockOf(it.productId);
+    if (ret.condition === 'damaged') {
+      logStock(it.productId, 'Damage', 0, ref, 'Parcel return - damaged, not sellable');
+    } else {
+      s.sold = Math.max(0, num(s.sold) - num(it.qty));
+      logStock(it.productId, 'Return', num(it.qty), ref, (memo ? memo.customerName : '') + ' - parcel return');
+    }
+    s.available = stockAvailable(s);
+  });
+}
+
+/* Undo a return: the goods go back out again, so the sale stands once more. */
+function reverseReturnFromStock(ret) {
+  const memo = db.memos.find(m => m.id === ret.memoId);
+  const ref = memo ? memo.memoNo : (ret.memoNo || '');
+  (ret.items || []).forEach(it => {
+    if (!it.productId || num(it.qty) <= 0) return;
+    const s = db.stock.find(x => x.productId === it.productId);
+    if (!s) return;
+    if (ret.condition !== 'damaged') {
+      s.sold = num(s.sold) + num(it.qty);
+      logStock(it.productId, 'Sale', -num(it.qty), ref, 'Return cancelled');
+    }
+    s.available = stockAvailable(s);
   });
 }
 

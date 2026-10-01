@@ -226,6 +226,24 @@ accepts as an update to the installed one.
 The catalog pages (`index.html`, `download.html`) live in `catalog/`, not the root, precisely so
 the root `index.html` can be the app.
 
+### Parcel return (owner-requested) and the customer-name autocomplete
+The shop sends parcels out and some come back, so there are now two books, not one:
+- A **return** is its own record (`returns`), saved by `Store.saveReturn` /
+  `js/app.js saveReturn`, and written to the `Returns` sheet tab (`Code.gs`).
+- Only **good** condition returns go back onto the shelf (`applyReturnToStock`); a
+  **damaged** one is recorded and deliberately never becomes sellable stock. Deleting a
+  return (`reverseReturnFromStock`) takes good goods back off again.
+- Return lines are stored **per product**, so a partial return raises the shelf for the
+  right products rather than the first one on the memo.
+- Delivery and return share one pending figure. Counting them separately was the bug that
+  made a returned parcel still read as pending delivery; the delivery status is
+  `Delivered` / `Partial` from the same maths.
+- The memo's customer box autocompletes from saved customers (`customerMatch()` in
+  `js/app.js`; a "Saved customer bachun" picker in Android `ScreensData`), filling phone
+  and address from the record that already exists.
+- The return qty is capped at what is still pending, so a memo cannot be returned twice
+  over. A memo itself is never blocked by stock - that rule is unchanged.
+
 ## Build + test commands
 - `node build.js` (in `texpark-pro/`) regenerates **both** the repo root and
   `../texpark-pro.html`. Always run this after changing source, or the shipped files drift.
@@ -261,11 +279,16 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   `MainActivity.APP_VERSION` from it before compiling. If they drift, the app offers the same
   "update" on every launch.
 - `test/native.test.js` compiles the shipped `Json`, `Store` and `Voice` on a plain JVM and
-  runs the real classes against the real JS business rules (16 tests). The shop's central
+  runs the real classes against the real JS business rules (17 tests). The shop's central
   rule is driven through `Store.saveMemo` itself: a memo for a product with **no stock card at
   all** must save, must create the card, must clamp `available` at 0, and must keep the whole
   quantity as a reported shortfall. That rule used to live in `ScreensData`, where an
   Android-only class could not be tested; it now lives in `Store` for that reason.
+- **`totalQty` is part of `Store.memoMath`, not a per-screen sum.** Delivery and parcel
+  return are both measured against it (`pendingQtyOf` = `totalQty` − delivered − returned),
+  so if a screen added the quantities up itself the two would drift and a returned parcel
+  would keep reading as out for delivery. The JS `memoMath` has always emitted it; the Java
+  one did not until the return work, which is why `pendingQtyOf` silently returned 0.
 - Two static checks guard what an emulator would otherwise catch: every `NavItem` must have
   a matching `"<id>".equals(page)` branch (a menu entry with no screen opens blank), and no
   source file may import `android.webkit` or call `window.print` in code (comments are

@@ -108,10 +108,16 @@
             <div><label>Memo No.</label><input id="memoNo" readonly></div>
             <div><label>Date</label><input id="memoDate" type="date"></div>
             <div><label>Select saved customer</label><select id="memoCustList" onchange="pickMemoCustomer(this.value)"></select></div>
-            <div><label>Customer Name *</label><input id="customerName"></div>
+            <div><label>Customer Name *</label>
+              <input id="customerName" list="customerNames" autocomplete="off"
+                     placeholder="Likhun - age save thakle nijei dhore felbe"
+                     oninput="memoCustomerCheck()">
+              <datalist id="customerNames"></datalist>
+            </div>
             <div><label>Phone</label><input id="customerPhone"></div>
             <div><label>Address</label><input id="customerAddress"></div>
           </div>
+          <div id="memoCustHint"></div>
 
           <div class="row" style="margin-top:12px">
             <button class="btn-primary" onclick="addMemoLine()">+ Add Product Row</button>
@@ -195,6 +201,13 @@
             <span class="muted" style="font-size:12.5px">Memo select korle update form khulbe.</span>
           </div>
           <div id="deliveryTable"></div>
+        </div>
+
+        <div class="card">
+          <h2>Parcel Return</h2>
+          <div class="muted">Return hoye asha parcel. Good condition hole product abar stock e uthe jabe;
+            damaged hole stock e available hisebe uthbe na.</div>
+          <div id="returnTable" style="margin-top:10px"></div>
         </div>
       </section>
 
@@ -586,6 +599,32 @@
       <button class="btn-light" onclick="closeView()">Close</button>
     </div>
     <div id="viewBody"></div>
+  </div>
+</div>
+
+<div id="returnModal" class="modal" onclick="if(event.target===this)closeReturn()">
+  <div class="modal-card">
+    <h2>Parcel Return</h2>
+    <div class="muted" id="rtInfo"></div>
+    <input id="rtMemo" type="hidden">
+    <div class="formgrid" style="margin-top:12px">
+      <div><label>Return Date</label><input id="rtDate" type="date"></div>
+      <div><label>Total Return Qty</label><input id="rtQty" type="number" min="0" oninput="returnQtyChanged()"></div>
+      <div><label>Condition</label>
+        <select id="rtCondition" onchange="returnTotals()">
+          <option value="good">Good - abar bikri hobe</option>
+          <option value="damaged">Damaged - bikri hobe na</option>
+        </select>
+      </div>
+      <div><label>Note</label><input id="rtNote" placeholder="Karon / driver"></div>
+    </div>
+    <div class="muted" style="margin-top:10px;font-size:12.5px">Kon product koto firloo - proyojon hole alada alada din.</div>
+    <div id="rtLines"></div>
+    <div id="rtHint" class="note"></div>
+    <div class="modal-actions">
+      <button class="btn-light" onclick="closeReturn()">Cancel</button>
+      <button class="btn-pink" onclick="saveReturn()">Save Return</button>
+    </div>
   </div>
 </div>
 

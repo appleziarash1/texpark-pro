@@ -21,6 +21,7 @@ const SHEETS = {
   customers: 'Customers',
   suppliers: 'Suppliers',
   delivery: 'Delivery',
+  returns: 'Returns',
   payments: 'Payments',
   expenses: 'Expenses',
   profit: 'Profit',
@@ -40,6 +41,10 @@ const HEADERS = {
   suppliers: ['Timestamp', 'Name', 'Contact', 'Phone', 'Address'],
   delivery: ['Timestamp', 'Memo No', 'Customer', 'Qty', 'Delivered Qty', 'Pending Qty', 'Delivery Date',
     'Driver', 'Vehicle', 'Receiver', 'Status', 'Note'],
+  /* Parcel returns. Condition decides whether the goods went back into sellable
+     stock, so it is written down next to the qty rather than inferred. */
+  returns: ['Timestamp', 'Return Date', 'Memo No', 'Customer', 'Products', 'Qty', 'Returned Qty',
+    'Pending Qty', 'Condition', 'Note'],
   payments: ['Timestamp', 'Date', 'Customer', 'Amount', 'Method', 'Note'],
   expenses: ['Timestamp', 'Date', 'Head', 'Amount', 'Note'],
   profit: ['Timestamp', 'Date', 'Ref', 'Sales', 'COGS', 'Profit', 'Type'],
@@ -133,6 +138,8 @@ function doPost(e) {
     else if (type === 'purchase') savePurchase_(ss, d);
     else if (type === 'stock' || type === 'stock_purchase') saveStock_(ss, d);
     else if (type === 'delivery') saveDelivery_(ss, d);
+    else if (type === 'return') saveReturn_(ss, d);
+    else if (type === 'return_delete') result = 'Return ' + (d.memoNumber || '') + ' delete hoyeche (app side)';
     else if (type === 'payment') savePayment_(ss, d);
     else if (type === 'expense') saveExpense_(ss, d);
     else if (type === 'backup') result = saveBackup_(ss, d);
@@ -248,6 +255,12 @@ function saveDelivery_(ss, d) {
   sheet_(ss, 'delivery').appendRow([new Date(), d.memoNumber || d.memoNo || '', d.customer || '',
     n_(d.qty), n_(d.deliveredQty), n_(d.pendingQty), d.deliveryDate || d.date || '',
     d.driver || '', d.vehicle || '', d.receiver || '', d.status || 'Pending', d.note || '']);
+}
+
+function saveReturn_(ss, d) {
+  sheet_(ss, 'returns').appendRow([new Date(), d.returnDate || d.date || '', d.memoNumber || d.memoNo || '',
+    d.customer || '', d.products || '', n_(d.qty), n_(d.returnedQty), n_(d.pendingQty),
+    d.condition || 'good', d.note || '']);
 }
 
 function savePayment_(ss, d) {
