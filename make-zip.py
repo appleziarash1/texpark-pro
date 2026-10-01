@@ -6,7 +6,20 @@ APK. A walk swept all of it into the archive, and worse, the walk reached the
 zip being written and recursed into it, so the file grew without bound instead
 of finishing. Nothing outside this list ships.
 """
-import os, zipfile
+import os, zipfile, time
+
+# A zip stores a modification time per entry, so two builds of identical content
+# came out byte-different and left the committed .zip showing as modified after
+# every run. Pin the stamp so a rebuild is reproducible.
+WHEN = time.gmtime(int(os.environ.get('SOURCE_DATE_EPOCH', '1767225600')))[:6]
+
+
+def add_(z, full, arc):
+    info = zipfile.ZipInfo(arc, date_time=WHEN)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o644 << 16
+    with open(full, 'rb') as f:
+        z.writestr(info, f.read())
 
 # Derived from this file's own location, not a fixed path: CI checks the repo out
 # under /home/runner/work, where a hardcoded /workspace/project makes the check
@@ -66,19 +79,19 @@ try:
         full = os.path.join(app, name)
         if not os.path.isfile(full):
             raise SystemExit('missing from texpark-pro/: ' + name)
-        z.write(full, 'texpark-pro-app/' + name)
+        add_(z, full, "texpark-pro-app/" + name)
     for full, arc in APP_COPIES.items():
         if not os.path.isfile(full):
             raise SystemExit('missing from the repo: ' + full)
-        z.write(full, 'texpark-pro-app/' + arc)
+        add_(z, full, "texpark-pro-app/" + arc)
     for full, arc in TOP_FILES.items():
         if not os.path.isfile(full):
             raise SystemExit('missing from the repo: ' + full)
-        z.write(full, arc)
+        add_(z, full, arc)
     for full, arc in CATALOG_FILES.items():
         if not os.path.isfile(full):
             raise SystemExit('missing from the repo: ' + full)
-        z.write(full, arc)
+        add_(z, full, arc)
 finally:
     z.close()
 

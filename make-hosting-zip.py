@@ -6,12 +6,26 @@ An explicit allowlist, not a walk of the repo. The repo root now holds the app
 signs the APK: publishing it would let anyone sign an APK that Android accepts
 as an update to the installed one. Nothing outside this list ships.
 """
-import zipfile, os
+import zipfile, os, time
 # Derived from this file's own location, not a fixed path: CI checks the repo out
 # under /home/runner/work, where a hardcoded /workspace/project makes the check
 # abort with FileNotFoundError and fail a green build.
 root = os.path.dirname(os.path.abspath(__file__))
 out = os.path.join(root, 'texpark-hosting.zip')
+
+# A zip stores a modification time per entry, so two builds of identical content
+# came out byte-different and left the committed .zip showing as modified after
+# every run. Pin the stamp: a release may set SOURCE_DATE_EPOCH, otherwise one
+# fixed instant is used.
+WHEN = time.gmtime(int(os.environ.get('SOURCE_DATE_EPOCH', '1767225600')))[:6]
+
+
+def add_(z, full, arc):
+    info = zipfile.ZipInfo(arc, date_time=WHEN)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o644 << 16
+    with open(full, 'rb') as f:
+        z.writestr(info, f.read())
 
 SITE_FILES = [
     'index.html',           # the app itself; the APK derives its update paths from here
@@ -40,7 +54,7 @@ for name in SITE_FILES:
     full = os.path.join(root, name)
     if not os.path.isfile(full):
         raise SystemExit('missing from the repo: ' + name)
-    z.write(full, name)
+    add_(z, full, name)
 # No catch-all rewrite is written on purpose. "/* /index.html 200" looks
 # harmless, but Netlify would then answer every unknown path with the app HTML.
 # A single missing file in a deploy would be served as a valid-looking page

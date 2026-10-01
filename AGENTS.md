@@ -355,3 +355,8 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   allowlist lives in `APP_FILES` / `APP_COPIES` / `TOP_FILES` / `CATALOG_FILES`; the catalog is
   mirrored under `catalog/` in the zip so its `../` links still resolve offline. Keep the
   `assert` block at the bottom — it is what fails a build that would publish the key or the history.
+- Both zip builders pin their entry timestamps (`WHEN`, overridable with `SOURCE_DATE_EPOCH`).
+  A zip stores a modification time per entry, so two builds of identical content used to come
+  out byte-different: `git status` showed the committed `.zip` as modified after every run, which
+  made a real change to the archive indistinguishable from a rebuild. After touching either
+  builder, run it twice and compare `md5sum` — they must match.
