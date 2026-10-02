@@ -578,6 +578,11 @@ public class Store {
         return null;
     }
 
+    public Map<String, Object> memoById(String mid) {
+        for (Object o : list("memos")) if (str(o, "id").equals(mid)) return rec(o);
+        return null;
+    }
+
     /** A memo typed with a new customer name creates that customer, so the name the
      *  owner just sold to is on the Customer list without a second trip to a form.
      *  A blank name is skipped: "(no name)" is not a customer. */
@@ -949,6 +954,102 @@ public class Store {
             a = round2(a + (s == null ? 0 : num(s.get("available"))) * stockCost(str(p, "id")));
         }
         return a;
+    }
+
+    /* ==================== repairing old memos' cost ====================
+     *  A memo freezes the buying price it was written with: the line stores cost,
+     *  and cogs/profit are computed from it once and saved. That is right for a
+     *  fresh memo - but memos written while stockCost() returned a stale figure
+     *  (the buying-price bug) froze a wrong cost, and correcting the product today
+     *  does not reach back into them.
+     *
+     *  The correct cost is the product's buying price *now*: the best available
+     *  estimate, and what the owner means by "fix my old memos". A memo whose line
+     *  already matches is left alone, so running this twice is a no-op.
+     *  Java 7 source level: no lambdas, no diamond. */
+
+    /** One item's corrected cost, or null when nothing should change. */
+    private Double repairedCostForItem(Map<String, Object> it) {
+        String pid = str(it, "productId");
+        Map<String, Object> p = productById(pid);
+        if (p == null) return null;                  // product deleted: price unknown
+        double want = stockCost(pid);
+        if (want == 0) want = num(p.get("cost"));
+        if (!(want > 0)) return null;                // never rewrite against a missing price
+        if (round2(want) == round2(num(it.get("cost")))) return null;
+        return Double.valueOf(round2(want));
+    }
+
+    /** Every memo that would change, with its old and new figures. Reads only, so
+     *  the preview and the apply pass always agree. */
+    public List<Map<String, Object>> planMemoCostRepair() {
+        List<Map<String, Object>> plan = new ArrayList<Map<String, Object>>();
+        for (Object mo : list("memos")) {
+            Map<String, Object> m = rec(mo);
+            List<Object> items = Json.arr(m.get("items"));
+            List<Map<String, Object>> changed = new ArrayList<Map<String, Object>>();
+            List<Object> fixed = new ArrayList<Object>();
+            for (Object io : items) {
+                Map<String, Object> it = rec(io);
+                Double want = repairedCostForItem(it);
+                if (want == null) {
+                    fixed.add(it);
+                } else {
+                    Map<String, Object> copy = new LinkedHashMap<String, Object>(it);
+                    copy.put("cost", want);
+                    fixed.add(copy);
+                    Map<String, Object> row = new LinkedHashMap<String, Object>();
+                    row.put("productName", str(it, "productName"));
+                    row.put("qty", Double.valueOf(num(it.get("qty"))));
+                    row.put("was", Double.valueOf(round2(num(it.get("cost")))));
+                    row.put("now", want);
+                    changed.add(row);
+                }
+            }
+            if (changed.isEmpty()) continue;
+            Map<String, Object> fin = memoMath(fixed, num(m.get("discount")),
+                    num(m.get("deliveryCharge")), num(m.get("advance")));
+            Map<String, Object> row = new LinkedHashMap<String, Object>();
+            row.put("memoId", str(m, "id"));
+            row.put("memoNo", str(m, "memoNo"));
+            row.put("date", str(m, "date"));
+            row.put("customerName", str(m, "customerName"));
+            row.put("items", changed);
+            row.put("wasCogs", Double.valueOf(round2(num(m.get("cogs")))));
+            row.put("nowCogs", fin.get("cogs"));
+            row.put("wasProfit", Double.valueOf(round2(num(m.get("profit")))));
+            row.put("nowProfit", fin.get("profit"));
+            plan.add(row);
+        }
+        return plan;
+    }
+
+    /** Apply the plan. The stock book is not touched: a memo's cost affects profit,
+     *  not quantities, so available/sold stay exactly as they were. Returns how many
+     *  memos changed. */
+    public int applyMemoCostRepair() {
+        List<Map<String, Object>> plan = planMemoCostRepair();
+        for (Object po : plan) {
+            Map<String, Object> row = rec(po);
+            Map<String, Object> m = memoById(str(row, "memoId"));
+            if (m == null) continue;
+            List<Object> items = Json.arr(m.get("items"));
+            List<Object> fixed = new ArrayList<Object>();
+            for (Object io : items) {
+                Map<String, Object> it = rec(io);
+                Double want = repairedCostForItem(it);
+                if (want == null) { fixed.add(it); continue; }
+                Map<String, Object> copy = new LinkedHashMap<String, Object>(it);
+                copy.put("cost", want);
+                fixed.add(copy);
+            }
+            m.put("items", fixed);
+            Map<String, Object> fin = memoMath(fixed, num(m.get("discount")),
+                    num(m.get("deliveryCharge")), num(m.get("advance")));
+            m.put("cogs", fin.get("cogs"));
+            m.put("profit", fin.get("profit"));
+        }
+        return plan.size();
     }
 
     /* ============================ ageing ============================ */

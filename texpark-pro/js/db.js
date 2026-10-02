@@ -802,6 +802,72 @@ function stockValue() {
   }, 0));
 }
 
+/* ==================== repairing old memos' cost ====================
+   A memo freezes the buying price it was written with: the line stores `cost`, and
+   `memo.cogs`/`memo.profit` are computed from it once and saved. That is correct for
+   a fresh memo - but memos written while stockCost() was returning a stale figure
+   (the buying-price bug) froze a wrong cost, and correcting the product today does
+   not reach back into them. These two functions find those memos and rewrite them.
+
+   The correct cost is the product's buying price *now*: that is the best available
+   estimate, and it is what the owner means by "fix my old memos". A memo whose line
+   already matches is left alone, so running this twice is a no-op. */
+
+/* One item's corrected cost, or null when nothing should change. */
+function repairedCostForItem(it) {
+  const p = productById(it.productId);
+  if (!p) return null;                     // product deleted: its price is unknown
+  const want = stockCost(it.productId) || num(p.cost);
+  if (!(want > 0)) return null;            // never rewrite against a missing price
+  if (round2(want) === round2(num(it.cost))) return null;
+  return round2(want);
+}
+
+/* Every memo that would change, with its old and new figures. Pure: reads db only,
+   so the preview and the apply pass always agree. */
+function planMemoCostRepair() {
+  const plan = [];
+  (db.memos || []).forEach(m => {
+    const items = [];
+    (m.items || []).forEach((it, idx) => {
+      const want = repairedCostForItem(it);
+      if (want === null) return;
+      items.push({ idx, productName: it.productName, qty: num(it.qty), was: round2(num(it.cost)), now: want });
+    });
+    if (!items.length) return;
+    const fixed = (m.items || []).map(it => {
+      const want = repairedCostForItem(it);
+      return want === null ? it : Object.assign({}, it, { cost: want });
+    });
+    const fin = memoMath(fixed, { discount: m.discount, deliveryCharge: m.deliveryCharge, advance: m.advance });
+    plan.push({
+      memoId: m.id, memoNo: m.memoNo, date: m.date, customerName: m.customerName,
+      items,
+      wasCogs: round2(num(m.cogs)), nowCogs: fin.cogs,
+      wasProfit: round2(num(m.profit)), nowProfit: fin.profit
+    });
+  });
+  return plan;
+}
+
+/* Apply the plan. The stock book is not touched: a memo's cost affects profit, not
+   quantities, so available/sold stay exactly as they were. */
+function applyMemoCostRepair() {
+  const plan = planMemoCostRepair();
+  plan.forEach(row => {
+    const m = db.memos.find(x => x.id === row.memoId);
+    if (!m) return;
+    m.items = (m.items || []).map(it => {
+      const want = repairedCostForItem(it);
+      return want === null ? it : Object.assign({}, it, { cost: want });
+    });
+    const fin = memoMath(m.items, { discount: m.discount, deliveryCharge: m.deliveryCharge, advance: m.advance });
+    m.cogs = fin.cogs;
+    m.profit = fin.profit;
+  });
+  return plan.length;
+}
+
 /* ============================ ageing ============================ */
 function ageingBuckets(items, todayStr) {
   const t = new Date(todayStr || today()).getTime();

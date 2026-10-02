@@ -281,6 +281,49 @@ Both writers now update the card as well, and neither is allowed to write a 0 ov
 on a JVM. The same trap can be entered from the other side - a selling price once typed into the
 stock card's Unit Cost outranks the product forever - and a corrected product price now clears it.
 
+## A memo freezes its own cost, so old memos need a separate repair (2026-10-01)
+Fixing the buying-price bug fixed **future** memos, not memos already written. `saveMemo` stores
+`cost` on each line and computes `memo.cogs`/`memo.profit` once, then saves them; that is correct
+for a fresh memo, but a memo written while `stockCost()` returned a stale figure froze the wrong
+cost, and correcting the product today does not reach back into it. The owner saw this as profit
+staying wrong no matter what he typed into the product.
+
+`planMemoCostRepair()` / `applyMemoCostRepair()` (db.js) and the identical pair in
+`Store.java` rewrite those memos against the product's buying price **now**. Rules that matter:
+- **Preview and apply must agree.** The plan is pure - it reads `db` and returns what would change
+  - so the number the owner approves is the number that gets written.
+- **Never rewrite against a missing price.** A deleted product, or a cost of 0, means the price is
+  unknown; that line is skipped rather than zeroed. Guessing would turn a wrong profit into a
+  confidently wrong one.
+- **A second run is a no-op**, because a line whose cost already matches is not in the plan. This
+  is what makes it safe to press twice.
+- **Stock is not touched.** Cost affects profit, not quantities, so available/sold/purchased stay
+  exactly as they were. Only `cost`, `cogs` and `profit` are written.
+- The UI is on the **Backup / Data** page (web) and the **Backup** screen (native), and it always
+  shows the old-vs-new totals and asks before writing.
+`test/repair.test.js` (30) drives the web path through the real DOM; `test/native.test.js` has a
+`costRepair` op that checks the same invariants on the JVM.
+
+## An unpaired device looks exactly like lost data (2026-10-01)
+The owner reported the phone dashboard showing empty/wrong data. Root cause: `syncUrl` is a
+**per-device** setting (`LOCAL_SETTING_KEYS` in db.js), so configuring it on the PC does nothing
+for the phone. The phone was a fresh device with `syncUrl: ''`, so it rendered its own empty
+database - three seed products at 0, every figure ৳0 - and nothing on screen said why. He read it
+as his data being gone.
+
+Two changes, and the reasoning behind them:
+- **Say it on the page he actually opens.** `renderSyncWarning()` shows a loud banner at the top of
+  the Dashboard whenever `syncUrl` is empty, and it distinguishes "no data of your own yet" from
+  "you have N records here that are not on the sheet". The fix button focuses `#stSyncUrl`.
+- **The URL has to travel by hand or by link, because sync cannot deliver it.** `?sync=<url>` on
+  the address bar is adopted by `adoptSyncFromLink()` in `boot()`, validated to
+  `script.google.com`, then stripped with `history.replaceState` so the sheet id is not left in
+  history. `togglePairing()` on the banner generates that link.
+- Native parity: the same banner is the first thing in `Screens.dashboard()`, and the fix button
+  navigates to `settings`.
+`test/pairing.test.js` (31) pins the empty-`syncUrl` case, the ৳0 dashboard and the seed products,
+so this symptom can never be "fixed" by changing what an unpaired device displays.
+
 ## Build + test commands
 
 - `node build.js` (in `texpark-pro/`) regenerates **both** the repo root and
@@ -288,8 +331,9 @@ stock card's Unit Cost outranks the product forever - and a corrected product pr
   The script asserts the new cloud/device functions are present in the single file.
 - `npm test` runs `test/logic.test.js` (84), `test/sheet.test.js` (28), `test/e2e.test.js` (212),
   `test/cost.test.js` (11), `test/journey.test.js` (19), `test/autopull.test.js` (22),
-  `test/return.test.js` (51), then `node --test test/android.test.js` (27) and
-  `node --test test/native.test.js` (26). Total 480.
+  `test/return.test.js` (51), `test/pairing.test.js` (31), `test/repair.test.js` (30),
+  then `node --test test/android.test.js` (27) and `node --test test/native.test.js` (27).
+  Total 542.
 - `test/cost.test.js` and `test/journey.test.js` both drive the **real `app.js`** through the DOM
   shim: the first pins the buying price reaching the stock card, the second walks the owner's own
   path (add product, pick it on a memo, read the profit) so a UI-level regression is caught.
@@ -298,7 +342,7 @@ stock card's Unit Cost outranks the product forever - and a corrected product pr
   two databases rather than as one.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
-- Current version: `2027-01-01.6` in `sw.js`, `js/app.js`, `version.txt` and
+- Current version: `2027-01-01.7` in `sw.js`, `js/app.js`, `version.txt` and
   `MainActivity.java` (bump them together, then rebuild — the e2e test fails if the two js
   files drift apart, and `ci/check-site.py` fails if the Java or the APK drifts too).
 
@@ -328,7 +372,7 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   `MainActivity.APP_VERSION` from it before compiling. If they drift, the app offers the same
   "update" on every launch.
 - `test/native.test.js` compiles the shipped `Json`, `Store` and `Voice` on a plain JVM and
-  runs the real classes against the real JS business rules (17 tests). The shop's central
+  runs the real classes against the real JS business rules (27 tests). The shop's central
   rule is driven through `Store.saveMemo` itself: a memo for a product with **no stock card at
   all** must save, must create the card, must clamp `available` at 0, and must keep the whole
   quantity as a reported shortfall. That rule used to live in `ScreensData`, where an

@@ -66,6 +66,10 @@
       <section id="page-dashboard" class="page active">
         <h1>Dashboard</h1>
         <div class="muted">Sales, profit, stock ar baki taka — sob ek nojore</div>
+        <!-- Shown only while this device cannot reach the other devices. The owner's
+             PC held four memos and the phone showed a fresh, empty shop; nothing on
+             screen said why. -->
+        <div id="syncWarn" class="sync-warn" style="display:none"></div>
         <div class="grid" style="margin-top:14px">
           <div class="card stat"><div class="label">Today Sales</div><div class="value" id="kTodaySales">৳0</div><div class="sub">Aaj-er bikri</div></div>
           <div class="card stat"><div class="label">Today Profit</div><div class="value green" id="kTodayProfit">৳0</div><div class="sub">Aaj-er labh</div></div>
@@ -545,6 +549,25 @@
           <div class="note" style="margin-top:12px">
             <b>Automatic safety copy:</b> prottek save-er age ekta snapshot rakha hoy, jate bhul data theke ferar upay thake.
           </div>
+        </div>
+
+        <div class="card">
+          <h2>Purono memo-r profit thik korun</h2>
+          <div class="note warn">
+            Memo save howar shomoy tar buying price (cost) memo-te <b>lekha hoye jay</b>. Jodi
+            kono memo bhul buying price niye lekha hoye thake, tahole product-e dam thik korleo
+            <b>sei purono memo-r profit ar nijei thik hoy na</b>. Ei button ta purono memo gulo
+            dekhe koto gulo bhul ache, tarpor apnar <b>onumoti niye</b> product-er ekhonkar
+            buying price diye hishab thik kore dey.
+            <br><br>
+            <b>Ki badlabe:</b> shudhu profit ar cost of goods. Bikri, customer, qty, due —
+            kichui bodlabe na. Stock-o bodlabe na.
+          </div>
+          <div class="row">
+            <button class="btn-light" onclick="previewMemoCostRepair()">Ki ki bhul ache dekhun</button>
+            <button class="btn-pink" id="repairApplyBtn" style="display:none" onclick="applyMemoCostRepairUI()">Profit thik kore din</button>
+          </div>
+          <div id="repairOut" style="margin-top:11px;font-size:13px"></div>
         </div>
 
         <div class="card">

@@ -27,6 +27,17 @@ a{color:var(--navy)}
 .sync-red{background:#ffe8ef;color:var(--red)}
 .sync-blue{background:#edf2f8;color:var(--muted)}
 
+/* ---------- sync warning banner ---------- */
+/* Loud on purpose. The owner's phone showed an empty shop and nothing said the
+   device had never been connected, so he read it as the data being gone. */
+.sync-warn{margin-top:13px;border:2px solid #f0b429;background:#fffaf0;border-radius:12px;padding:13px 15px}
+.sync-warn .sw-head{font-weight:800;color:#8a5300;font-size:14px;margin-bottom:5px}
+.sync-warn .sw-body{font-size:13px;color:#5b4300;line-height:1.55}
+.sync-warn .sw-body code{background:#fdf0d5;padding:1px 5px;border-radius:4px;font-size:12px}
+.sync-warn .row{margin-top:10px;flex-wrap:wrap}
+.sync-warn .sw-pair{margin-top:9px;font-size:12px;color:#5b4300;word-break:break-all}
+.sync-warn .sw-pair input{width:100%;margin-top:5px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+
 /* ---------- voice entry ---------- */
 .voice-btn{background:linear-gradient(135deg,var(--pink),#7c3aed);color:#fff;font-weight:700;
   font-size:12.5px;padding:7px 13px;border-radius:99px;white-space:nowrap}

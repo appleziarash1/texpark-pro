@@ -1035,6 +1035,55 @@ public class ScreensMore {
         b.addView(restore);
         body.addView(b);
 
+        /* Old memos froze the buying price they were written with, so a product price
+           corrected today does not reach back into them. Same repair as the web app:
+           show what is wrong, then rewrite cost/cogs/profit only after he says yes. */
+        LinearLayout fix = Ui.card(s.act, "Purono memo-r profit thik korun");
+        fix.addView(Ui.label(s.act,
+            "Memo save howar shomoy tar buying price memo-te lekha hoye jay. Tai product-e "
+            + "dam thik korleo purono memo-r profit nijei thik hoy na. Niche dekhun koto "
+            + "gulo bhul ache, tarpor onumoti dile product-er ekhonkar dam diye hishab thik "
+            + "kore dibo. Bikri, qty, due ar stock kichui bodlabe na."));
+        Button scan = Ui.ghost(s.act, "Ki ki bhul ache dekhun");
+        scan.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                List<Map<String, Object>> plan = store.planMemoCostRepair();
+                if (plan.isEmpty()) { s.toast("Sob memo-r profit already thik ache."); return; }
+                double was = 0, now = 0;
+                List<String> lines = new ArrayList<String>();
+                for (Object po : plan) {
+                    Map<String, Object> r = Store.rec(po);
+                    was += Store.num(r.get("wasProfit"));
+                    now += Store.num(r.get("nowProfit"));
+                    lines.add(Store.str(r, "memoNo") + "  " + Store.str(r, "date")
+                            + "\n" + Store.str(r, "customerName")
+                            + "\n" + Ui.money(r.get("wasProfit")) + "  \u2192  " + Ui.money(r.get("nowProfit")));
+                }
+                final double fw = Store.round2(was), fn = Store.round2(now);
+                s.choose("Profit thik korun (" + plan.size() + " memo)\n"
+                        + "Purono: " + Ui.money(fw) + "\nNotun:  " + Ui.money(fn),
+                    lines, new Screens.OnText() {
+                        public void on(String idx) {
+                            final int i = (int) Store.num(idx);
+                            s.confirm(plan.size() + " ta memo-r cost/profit thik korben?\n\n"
+                                    + "Purono profit: " + Ui.money(fw) + "\n"
+                                    + "Notun profit:  " + Ui.money(fn) + "\n\n"
+                                    + "Bikri, qty, due ar stock kichui bodlabe na.",
+                                new Runnable() {
+                                    public void run() {
+                                        int n = store.applyMemoCostRepair();
+                                        store.commit();
+                                        s.toast(n + " ta memo-r profit thik kora hoyeche.");
+                                        s.render();
+                                    }
+                                });
+                        }
+                    });
+            }
+        });
+        fix.addView(scan);
+        body.addView(fix);
+
         LinearLayout cloud = Ui.card(s.act, "Cloud Backup & Restore");
         cloud.addView(Ui.label(s.act,
             "Ei phone-er pura data Google Sheet-e ek row hisebe rakha jay, ar "

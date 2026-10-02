@@ -274,6 +274,25 @@ public class Screens {
         String monthStart = today.substring(0, 8) + "01";
         Map<String, Object> plMonth = store.plSummary(monthStart, today);
 
+        /* An unpaired device shows a fresh, empty shop: three demo products at 0 and
+           every figure zero. Nothing said why, so it read as the data being gone. Say
+           it at the top of the page he actually opens, with the one fix available. */
+        String syncUrl = Store.str(store.settings(), "syncUrl");
+        if (syncUrl.isEmpty()) {
+            LinearLayout warn = Ui.card(act, "\u26A0 Sync bondho \u2014 onno device-er data ekhane ashbe na");
+            warn.addView(Ui.label(act,
+                "Ei device ta ekhono Google Sheet-er sathe joda lage ni. Tai onno device-e "
+                + "(PC/phone) lekha memo/stock ekhane dekhabe na, ar ekhane lekha data-o "
+                + "onno jaygay jabe na. Settings \u2192 Google Sheets Sync-e giye Apps "
+                + "Script-er /exec URL ta bosan."));
+            Button openSettings = Ui.primary(act, "Settings-e URL bosan");
+            openSettings.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { go("settings"); }
+            });
+            warn.addView(openSettings);
+            body.addView(warn);
+        }
+
         body.addView(Ui.kpiRow(act,
             Ui.kpi(act, Ui.money(plToday.get("sales")), "Aaj-er bikri", Ui.NAVY),
             Ui.kpi(act, Ui.money(plToday.get("grossProfit")), "Aaj-er labh", Ui.GREEN)));

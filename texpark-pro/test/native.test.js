@@ -453,6 +453,90 @@ public class Driver {
       // A zero must not erase a known cost.
       st.setProductCost(p, 0);
       out.put("afterZero", st.stockCost("seed-k3s"));
+    } else if (op.equals("costRepair")) {
+      /* Old memos froze the buying price they were written with, so a correction
+         made on the Products page today does not reach back into them. This drives
+         the real plan/apply pair the Backup screen calls, and checks that it leaves
+         quantity, due and stock alone. */
+      Map<String,Object> p = st.productById("seed-k3s");
+      // an OLD memo that froze the stale price 165
+      List<Object> oitems = new ArrayList<Object>();
+      Map<String,Object> oi = new LinkedHashMap<String,Object>();
+      oi.put("productId", "seed-k3s"); oi.put("productName", "Kids 3pcs Set");
+      oi.put("qty", 10.0); oi.put("rate", 220.0); oi.put("cost", 165.0);
+      oi.put("vat", 0.0); oi.put("amount", 2200.0);
+      oitems.add(oi);
+      Map<String,Object> oldMemo = new LinkedHashMap<String,Object>();
+      oldMemo.put("id", "old1"); oldMemo.put("memoNo", "TXP/SM/T-OLD");
+      oldMemo.put("date", "2026-09-20"); oldMemo.put("customerName", "Karim");
+      oldMemo.put("items", oitems); oldMemo.put("totalQty", 10.0);
+      oldMemo.put("subtotal", 2200.0); oldMemo.put("discount", 0.0);
+      oldMemo.put("deliveryCharge", 0.0); oldMemo.put("vat", 0.0);
+      oldMemo.put("grandTotal", 2200.0); oldMemo.put("advance", 0.0);
+      oldMemo.put("due", 2200.0); oldMemo.put("cogs", 1650.0); oldMemo.put("profit", 550.0);
+      st.list("memos").add(oldMemo);
+      // and one that is already right
+      List<Object> gitems = new ArrayList<Object>();
+      Map<String,Object> gi = new LinkedHashMap<String,Object>();
+      gi.put("productId", "seed-k3s"); gi.put("productName", "Kids 3pcs Set");
+      gi.put("qty", 2.0); gi.put("rate", 220.0); gi.put("cost", 180.0);
+      gi.put("vat", 0.0); gi.put("amount", 440.0);
+      gitems.add(gi);
+      Map<String,Object> goodMemo = new LinkedHashMap<String,Object>();
+      goodMemo.put("id", "good1"); goodMemo.put("memoNo", "TXP/SM/T-GOOD");
+      goodMemo.put("date", "2026-09-20"); goodMemo.put("customerName", "Rahim");
+      goodMemo.put("items", gitems); goodMemo.put("totalQty", 2.0);
+      goodMemo.put("subtotal", 440.0); goodMemo.put("discount", 0.0);
+      goodMemo.put("deliveryCharge", 0.0); goodMemo.put("vat", 0.0);
+      goodMemo.put("grandTotal", 440.0); goodMemo.put("advance", 0.0);
+      goodMemo.put("due", 440.0); goodMemo.put("cogs", 360.0); goodMemo.put("profit", 80.0);
+      st.list("memos").add(goodMemo);
+
+      st.setProductCost(p, 180);                       // the correction
+      List<Map<String,Object>> plan = st.planMemoCostRepair();
+      out.put("planCount", plan.size());
+      Map<String,Object> row = plan.get(0);
+      out.put("planMemoNo", row.get("memoNo"));
+      out.put("wasCogs", row.get("wasCogs"));
+      out.put("nowCogs", row.get("nowCogs"));
+      out.put("wasProfit", row.get("wasProfit"));
+      out.put("nowProfit", row.get("nowProfit"));
+
+      String stockBefore = Json.write(st.list("stock"));
+      double dueBefore = Store.num(st.memoById("old1").get("due"));
+      double grandBefore = Store.num(st.memoById("old1").get("grandTotal"));
+      out.put("applied", st.applyMemoCostRepair());
+      Map<String,Object> fixed = st.memoById("old1");
+      out.put("lineCost", Store.num(Store.rec(Json.arr(fixed.get("items")).get(0)).get("cost")));
+      out.put("cogs", fixed.get("cogs"));
+      out.put("profit", fixed.get("profit"));
+      out.put("dueSame", Store.num(fixed.get("due")) == dueBefore);
+      out.put("grandSame", Store.num(fixed.get("grandTotal")) == grandBefore);
+      out.put("stockSame", Json.write(st.list("stock")).equals(stockBefore));
+      Map<String,Object> g = st.memoById("good1");
+      out.put("goodProfit", g.get("profit"));
+      out.put("goodLineCost", Store.num(Store.rec(Json.arr(g.get("items")).get(0)).get("cost")));
+      // a second run must be a no-op
+      out.put("secondRun", st.planMemoCostRepair().size());
+      out.put("secondApply", st.applyMemoCostRepair());
+      out.put("profitAfterSecond", st.memoById("old1").get("profit"));
+      // a memo whose product was deleted is left alone, not zeroed
+      Map<String,Object> orphan = new LinkedHashMap<String,Object>();
+      List<Object> xitems = new ArrayList<Object>();
+      Map<String,Object> xi = new LinkedHashMap<String,Object>();
+      xi.put("productId", "ghost"); xi.put("productName", "Gone");
+      xi.put("qty", 1.0); xi.put("rate", 50.0); xi.put("cost", 30.0); xi.put("vat", 0.0);
+      xitems.add(xi);
+      orphan.put("id", "orph1"); orphan.put("memoNo", "TXP/SM/T-ORPH");
+      orphan.put("date", "2026-09-20"); orphan.put("customerName", "X");
+      orphan.put("items", xitems); orphan.put("totalQty", 1.0);
+      orphan.put("subtotal", 50.0); orphan.put("discount", 0.0);
+      orphan.put("deliveryCharge", 0.0); orphan.put("vat", 0.0);
+      orphan.put("grandTotal", 50.0); orphan.put("advance", 0.0);
+      orphan.put("due", 50.0); orphan.put("cogs", 30.0); orphan.put("profit", 20.0);
+      st.list("memos").add(orphan);
+      out.put("orphanPlan", st.planMemoCostRepair().size());
+      out.put("orphanCost", Store.num(Store.rec(Json.arr(st.memoById("orph1").get("items")).get(0)).get("cost")));
     } else if (op.equals("json")) {
       // numbers must survive a round trip without growing a decimal point
       Map<String,Object> d = new LinkedHashMap<String,Object>();
@@ -558,6 +642,33 @@ test('native: correcting the buying price reaches the stock card', () => {
   assert.strictEqual(r.cardAfter, 180, 'stockCost follows the correction');
   assert.strictEqual(r.cardRecord, 180, 'the stock card itself was rewritten');
   assert.strictEqual(r.afterZero, 180, 'a zero does not erase a known buying price');
+});
+
+test('native: the repair fixes old memos profit and leaves everything else alone', () => {
+  /* A memo freezes the buying price it was written with, so correcting the product
+     today does not reach back into memos written through the stale-cost bug. This is
+     the native half of the same repair the web app runs from Backup / Data. */
+  const r = runNative({ op: 'costRepair' });
+  assert.strictEqual(r.planCount, 1, 'only the stale memo is in the plan');
+  assert.strictEqual(r.planMemoNo, 'TXP/SM/T-OLD');
+  assert.strictEqual(r.wasCogs, 1650, 'old COGS was 10 x 165');
+  assert.strictEqual(r.nowCogs, 1800, 'correct COGS is 10 x 180');
+  assert.strictEqual(r.wasProfit, 550, 'old profit was 550');
+  assert.strictEqual(r.nowProfit, 400, 'correct profit is 2200 - 1800');
+  assert.strictEqual(r.applied, 1, 'one memo repaired');
+  assert.strictEqual(r.lineCost, 180, 'the line carries the corrected buying price');
+  assert.strictEqual(r.cogs, 1800, 'COGS rewritten');
+  assert.strictEqual(r.profit, 400, 'profit rewritten, and not negative');
+  assert.strictEqual(r.dueSame, true, 'the customer still owes the same money');
+  assert.strictEqual(r.grandSame, true, 'the customer bill is unchanged');
+  assert.strictEqual(r.stockSame, true, 'stock quantities are untouched');
+  assert.strictEqual(r.goodProfit, 80, 'the already-correct memo is untouched');
+  assert.strictEqual(r.goodLineCost, 180, 'and its cost is still 180');
+  assert.strictEqual(r.secondRun, 0, 'a second run finds nothing to fix');
+  assert.strictEqual(r.secondApply, 0, 'and changes nothing');
+  assert.strictEqual(r.profitAfterSecond, 400, 'profit is not double-corrected');
+  assert.strictEqual(r.orphanPlan, 0, 'a memo whose product was deleted is left alone');
+  assert.strictEqual(r.orphanCost, 30, 'and its cost is not zeroed or guessed');
 });
 
 test('native: purchase uses weighted-average cost, not the latest price', () => {

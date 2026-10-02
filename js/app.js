@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.6';
+const APP_VERSION = '2027-01-01.7';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -56,6 +56,9 @@ function statBox(label, value, sub) {
 function boot() {
   db = loadDB();
   if (!db.users || !db.users.length) db.users = defaultUsers();
+  // Before anything reads the settings: a ?sync=<url> link is how a phone gets the
+  // sheet URL, which cannot arrive over the sync itself.
+  adoptSyncFromLink();
   // The merge compares each commit against this index to see what moved, so it has
   // to be seeded with what was actually loaded - otherwise the very first save
   // would look like every record was created and stamp the lot with one timestamp.
@@ -156,6 +159,88 @@ function renderAll() {
 }
 
 /* ===================== dashboard ===================== */
+/* Why this device cannot see the other device's work.
+   The sync URL is a per-device setting (LOCAL_SETTING_KEYS), so configuring it on
+   the PC does nothing for the phone. The owner configured it on the PC, opened the
+   phone, and saw an empty shop with no explanation. Say it out loud, on the page he
+   actually looks at, and give him the one thing he can do about it. */
+function renderSyncWarning() {
+  const box = document.getElementById('syncWarn');
+  if (!box) return;
+  const on = !!syncUrl();
+  const others = (db.memos || []).length + (db.products || []).filter(p => !String(p.id).startsWith('seed-')).length;
+  if (on) { box.style.display = 'none'; box.innerHTML = ''; return; }
+
+  box.style.display = '';
+  box.innerHTML =
+    '<div class="sw-head">⚠ Ei device-e sync bondho — onno device-er data ekhane ashbe na</div>' +
+    '<div class="sw-body">' +
+      'Ei device ta ekhono Google Sheet-er sathe joda lage ni. Tai je memo/stock apni ' +
+      'onno device-e (PC/phone) likhben, seta ekhane dekhabe na — ar ekhane likha data-o ' +
+      'onno jaygay jabe na. ' +
+      (others === 0
+        ? 'Ekhon ei device-e kono apnar nijer data nei — shudhu app-er demo product gulo ache.'
+        : 'Ei device-e <b>' + others + '</b> ta apnar nijer record ache, kintu seta sheet-e utheni.') +
+      '<br><br>' +
+      '<b>Thik korar upay:</b> <b>Settings → Google Sheets Sync</b>-e giye Apps Script-er ' +
+      '<code>/exec</code> URL ta bosan. Ekbar bosale por theke sob device nijei milte thakbe. ' +
+      'Phone-e bosate shomossha hole niche "Pairing link" theke ek tap-e niye nin.' +
+    '</div>' +
+    '<div class="row">' +
+      '<button class="btn-pink btn-sm" onclick="nav(\'settings\');setTimeout(function(){var e=document.getElementById(\'stSyncUrl\');if(e)e.focus();},150)">Settings-e URL bosan</button>' +
+      '<button class="btn-light btn-sm" onclick="togglePairing()">Pairing link / QR banan</button>' +
+    '</div>' +
+    '<div class="sw-pair" id="pairOut" style="display:none"></div>';
+}
+
+/* A link that carries the sheet URL, so the phone does not have to be typed into.
+   The URL is per-device by design, which is exactly why it has to be carried
+   across by hand or by link - a sync cannot deliver it. */
+function togglePairing() {
+  const out = document.getElementById('pairOut');
+  if (!out) return;
+  if (out.style.display !== 'none') { out.style.display = 'none'; return; }
+  const url = syncUrl();
+  const base = location.origin + location.pathname;
+  if (!url) {
+    out.innerHTML = 'Age ei device-e sync URL bosan (Settings → Google Sheets Sync). ' +
+      'Tarpor ekhane ekta link paben jeta phone-e khullei phone ta nijei joda lage.';
+    out.style.display = '';
+    return;
+  }
+  const link = base + '?sync=' + encodeURIComponent(url);
+  out.innerHTML = 'Ei link ta phone-e pathan (SMS/WhatsApp) — phone-e khullei phone ta nijei joda lage:' +
+    '<input readonly value="' + esc(link) + '" onclick="this.select()">' +
+    '<div style="margin-top:7px"><button class="btn-light btn-sm" onclick="copyPairLink(this)">Link copy korun</button></div>';
+  out.style.display = '';
+}
+
+function copyPairLink(btn) {
+  const inp = btn.parentNode.parentNode.querySelector('input');
+  if (!inp) return;
+  inp.select();
+  try { document.execCommand('copy'); btn.textContent = 'Copy hoye geche ✓'; }
+  catch (e) { btn.textContent = 'Nijei select kore copy korun'; }
+}
+
+/* A phone that opens ?sync=<url> adopts the URL and drops it from the address bar,
+   so the link is not left in the history with the sheet id in it. */
+function adoptSyncFromLink() {
+  let raw = '';
+  try { raw = new URLSearchParams(location.search).get('sync') || ''; } catch (e) { raw = ''; }
+  if (!raw) return false;
+  const url = String(raw).trim();
+  if (!/^https:\/\/script\.google\.com\//.test(url)) return false;
+  if (db.settings.syncUrl === url) return false;
+  db.settings.syncUrl = url;
+  commit();
+  try {
+    const clean = location.origin + location.pathname + location.hash;
+    history.replaceState(null, '', clean);
+  } catch (e) {}
+  return true;
+}
+
 function renderDashboard() {
   const t0 = today();
   const monthStart = t0.slice(0, 8) + '01';
@@ -219,6 +304,7 @@ function renderDashboard() {
     : '<div class="empty">No sales yet</div>';
 
   document.getElementById('dashDeliveries').innerHTML = pendingDeliveryHTML();
+  renderSyncWarning();
 }
 
 function pendingDeliveryHTML() {
@@ -1858,6 +1944,56 @@ function renderBackup() {
     : '<div class="empty">Kono snapshot nei (prottek save-e auto snapshot hoy)</div>';
 }
 
+
+/* ============ repairing old memos' cost (the profit fix, backwards) ============
+   The plan itself lives in db.js so it can be tested without a DOM; these two only
+   render it and ask before writing. */
+function previewMemoCostRepair() {
+  const out = document.getElementById('repairOut');
+  const btn = document.getElementById('repairApplyBtn');
+  const plan = planMemoCostRepair();
+  if (!plan.length) {
+    out.innerHTML = '<div class="note good">Sob memo-r profit already thik ache — kichu bodlano lagbe na.</div>';
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+  const wasTotal = round2(plan.reduce((a, r) => a + r.wasProfit, 0));
+  const nowTotal = round2(plan.reduce((a, r) => a + r.nowProfit, 0));
+  const diff = round2(nowTotal - wasTotal);
+  out.innerHTML =
+    '<div class="note warn"><b>' + plan.length + ' ta memo</b> bhul buying price niye lekha hoyeche.</div>' +
+    '<div class="tablewrap" style="margin-top:9px"><table><thead><tr>' +
+      '<th>Memo</th><th>Date</th><th>Customer</th>' +
+      '<th class="right">Purono profit</th><th class="right">Thik profit</th>' +
+    '</tr></thead><tbody>' +
+    plan.map(r => '<tr><td>' + esc(r.memoNo) + '</td><td>' + esc(r.date) + '</td>' +
+      '<td>' + esc(r.customerName) + '</td>' +
+      '<td class="right"><span style="color:var(--red)">' + money(r.wasProfit) + '</span></td>' +
+      '<td class="right"><b class="green">' + money(r.nowProfit) + '</b></td></tr>').join('') +
+    '</tbody><tfoot><tr><th colspan="3">Mot</th>' +
+      '<th class="right">' + money(wasTotal) + '</th>' +
+      '<th class="right">' + money(nowTotal) + '</th></tr></tfoot></table></div>' +
+    '<div class="note ' + (diff >= 0 ? 'good' : 'warn') + '" style="margin-top:10px">' +
+      'Sob miliye profit <b>' + (diff >= 0 ? '+' : '') + money(diff) + '</b> hobe. ' +
+      'Bikri, qty, due ar stock <b>kichui bodlabe na</b>.</div>';
+  if (btn) btn.style.display = '';
+}
+
+function applyMemoCostRepairUI() {
+  const out = document.getElementById('repairOut');
+  const btn = document.getElementById('repairApplyBtn');
+  const plan = planMemoCostRepair();
+  if (!plan.length) { previewMemoCostRepair(); return; }
+  if (!confirm(plan.length + ' ta memo-r cost/profit thik korben?\n\n' +
+      'Purono profit: ' + money(round2(plan.reduce((a, r) => a + r.wasProfit, 0))) + '\n' +
+      'Notun profit:  ' + money(round2(plan.reduce((a, r) => a + r.nowProfit, 0))) + '\n\n' +
+      'Bikri, qty, due ar stock kichui bodlabe na.')) return;
+  const n = applyMemoCostRepair();
+  if (!commit()) return;
+  if (btn) btn.style.display = 'none';
+  out.innerHTML = '<div class="note good"><b>' + n + ' ta memo-r</b> profit thik kora hoyeche. ' +
+    'Profit page ar Dashboard-e ekhon notun hishab dekhbe.</div>';
+}
 
 function backupJSON() {
   const a = document.createElement('a');
