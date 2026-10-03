@@ -356,6 +356,12 @@ card with the grand total and the due highlighted, two signature lines, terms an
   class the sheet uses but the constant does not style downloads as unstyled black text.
   `test/e2e.test.js` cross-checks every class the sheet emits against `MEMO_CSS`, which is the
   check that keeps the two in step.
+  **The constant must also reach the page.** `memoCssTag()` appends `MEMO_CSS` as a `<style>`
+  and `boot()` calls it first. Without that the exports still looked right (they carry their own
+  copy) while the preview rendered as unstyled HTML — a failure the class cross-check above
+  cannot see, because it only compares the markup to the string, not the string to the document.
+  The e2e shim gives `document` a real `head` so a test can assert the tag lands there and that a
+  second `boot()` does not append it twice.
 - **Export**: `js/memoexport.js` writes PNG and PDF with no library — canvas for the PNG, and a
   hand-built one-page PDF for the file (`pdfFromJPEG`). It is a *five-object* PDF: catalog,
   page tree, page, image XObject, content stream. The test parses the xref table back and
