@@ -42,6 +42,13 @@ function makeEl(id) {
 const elements = {};
 function el(id) { if (!elements[id]) elements[id] = makeEl(id); return elements[id]; }
 
+/* <head> records what is appended to it, so a test can prove the sheet's stylesheet
+   actually reaches the page. Without this the shim cannot tell a styled preview from
+   an unstyled one, which is how the sheet shipped unstyled once. */
+const headChildren = [];
+const headEl = makeEl('head');
+headEl.appendChild = node => { headChildren.push(node); };
+
 /* capture clicks/JS the app trigger */
 const triggers = { alert: [], confirm: true, prompt: '' };
 
@@ -50,7 +57,14 @@ global.window = {
 };
 global.document = {
   body: makeEl('body'),
-  getElementById: id => (id ? el(id) : null),
+  head: headEl,
+  getElementById: id => {
+    // 'memoCss' must behave like a real lookup: the element only exists once
+    // memoCssTag() has appended it, so a second boot can be proved not to append it
+    // twice. Every other id is auto-created, as the rest of the tests expect.
+    if (id === 'memoCss') return headChildren.find(n => n.id === 'memoCss') || null;
+    return id ? el(id) : null;
+  },
   querySelectorAll: () => [],
   createElement: () => makeEl('tmp'),
   addEventListener() {}
@@ -430,6 +444,19 @@ ok(/memo-items/.test(sheet2), 'the sheet has its item table');
 ok(/Signature/.test(sheet2), 'and the two signature lines');
 ok(/Sharto:/.test(sheet2), 'and the terms the shop hands over with every memo');
 ok(!/memo-sheet\b[^>]*class="mh"/.test(sheet2), 'the old .mh header markup is gone');
+ok(/memo-strip/.test(sheet2), 'the sheet has the due date / payment / delivery strip');
+ok(/Due Date/.test(sheet2), 'the strip prints the due date');
+eq(memoDueDate('2027-01-01'), '2027-01-16', 'the due date is 15 days after the sale');
+eq(memoDueDate(''), '-', 'an unparseable date falls back to a dash, not NaN');
+
+// The stylesheet is a string in app.js; something has to put it in the document, or
+// the preview is unstyled HTML while the exports stay correct - which is exactly how
+// this shipped once. boot() is what runs it.
+ok(headChildren.some(n => n.id === 'memoCss' && n.textContent === MEMO_CSS),
+   'boot() puts MEMO_CSS into the page, so the on-screen sheet is styled');
+boot();
+eq(headChildren.filter(n => n.id === 'memoCss').length, 1,
+   'booting again does not append the stylesheet twice');
 // An empty memo is still a valid sheet - a memo can be saved before any line is
 // filled in when stock is missing, and the sheet must render then too.
 const emptySheet = memoSheet({ memoNo: 'X', date: today(), customerName: 'A', items: [],

@@ -12,8 +12,12 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -36,13 +40,18 @@ import java.util.Map;
 final class MemoSheet {
 
     private static final int NAVY = Ui.NAVY;
-    private static final int LINE = 0xFFD9E1EC;
-    private static final int MUTED = 0xFF667085;
-    private static final int HEAD_BG = 0xFFEEF3F9;
-    private static final int ROW_ALT = 0xFFF8FAFD;
-    private static final int ON_NAVY = 0xFFC3D2EA;
-    private static final int DUE = 0xFFC2185B;
-    private static final int DUE_BG = 0xFFFFF1F5;
+    /* The red accent line under the header and the card headings. Picked to match
+       the web sheet's #d92d4b so a memo looks the same printed from the phone and
+       from the PC. */
+    private static final int RED = 0xFFD92D4B;
+    private static final int LINE = 0xFFDBE3EC;
+    private static final int MUTED = 0xFF64748B;
+    private static final int HEAD_BG = 0xFF0F2B52;
+    private static final int ROW_ALT = 0xFFF8FAFC;
+    private static final int ON_NAVY = 0xFFCFDCEE;
+    private static final int STRIP_BG = 0xFFF1F5F9;
+    private static final int DUE = 0xFFB3183A;
+    private static final int DUE_BG = 0xFFFEF2F4;
 
     private MemoSheet() {}
 
@@ -54,6 +63,8 @@ final class MemoSheet {
         sheet.setPadding(p, p, p, p);
 
         sheet.addView(header(c, m, company));
+        sheet.addView(rule(c, RED, 3));
+        sheet.addView(strip(c, m));
         sheet.addView(cards(c, m, company));
         sheet.addView(items(c, m));
         sheet.addView(footer(c, m));
@@ -129,6 +140,55 @@ final class MemoSheet {
         return t;
     }
 
+    /* A coloured rule across the sheet. Used for the red accent under the header
+       band; a plain View is cheaper than a border on the neighbouring layout and
+       keeps the header's rounded corners intact. */
+    private static View rule(Context c, int color, int dpHeight) {
+        View v = new View(c);
+        v.setBackgroundColor(color);
+        v.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(c, dpHeight)));
+        return v;
+    }
+
+    /* The three meta fields that sit between the header and the party boxes, the
+       same strip the web sheet prints. */
+    private static View strip(Context c, Map<String, Object> m) {
+        LinearLayout row = Ui.row(c);
+        row.setBackgroundColor(STRIP_BG);
+        int p = Ui.dp(c, 8);
+        row.setPadding(p, p, p, p);
+        row.addView(stripCell(c, "Due Date", dueDate(Store.str(m, "date"))));
+        row.addView(stripCell(c, "Payment", "Cash / bKash"));
+        row.addView(stripCell(c, "Delivery", "Shop pick-up"));
+        return row;
+    }
+
+    private static View stripCell(Context c, String label, String value) {
+        TextView t = new TextView(c);
+        t.setText(label + ": " + value);
+        t.setTextColor(Ui.TEXT);
+        t.setTextSize(10f);
+        t.setLayoutParams(new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        return t;
+    }
+
+    /** The payment-due date the web sheet prints: 15 days after the sale. */
+    private static String dueDate(String date) {
+        try {
+            SimpleDateFormat in = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+            Date d = in.parse(date);
+            if (d == null) return date == null || date.isEmpty() ? "-" : date;
+            Calendar cal = Calendar.getInstance();
+            cal.setTime(d);
+            cal.add(Calendar.DAY_OF_MONTH, 15);
+            return in.format(cal.getTime());
+        } catch (Exception e) {
+            return date == null || date.isEmpty() ? "-" : date;
+        }
+    }
+
     /* ------------------------------------------------------ party boxes */
 
     private static View cards(Context c, Map<String, Object> m, Map<String, Object> company) {
@@ -150,7 +210,7 @@ final class MemoSheet {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         box.setLayoutParams(lp);
-        box.addView(caps(c, title, 9f, MUTED));
+        box.addView(caps(c, title, 9f, RED));
         TextView name = new TextView(c);
         name.setText(who == null ? "" : who);
         name.setTextColor(NAVY);
