@@ -2,6 +2,8 @@ package com.texpark.pro;
 
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.InputType;
 import android.view.Gravity;
@@ -13,6 +15,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -485,58 +488,96 @@ public class ScreensData {
         return Ui.scroller(s.act, body);
     }
 
-    /** The memo as it would print - on screen, since the owner asked for no printing. */
-    static void viewMemo(Screens s, String memoId) {
-        Map<String, Object> m = findMemo(s.store, memoId);
+    /**
+     * The memo as a sheet, with the ways the owner needs to hand it over.
+     *
+     * A memo used to open as monospaced text in a dialog, which is not something a
+     * customer should be shown. It is now the same document the web app draws -
+     * {@link MemoSheet} - and the dialog carries Share (PNG) and Save PDF, because
+     * the owner asked for a memo he can send on WhatsApp. There is still no
+     * printing: the native app has no print path, and the buttons say what they
+     * really do rather than promising a printer that is not there.
+     */
+    static void viewMemo(final Screens s, String memoId) {
+        final Map<String, Object> m = findMemo(s.store, memoId);
         if (m == null) return;
-        StringBuilder sb = new StringBuilder();
-        Map<String, Object> c = s.store.company();
-        sb.append(Store.str(c, "name")).append("\n");
-        sb.append(Store.str(c, "address")).append("\n");
-        sb.append(Store.str(c, "phone")).append("\n\n");
-        sb.append("Memo: ").append(Store.str(m, "memoNo")).append("\n");
-        sb.append("Date: ").append(Store.str(m, "date")).append("\n");
-        sb.append("Customer: ").append(Store.str(m, "customerName")).append("\n");
-        if (!Store.str(m, "customerPhone").isEmpty()) {
-            sb.append("Phone: ").append(Store.str(m, "customerPhone")).append("\n");
-        }
-        sb.append("\n");
-        for (Object o : Store.rec(m).get("items") instanceof List
-                ? Json.arr(m.get("items")) : new ArrayList<Object>()) {
-            Map<String, Object> it = Store.rec(o);
-            Map<String, Object> p = s.store.productById(Store.str(it, "productId"));
-            sb.append(p == null ? "(deleted)" : Store.str(p, "name")).append("  ")
-              .append(Ui.qty(it.get("qty"))).append(" x ")
-              .append(Ui.money(it.get("rate"))).append(" = ")
-              .append(Ui.money(it.get("amount"))).append("\n");
-        }
-        sb.append("\nSubtotal: ").append(Ui.money(m.get("subtotal"))).append("\n");
-        sb.append("Discount: ").append(Ui.money(m.get("discount"))).append("\n");
-        sb.append("Delivery: ").append(Ui.money(m.get("deliveryCharge"))).append("\n");
-        sb.append("VAT: ").append(Ui.money(m.get("vat"))).append("\n");
-        sb.append("Grand Total: ").append(Ui.money(m.get("grandTotal"))).append("\n");
-        sb.append("Advance: ").append(Ui.money(m.get("advance"))).append("\n");
-        sb.append("Due: ").append(Ui.money(m.get("due"))).append("\n");
-        if (!Store.str(m, "note").isEmpty()) sb.append("\nNote: ").append(Store.str(m, "note"));
+        final Map<String, Object> company = s.store.company();
+        final int width = s.act.getResources().getDisplayMetrics().widthPixels
+                - Ui.dp(s.act, 24);
 
+        final LinearLayout sheet = MemoSheet.build(s.act, m, company);
         ScrollView sc = new ScrollView(s.act);
-        TextView t = new TextView(s.act);
-        t.setText(sb.toString());
-        t.setTextSize(13f);
-        t.setTextColor(Ui.TEXT);
-        t.setTypeface(Typeface.MONOSPACE);
-        t.setPadding(Ui.dp(s.act, 14), Ui.dp(s.act, 14), Ui.dp(s.act, 14), Ui.dp(s.act, 14));
-        sc.addView(t);
+        sc.setBackgroundColor(Color.WHITE);
+        int p = Ui.dp(s.act, 12);
+        sc.setPadding(p, p, p, p);
+        sc.addView(sheet, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         new AlertDialog.Builder(s.act)
-            .setTitle("Memo")
+            .setTitle("Memo " + Store.str(m, "memoNo"))
             .setView(sc)
             .setPositiveButton("Bondho", null)
             .setNeutralButton("Share", new DialogInterface.OnClickListener() {
-                public void onClick(DialogInterface d, int w) { /* share handled by shell */ }
+                public void onClick(DialogInterface d, int w) {
+                    shareMemoBitmap(s, sheet, width, Store.str(m, "memoNo"));
+                }
+            })
+            .setNegativeButton("Save PDF", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int w) {
+                    saveMemoPdf(s, sheet, width, Store.str(m, "memoNo"));
+                }
             })
             .show();
     }
+
+    /** The sheet as a PNG, handed to whatever app the owner shares with. */
+    static void shareMemoBitmap(final Screens s, final View sheet, final int width,
+                                final String memoNo) {
+        try {
+            final Bitmap bmp = MemoSheet.toBitmap(sheet, width);
+            File dir = s.act.getExternalFilesDir(null);
+            if (dir == null) dir = s.act.getFilesDir();
+            final File out = new File(dir, Store.memoFileName(memoNo, "png"));
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, fos);
+            fos.close();
+            android.net.Uri uri = android.net.Uri.fromFile(out);
+            android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND);
+            send.setType("image/png");
+            send.putExtra(android.content.Intent.EXTRA_STREAM, uri);
+            send.putExtra(android.content.Intent.EXTRA_SUBJECT, "Memo " + memoNo);
+            send.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            s.act.startActivity(android.content.Intent.createChooser(send, "Memo pathan"));
+        } catch (Exception e) {
+            s.toast("Memo share korte parlam na: " + e.getMessage());
+        }
+    }
+
+    /** The sheet as a one-page PDF, drawn from the same views the screen shows. */
+    static void saveMemoPdf(final Screens s, final View sheet, final int width,
+                            final String memoNo) {
+        android.graphics.pdf.PdfDocument doc = null;
+        try {
+            Bitmap bmp = MemoSheet.toBitmap(sheet, width);
+            // A4 in points, the size a PDF is measured in.
+            doc = MemoSheet.toPdf(bmp, 595, 842);
+            File dir = s.act.getExternalFilesDir(null);
+            if (dir == null) dir = s.act.getFilesDir();
+            File out = new File(dir, Store.memoFileName(memoNo, "pdf"));
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
+            doc.writeTo(fos);
+            fos.close();
+            s.toast("PDF save hoyeche: " + out.getAbsolutePath());
+        } catch (Exception e) {
+            s.toast("PDF save korte parlam na: " + e.getMessage());
+        } finally {
+            if (doc != null) doc.close();
+        }
+    }
+
+    /* The file name rule lives in Store, next to the other things the web app also
+       decides, so the phone and the PC name the same memo the same way - and so it
+       can be tested on a JVM without pulling in android.*. */
 
     static Map<String, Object> findMemo(Store store, String id) {
         for (Object o : store.list("memos")) {

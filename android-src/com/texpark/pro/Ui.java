@@ -229,20 +229,14 @@ public final class Ui {
         return r;
     }
 
-    public static String money(Object v) {
-        double n = Store.num(v);
-        boolean neg = n < 0;
-        n = Math.abs(n);
-        String s = String.format(java.util.Locale.US, "%,.2f", n);
-        if (s.endsWith(".00")) s = s.substring(0, s.length() - 3);
-        return (neg ? "-" : "") + "\u09F3" + s;
-    }
+    /* Formatting itself lives in Store, so the memo that is drawn on screen and the
+       memo that is shared as a PNG cannot disagree about a figure. These are kept as
+       the short names every screen already calls. */
+    public static String money(Object v) { return Store.money(v); }
 
-    public static String qty(Object v) {
-        double n = Store.num(v);
-        if (n == Math.rint(n)) return String.valueOf((long) n);
-        return String.format(java.util.Locale.US, "%.2f", n);
-    }
+    public static String qty(Object v) { return Store.qty(v); }
+
+    public static String words(Object v) { return Store.numberWords(v); }
 
     public static String date(Object v) {
         String s = v == null ? "" : String.valueOf(v);

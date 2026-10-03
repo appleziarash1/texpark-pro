@@ -93,6 +93,6 @@ PROBLEM HOLE
   * Test Sync-e permission error           -> "Who has access: Anyone" din,
     ar ekbar authorize korun (Advanced -> Go to project -> Allow).
   * App-e purono version atke ache         -> Settings -> App Update ->
-    "Update chek korun". Version 2027-01-01.8 ba beshi thaka uchit.
+    "Update chek korun". Version 2027-01-01.9 ba beshi thaka uchit.
   * Kichu bujhte na parle               -> ei file ta repo-te rakha ache:
     https://github.com/appleziarash1/texpark-pro/blob/main/docs/SYNC_FIX_BANGLA.txt

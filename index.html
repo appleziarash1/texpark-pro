@@ -179,8 +179,14 @@
 
           <div class="row" style="margin-top:14px">
             <button class="btn-pink" id="memoSaveBtn" onclick="saveMemo()">Save Memo</button>
-            <button class="btn-light" onclick="printPreviewCurrent()">Print Preview</button>
-            <span class="muted" style="font-size:12.5px">Ctrl+P diyeo print korte parben.</span>
+            <button class="btn-light" onclick="previewCurrentMemo()">Preview</button>
+            <button class="btn-light" onclick="printPreviewCurrent()">Print</button>
+            <button class="btn-light" onclick="savePreviewMemo('png')">Save Image</button>
+            <button class="btn-light" onclick="savePreviewMemo('pdf')">Save PDF</button>
+          </div>
+          <div class="muted" style="font-size:12.5px;margin-top:8px">
+            Save Image / Save PDF memo-r chobi ba PDF file hisebe rekhe dey (print na koreo pathate parben).
+            Ctrl+P diyeo print korte parben.
           </div>
         </div>
       </section>
@@ -622,7 +628,11 @@
 <!-- ============ MODALS ============ -->
 <div id="viewModal" class="modal" onclick="if(event.target===this)closeView()">
   <div class="modal-card wide">
-    <div class="row" style="justify-content:flex-end;margin-bottom:10px">
+    <div class="row" id="viewActions" style="justify-content:flex-end;flex-wrap:wrap;margin-bottom:10px">
+      <span class="muted" id="viewMemoNo" style="margin-right:auto;font-size:12.5px"></span>
+      <button class="btn-light btn-sm" onclick="printViewMemo()">Print</button>
+      <button class="btn-light btn-sm" onclick="saveViewMemo('png')">Save Image (PNG)</button>
+      <button class="btn-light btn-sm" onclick="saveViewMemo('pdf')">Save PDF</button>
       <button class="btn-light" onclick="closeView()">Close</button>
     </div>
     <div id="viewBody"></div>
@@ -753,6 +763,7 @@
 <script src="js/db.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/sync.js"></script>
+<script src="js/memoexport.js"></script>
 <script src="js/app.js"></script>
 <script>
 // Offline + installable on a phone. Needs http(s); the service worker stays

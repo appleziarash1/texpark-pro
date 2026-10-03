@@ -45,7 +45,7 @@ import java.util.Map;
 public class MainActivity extends Activity {
 
     /** Shown in Settings. build-apk.py rewrites this line to the built version. */
-    public static final String APP_VERSION = "2027-01-01.8";
+    public static final String APP_VERSION = "2027-01-01.9";
 
     private static final String PREFS = "texpark_pro_shell";
     private static final String KEY_URL = "update_url";

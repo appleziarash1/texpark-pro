@@ -188,6 +188,20 @@ tbody tr:hover td{background:#f7fafd}
 .bar-row .fill{height:100%;background:linear-gradient(90deg,var(--navy),#2b7fff);border-radius:6px}
 .bar-row .val{width:100px;text-align:right;font-weight:700;color:var(--navy)}
 
+/* ---------- memo sheet ---------- */
+/* The sheet's own rules live in js/app.js (MEMO_CSS): the PNG/PDF export wraps the
+   same markup in an SVG, which is a separate document and cannot read this
+   stylesheet, so a sheet styled only here would download unstyled. */
+.memo-sheet{background:#fff}
+#viewBody .memo-sheet{margin:0 auto}
+
+/* ---------- toast ---------- */
+/* The phone has no console, so "Memo PDF save hoyeche" has to appear on screen. */
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);
+  background:#12366b;color:#fff;padding:11px 18px;border-radius:999px;font-size:13px;font-weight:600;
+  box-shadow:0 6px 20px rgba(16,32,64,.28);opacity:0;pointer-events:none;transition:.22s;z-index:60;max-width:88vw;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
 /* ---------- print ---------- */
 #printArea{display:none}
 @media print{
@@ -195,23 +209,6 @@ tbody tr:hover td{background:#f7fafd}
   #printArea{display:block!important}
   @page{size:A4;margin:12mm}
 }
-.memo-sheet{font-family:"Segoe UI","Noto Sans Bengali",Arial,sans-serif;color:#111;font-size:12px}
-.memo-sheet .mh{display:flex;justify-content:space-between;border-bottom:2px solid var(--navy);padding-bottom:10px}
-.memo-sheet .mh h1{font-size:27px;margin:0;color:var(--navy);letter-spacing:-.5px}
-.memo-sheet .mh h1 span{color:var(--pink)}
-.memo-sheet .mh .tl{font-weight:700;color:var(--muted);font-size:12px;letter-spacing:.14em;text-transform:uppercase}
-.memo-sheet .mh .ct{text-align:right;font-size:11.5px;line-height:1.6}
-.memo-sheet .mmeta{display:flex;justify-content:space-between;margin:12px 0;font-size:11.5px;line-height:1.6}
-.memo-sheet table{width:100%;border-collapse:collapse;margin-top:6px}
-.memo-sheet th{background:var(--navy);color:#fff;padding:6px;font-size:10.5px;text-align:left}
-.memo-sheet td{padding:6px;border-bottom:1px solid #dde3ec;font-size:11.5px}
-.memo-sheet .mtt{display:flex;justify-content:flex-end;margin-top:10px}
-.memo-sheet .mtt table{width:290px}
-.memo-sheet .mtt td{border:0;padding:4px 6px;font-size:11.5px}
-.memo-sheet .mtt tr.g td{border-top:2px solid var(--navy);font-weight:800;font-size:13px}
-.memo-sheet .words{margin-top:10px;font-size:11.5px;border:1px solid #dde3ec;padding:8px;border-radius:6px;background:#f8fafd}
-.memo-sheet .sign{display:flex;justify-content:space-between;margin-top:52px;font-size:11px}
-.memo-sheet .sign div{border-top:1px solid #333;padding-top:5px;width:190px;text-align:center}
 
 
 

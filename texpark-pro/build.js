@@ -18,7 +18,7 @@ const outFile = path.join(root, '..', 'texpark-pro.html');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const html = read('index.html');
 const css = read('css/app.css');
-const scripts = ['js/db.js', 'js/voice.js', 'js/sync.js', 'js/app.js'].map(read);
+const scripts = ['js/db.js', 'js/voice.js', 'js/sync.js', 'js/memoexport.js', 'js/app.js'].map(read);
 
 /* ---- 1. the hostable folder ---- */
 /* Clear only the files this build owns, so the hand-written hosting guide and
@@ -26,7 +26,7 @@ const scripts = ['js/db.js', 'js/voice.js', 'js/sync.js', 'js/app.js'].map(read)
 for (const f of ['index.html', 'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'Code.gs']) {
   fs.rmSync(path.join(outDir, f), { force: true });
 }
-for (const f of ['db.js', 'voice.js', 'sync.js', 'app.js']) {
+for (const f of ['db.js', 'voice.js', 'sync.js', 'memoexport.js', 'app.js']) {
   fs.rmSync(path.join(outDir, 'js', f), { force: true });
 }
 fs.mkdirSync(path.join(outDir, 'js'), { recursive: true });
@@ -34,7 +34,7 @@ fs.mkdirSync(path.join(outDir, 'css'), { recursive: true });
 for (const f of ['index.html', 'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'Code.gs']) {
   fs.copyFileSync(path.join(root, f), path.join(outDir, f));
 }
-for (const f of ['db.js', 'voice.js', 'sync.js', 'app.js']) {
+for (const f of ['db.js', 'voice.js', 'sync.js', 'memoexport.js', 'app.js']) {
   fs.copyFileSync(path.join(root, 'js', f), path.join(outDir, 'js', f));
 }
 fs.copyFileSync(path.join(root, 'css', 'app.css'), path.join(outDir, 'css', 'app.css'));

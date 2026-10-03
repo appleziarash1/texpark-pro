@@ -196,6 +196,65 @@ public class Store {
 
     public static double round2(Object v) { return Math.round(num(v) * 100.0) / 100.0; }
 
+    /* ============================ formatting ============================
+       These live here rather than in a screen because the exported memo (the PNG
+       and the PDF) and the on-screen memo must show the same figure in the same
+       shape. A formatter on a screen would be Android-only code, so it could not
+       be tested on the JVM the way the money rules are, and the two copies would
+       drift the first time someone changed one of them. */
+
+    /** Amount with the taka sign, grouped, and no trailing zeros - the exact shape
+     *  the web app's money() produces, so a memo reads the same on both machines.
+     *  The web one groups with en-US and allows up to two decimals with no minimum,
+     *  so 145.5 stays "145.5" and 2400 becomes "2,400". */
+    public static String money(Object v) {
+        double n = round2(v);
+        String s = String.format(Locale.US, "%,.2f", n);
+        while (s.endsWith("0")) s = s.substring(0, s.length() - 1);
+        if (s.endsWith(".")) s = s.substring(0, s.length() - 1);
+        return "\u09F3" + s;
+    }
+
+    /** Quantity the way the web app's Ui.qty writes it: a whole number stays whole,
+     *  and a fraction keeps up to two decimals without trailing zeros. */
+    public static String qty(Object v) {
+        double n = num(v);
+        if (n == Math.rint(n)) return String.valueOf((long) n);
+        String s = String.format(Locale.US, "%.2f", n);
+        while (s.endsWith("0")) s = s.substring(0, s.length() - 1);
+        if (s.endsWith(".")) s = s.substring(0, s.length() - 1);
+        return s;
+    }
+
+    /**
+     * The amount in words, Indian grouping (lakh, crore), which is how a memo is
+     * written here and what the printed sheet carries. Must agree with the web
+     * app's numberWords() - a memo printed from the PC and one from the phone
+     * cannot say different things.
+     */
+    public static String numberWords(Object v) {
+        long n = Math.round(num(v));
+        if (n == 0) return "Zero";
+        return (n < 0 ? "Minus " : "") + words(Math.abs(n));
+    }
+
+    /** The web app's cv(): thousand, lakh and crore blocks, so a memo printed from
+     *  the phone says exactly what the same memo says on the PC. */
+    private static String words(long v) {
+        if (v < 20) return ONES[(int) v];
+        if (v < 100) return TENS[(int) (v / 10)] + (v % 10 != 0 ? " " + ONES[(int) (v % 10)] : "");
+        if (v < 1000) return ONES[(int) (v / 100)] + " Hundred" + (v % 100 != 0 ? " " + words(v % 100) : "");
+        if (v < 100000) return words(v / 1000) + " Thousand" + (v % 1000 != 0 ? " " + words(v % 1000) : "");
+        if (v < 10000000) return words(v / 100000) + " Lakh" + (v % 100000 != 0 ? " " + words(v % 100000) : "");
+        return words(v / 10000000) + " Crore" + (v % 10000000 != 0 ? " " + words(v % 10000000) : "");
+    }
+
+    private static final String[] ONES = {"", "One", "Two", "Three", "Four", "Five", "Six",
+        "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen",
+        "Sixteen", "Seventeen", "Eighteen", "Nineteen"};
+    private static final String[] TENS = {"", "", "Twenty", "Thirty", "Forty", "Fifty",
+        "Sixty", "Seventy", "Eighty", "Ninety"};
+
     public static String id() {
         String chars = "abcdefghijklmnopqrstuvwxyz0123456789";
         StringBuilder sb = new StringBuilder();
@@ -240,6 +299,48 @@ public class Store {
     public Map<String, Object> settings() { return map("settings"); }
 
     public Map<String, Object> company() { return cast(settings().get("company")); }
+
+    /* The two sentences a memo carries are held here, not in a screen, because the
+       web app prints the same ones: a memo handed over from the PC and one from the
+       phone must read the same. */
+    public static final String MEMO_TERMS =
+        "Sharto: Panyo bikri-r por ferot neya hoy na (damaged chara). "
+        + "Delivery charge memo-te add kora hoyeche. Due amount memo-r tarikh theke "
+        + "15 diner moddhe porishodh korben.";
+
+    public static final String MEMO_THANKS =
+        "Dhonnobad! Panyo-r gunogota niye kono obhijog thakle 3 diner moddhe janan.";
+
+    /** Up to two initials for the header badge - "TEXPARK BUYING HOUSE" -> "TB". */
+    public static String initials(String name) {
+        String cleaned = name == null ? "" : name.replaceAll("[^A-Za-z0-9 ]", " ").trim();
+        String[] w = cleaned.isEmpty() ? new String[0] : cleaned.split("\\s+");
+        if (w.length == 0) return "T";
+        if (w.length == 1) return w[0].substring(0, Math.min(2, w[0].length())).toUpperCase(Locale.US);
+        return (w[0].substring(0, 1) + w[1].substring(0, 1)).toUpperCase(Locale.US);
+    }
+
+    /** The company's own contact lines, in the order the memo prints them. */
+    public static List<String> contactLines(Map<String, Object> company) {
+        List<String> out = new ArrayList<String>();
+        String[][] pairs = {
+            {"phone", "Phone: "}, {"email", "Email: "}, {"address", "Address: "},
+            {"bin", "BIN: "}, {"vatReg", "VAT Reg: "}
+        };
+        for (String[] p : pairs) {
+            String v = str(company, p[0]);
+            if (!v.trim().isEmpty()) out.add(p[1] + v);
+        }
+        return out;
+    }
+
+    /** The name a saved memo file gets. Slashes and spaces would be rejected by the
+     *  receiving phone, so the memo number is reduced to something safe. */
+    public static String memoFileName(String memoNo, String ext) {
+        String base = memoNo == null || memoNo.trim().isEmpty()
+                ? "memo" : memoNo.replaceAll("[^A-Za-z0-9._-]+", "-");
+        return "memo-" + base + "." + ext;
+    }
 
     public static Map<String, Object> rec(Object o) { return cast(o); }
 

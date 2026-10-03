@@ -34,6 +34,7 @@ SITE_FILES = [
     'js/db.js',
     'js/sync.js',
     'js/voice.js',
+    'js/memoexport.js',
     'css/app.css',
     'sw.js',
     'manifest.webmanifest',

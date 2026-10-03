@@ -329,11 +329,11 @@ so this symptom can never be "fixed" by changing what an unpaired device display
 - `node build.js` (in `texpark-pro/`) regenerates **both** the repo root and
   `../texpark-pro.html`. Always run this after changing source, or the shipped files drift.
   The script asserts the new cloud/device functions are present in the single file.
-- `npm test` runs `test/logic.test.js` (84), `test/sheet.test.js` (28), `test/e2e.test.js` (212),
+- `npm test` runs `test/logic.test.js` (84), `test/sheet.test.js` (28), `test/e2e.test.js` (245),
   `test/cost.test.js` (11), `test/journey.test.js` (19), `test/autopull.test.js` (22),
   `test/return.test.js` (51), `test/pairing.test.js` (31), `test/repair.test.js` (30),
-  then `node --test test/android.test.js` (27) and `node --test test/native.test.js` (27).
-  Total 542.
+  `test/ownerdata.test.js` (29), then `node --test test/android.test.js` (27) and
+  `node --test test/native.test.js` (30). Total 607.
 - `test/cost.test.js` and `test/journey.test.js` both drive the **real `app.js`** through the DOM
   shim: the first pins the buying price reaching the stock card, the second walks the owner's own
   path (add product, pick it on a memo, read the profit) so a UI-level regression is caught.
@@ -342,9 +342,39 @@ so this symptom can never be "fixed" by changing what an unpaired device display
   two databases rather than as one.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
-- Current version: `2027-01-01.7` in `sw.js`, `js/app.js`, `version.txt` and
+- Current version: `2027-01-01.9` in `sw.js`, `js/app.js`, `version.txt` and
   `MainActivity.java` (bump them together, then rebuild — the e2e test fails if the two js
   files drift apart, and `ci/check-site.py` fails if the Java or the APK drifts too).
+
+## The memo sheet (the document the customer is handed)
+A memo is the shop's main output, so it is drawn as a real document and not as a text dump:
+navy header band, Bill To / From boxes, a striped item table, an amount-in-words strip, a totals
+card with the grand total and the due highlighted, two signature lines, terms and a thank-you.
+- **Web**: `memoSheet()` in `js/app.js` builds the markup; its stylesheet is the `MEMO_CSS`
+  constant in the same file, not a block in `css/app.css`. That is deliberate — the PNG/PDF
+  export wraps the markup in an SVG `foreignObject` whose only stylesheet is `MEMO_CSS`, so a
+  class the sheet uses but the constant does not style downloads as unstyled black text.
+  `test/e2e.test.js` cross-checks every class the sheet emits against `MEMO_CSS`, which is the
+  check that keeps the two in step.
+- **Export**: `js/memoexport.js` writes PNG and PDF with no library — canvas for the PNG, and a
+  hand-built one-page PDF for the file (`pdfFromJPEG`). It is a *five-object* PDF: catalog,
+  page tree, page, image XObject, content stream. The test parses the xref table back and
+  asserts each offset lands on its object, because a wrong offset gives a PDF that looks fine
+  in the bytes and is refused by every viewer.
+- **Native**: `MemoSheet.java` builds the same sheet out of real Android views, and `viewMemo()`
+  shows it with Share (PNG) and Save PDF buttons. `toBitmap()` measures *and* layouts the view
+  before drawing — skipping either gives a blank white rectangle, i.e. a share that silently
+  sends nothing. The native app still has **no print path**; the buttons are named for what they
+  do rather than promising a printer that is not there.
+- **One wording, two renderers**: `Store.MEMO_TERMS`, `Store.MEMO_THANKS`, `Store.money`,
+  `Store.qty` and `Store.numberWords` hold the sentences and the figure formatting, and the web
+  app prints the same ones. The Android `Ui.money`/`Ui.qty`/`Ui.words` are thin wrappers over
+  `Store`, because a memo that reads one way on the PC and another on the phone is the defect
+  this structure exists to prevent.
+- **`money()` must match `db.js` exactly**, and it did not: the native copy wrote `৳145.50` where
+  the web writes `৳145.5`, and `৳2400` where the web groups to `৳2,400`. `test/native.test.js`
+  now feeds both implementations the same amounts and compares the strings rather than
+  hard-coding an expectation, so the next drift fails the build instead of the shop's paperwork.
 
 ## Android app (rewritten natively 2026-09-29)
 `TexparkPro.apk` — a **fully native** app, not a WebView. The owner asked for a real Android
@@ -372,7 +402,7 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   `MainActivity.APP_VERSION` from it before compiling. If they drift, the app offers the same
   "update" on every launch.
 - `test/native.test.js` compiles the shipped `Json`, `Store` and `Voice` on a plain JVM and
-  runs the real classes against the real JS business rules (27 tests). The shop's central
+  runs the real classes against the real JS business rules (30 tests). The shop's central
   rule is driven through `Store.saveMemo` itself: a memo for a product with **no stock card at
   all** must save, must create the card, must clamp `available` at 0, and must keep the whole
   quantity as a reported shortfall. That rule used to live in `ScreensData`, where an

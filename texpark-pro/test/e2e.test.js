@@ -74,6 +74,7 @@ global.localStorage = {
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'db.js'), 'utf8'), { filename: 'db.js' });
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'sync.js'), 'utf8'), { filename: 'sync.js' });
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'voice.js'), 'utf8'), { filename: 'voice.js' });
+vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'memoexport.js'), 'utf8'), { filename: 'memoexport.js' });
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'app.js'), 'utf8'), { filename: 'app.js' });
 
 /* app.js waits for DOMContentLoaded to boot; the shim never fires it, so boot here
@@ -410,6 +411,88 @@ ok(sheet.includes('TEX') && sheet.includes('PARK'), 'memo sheet has the company 
 ok(sheet.includes(db.memos[0].memoNo), 'memo sheet has the memo number');
 ok(/Amount in Words/i.test(sheet), 'memo sheet has the amount in words');
 ok(!/undefined|NaN/.test(sheet), 'memo sheet has no undefined/NaN');
+
+console.log('\n--- the memo sheet is the document the customer sees ---');
+const sheet2 = memoSheet(db.memos[0]);
+// The exported PNG/PDF wraps this same markup in an SVG with only MEMO_CSS inside
+// it, so a class the sheet uses but the constant does not style would download as
+// unstyled black text - the exact failure the constant exists to prevent.
+const usedClasses = [...sheet2.matchAll(/class="([^"]+)"/g)]
+  .flatMap(m => m[1].split(/\s+/)).filter(Boolean);
+const styled = new Set([...MEMO_CSS.matchAll(/\.([a-zA-Z][\w-]*)/g)].map(m => m[1]));
+const unstyled = [...new Set(usedClasses)].filter(c => !styled.has(c));
+eq(unstyled.join(','), '', 'every class the sheet uses is in MEMO_CSS: ' + unstyled.join(', '));
+ok(/memo-top/.test(sheet2), 'the sheet has its navy header band');
+ok(/Bill To/.test(sheet2) && /From/.test(sheet2), 'the sheet has both party boxes');
+ok(/memo-grand/.test(sheet2) && /memo-due/.test(sheet2),
+   'the grand total and the due are the two highlighted rows');
+ok(/memo-items/.test(sheet2), 'the sheet has its item table');
+ok(/Signature/.test(sheet2), 'and the two signature lines');
+ok(/Sharto:/.test(sheet2), 'and the terms the shop hands over with every memo');
+ok(!/memo-sheet\b[^>]*class="mh"/.test(sheet2), 'the old .mh header markup is gone');
+// An empty memo is still a valid sheet - a memo can be saved before any line is
+// filled in when stock is missing, and the sheet must render then too.
+const emptySheet = memoSheet({ memoNo: 'X', date: today(), customerName: 'A', items: [],
+  totalQty: 0, subtotal: 0, discount: 0, deliveryCharge: 0, vat: 0, grandTotal: 0,
+  advance: 0, due: 0, note: '' });
+ok(!/undefined|NaN/.test(emptySheet), 'an empty memo sheet renders without undefined/NaN');
+ok(/Kono product nei/.test(emptySheet), 'and says so instead of showing a bare table');
+
+console.log('\n--- a memo can leave the app as a file ---');
+ok(typeof memoSheetSVG === 'function' && /<svg/.test(memoSheetSVG(db.memos[0])),
+   'the sheet can be wrapped as a standalone SVG');
+ok(memoSheetSVG(db.memos[0]).indexOf(MEMO_CSS) !== -1,
+   'the SVG carries the sheet stylesheet, so the download is styled, not bare text');
+ok(memoSheetSVG(db.memos[0]).indexOf('foreignObject') !== -1,
+   'the SVG carries the real sheet markup, so it cannot drift from the preview');
+const pdf = pdfFromJPEG(new Uint8Array([0xFF, 0xD8, 0xFF, 0xD9]), 200, 100);
+// Array.from, not pdf.map: a typed array's map returns another typed array, and
+// joining that would print numbers instead of the PDF's text.
+const pdfText = Array.from(pdf, b => String.fromCharCode(b)).join('');
+ok(pdfText.startsWith('%PDF-1.4'), 'a PDF is written, not a renamed text file');
+ok(pdfText.indexOf('%%EOF') !== -1, 'and it is terminated properly');
+ok(/\/Filter \/DCTDecode/.test(pdfText), 'the image is stored as a JPEG');
+ok(/\/MediaBox \[0 0 595\.28 841\.89\]/.test(pdfText), 'on an A4 page');
+// The xref offsets have to point at the byte offsets of the objects. A wrong one
+// gives a PDF that a viewer refuses to open, with nothing obviously wrong in it.
+// ^xref$, not lastIndexOf('xref'): that also matches the word inside "startxref",
+// so the table looked like it began at the wrong byte.
+const xrefAt = pdfText.search(/^xref$/m);
+const offsets = [...pdfText.slice(xrefAt).matchAll(/^(\d{10}) 00000 n /gm)].map(m => Number(m[1]));
+ok(offsets.length === 5, 'the xref table lists all five objects');
+offsets.forEach((off, i) => {
+  ok(pdfText.slice(off, off + String(i + 1).length + 6) === (i + 1) + ' 0 obj',
+     'xref offset ' + (i + 1) + ' points at object ' + (i + 1));
+});
+const startxref = Number((pdfText.match(/startxref\n(\d+)/) || [])[1]);
+eq(startxref, xrefAt, 'startxref points at the xref table');
+
+console.log('\n--- every button in the HTML is wired to a real function ---');
+/* A renamed or deleted function leaves an onclick that silently does nothing when
+   the owner taps it - the button looks fine and the shop finds out the hard way. */
+const indexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+// Inline handlers legitimately start with `if` (a click outside a modal closes it),
+// which is not a function name and must not be reported as a missing one.
+const JS_KEYWORDS = new Set(['if', 'return', 'this', 'event', 'void', 'typeof']);
+const handlers = new Set();
+[...indexHtml.matchAll(/on(?:click|input|change)="([a-zA-Z_$][\w$]*)\(/g)]
+  .map(m => m[1]).filter(h => !JS_KEYWORDS.has(h)).forEach(h => handlers.add(h));
+const missing = [...handlers].filter(h => typeof global[h] !== 'function');
+eq(missing.join(','), '', 'every handler exists: ' + missing.join(', '));
+ok(handlers.has('savePreviewMemo') && handlers.has('saveViewMemo')
+   && handlers.has('previewCurrentMemo') && handlers.has('printViewMemo'),
+   'the memo preview and export buttons are wired');
+// The history row buttons are built in JS, so they are checked from the generated
+// markup instead of the static HTML.
+const historyHtml = (function () {
+  db.memos.length || db.memos.push({ id: 'x', memoNo: 'M1', date: today(),
+    customerName: 'A', items: [], totalQty: 0, grandTotal: 0, profit: 0, due: 0 });
+  renderHistory();
+  return el('historyTable').innerHTML;
+})();
+['viewMemo', 'printMemoById', 'exportMemoById', 'editMemo', 'deleteMemo'].forEach(fn => {
+  ok(historyHtml.indexOf(fn + "('") !== -1, 'the history row offers ' + fn);
+});
 
 console.log('\n--- every page renders without throwing ---');
 let renderErr = '';

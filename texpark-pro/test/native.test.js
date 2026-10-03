@@ -542,6 +542,29 @@ public class Driver {
       st.list("memos").add(orphan);
       out.put("orphanPlan", st.planMemoCostRepair().size());
       out.put("orphanCost", Store.num(Store.rec(Json.arr(st.memoById("orph1").get("items")).get(0)).get("cost")));
+    } else if (op.equals("memoSheet")) {
+      // The sheet's own rules, exercised through the real Store: the words that a
+      // memo says, and the shape of the file name it is saved under.
+      out.put("words2400", Store.numberWords(Integer.valueOf(2400)));
+      out.put("words17135", Store.numberWords(Integer.valueOf(17135)));
+      out.put("words100000", Store.numberWords(Integer.valueOf(100000)));
+      out.put("words10000000", Store.numberWords(Integer.valueOf(10000000)));
+      out.put("words999", Store.numberWords(Integer.valueOf(999)));
+      out.put("words0", Store.numberWords(Integer.valueOf(0)));
+      out.put("money2400", Store.money(Integer.valueOf(2400)));
+      out.put("moneyFraction", Store.money(Double.valueOf(145.5)));
+      out.put("moneyNegative", Store.money(Double.valueOf(-1200)));
+      out.put("qtyWhole", Store.qty(Integer.valueOf(12)));
+      out.put("qtyFraction", Store.qty(Double.valueOf(2.5)));
+      out.put("initials", Store.initials("TEXPARK BUYING HOUSE"));
+      out.put("initialsSingle", Store.initials("TEXPARK"));
+      out.put("fileName", Store.memoFileName("TXP/SM/2027/01/01-PC001", "pdf"));
+      Map<String,Object> co = new LinkedHashMap<String,Object>();
+      co.put("phone", "01621-008204"); co.put("email", "a@b.c");
+      co.put("address", "Uttara, Dhaka"); co.put("bin", ""); co.put("vatReg", "");
+      out.put("contactLines", Store.contactLines(co).toString());
+      out.put("terms", Store.MEMO_TERMS);
+      out.put("thanks", Store.MEMO_THANKS);
     } else if (op.equals("json")) {
       // numbers must survive a round trip without growing a decimal point
       Map<String,Object> d = new LinkedHashMap<String,Object>();
@@ -751,6 +774,16 @@ test('native: a memo saves and survives a reload, and creates the customer', () 
    and both catch a real shipping defect rather than a style preference. */
 const screensSrc = fs.readFileSync(path.join(SRC, 'Screens.java'), 'utf8');
 
+/* The web app's own numberWords, pulled out of app.js and evaluated here. The whole
+   of app.js cannot be loaded in this test - it needs a DOM - but the words function
+   is self-contained, and it is the definition the phone has to match. Copying its
+   expected strings into the test instead would let the two drift silently. */
+const appJsSrc = fs.readFileSync(path.join(ROOT, 'texpark-pro', 'js', 'app.js'), 'utf8');
+const wordsFn = appJsSrc.slice(appJsSrc.indexOf('function numberWords(n) {'));
+const wordsBody = wordsFn.slice(0, wordsFn.indexOf('\n}\n') + 3);
+vm.runInThisContext('var numberWords = ' + wordsBody.replace('function numberWords(n) {', 'function (n) {')
+  + ';', { filename: 'numberWords' });
+
 test('native: every menu item opens a screen, not a blank page', () => {
   const ids = [...screensSrc.matchAll(/new NavItem\("([a-z]+)",/g)].map(m => m[1]);
   assert.ok(ids.length >= 18, 'expected the full menu, found ' + ids.length);
@@ -855,6 +888,78 @@ test('native: deleting a memo with a return restores stock exactly, like the web
   rebaseStockFromLedger();
   assert.strictEqual(num(findStock(p.id).available), beforeRebase,
     'web: a sync leaves the same figure');
+});
+
+test('native: the memo says the same thing on the phone as on the PC', () => {
+  const r = runNative({ op: 'memoSheet' });
+  /* The words are the ones the web app's numberWords() produces for the same
+     figures - the shop's own memos are written in lakh/crore, not millions, and a
+     memo printed from the phone must not read differently from one printed at the
+     PC. These strings were taken from the web function itself. */
+  assert.strictEqual(r.words2400, 'Two Thousand Four Hundred');
+  assert.strictEqual(r.words17135, 'Seventeen Thousand One Hundred Thirty Five');
+  assert.strictEqual(r.words999, 'Nine Hundred Ninety Nine');
+  assert.strictEqual(r.words100000, 'One Lakh');
+  assert.strictEqual(r.words10000000, 'One Crore');
+  assert.strictEqual(r.words0, 'Zero');
+  /* The sheet shows the same strings money() in db.js produces. These are taken
+     from the web function, not copied by hand: the two once disagreed - the phone
+     wrote "\u09F3145.50" where the web writes "\u09F3145.5" - and a memo must not
+     change shape depending on which machine printed it. */
+  assert.strictEqual(r.money2400, money(2400));
+  assert.strictEqual(r.moneyFraction, money(145.5));
+  assert.strictEqual(r.moneyNegative, money(-1200));
+  assert.strictEqual(r.qtyWhole, '12');
+  assert.strictEqual(r.qtyFraction, '2.5');
+  assert.strictEqual(r.initials, 'TB');
+  assert.strictEqual(r.initialsSingle, 'TE');
+  // A memo number has slashes in it; a saved file must not.
+  assert.strictEqual(r.fileName, 'memo-TXP-SM-2027-01-01-PC001.pdf');
+  assert.strictEqual(r.contactLines, '[Phone: 01621-008204, Email: a@b.c, Address: Uttara, Dhaka]');
+  assert.match(r.terms, /ferot neya hoy na/, 'the memo carries its terms');
+  assert.match(r.thanks, /Dhonnobad/, 'and its thank-you line');
+});
+
+test('native: the web and the phone print the same memo words', () => {
+  /* Both implementations are driven with the same amounts. The web one is the
+     definition - it is what the owner's existing memos say - so the phone's has to
+     match it figure for figure, including the lakh/crore boundaries where an
+     off-by-one block size would show up. */
+  const r = runNative({ op: 'memoSheet' });
+  const cases = {
+    words2400: 2400, words17135: 17135, words999: 999,
+    words100000: 100000, words10000000: 10000000, words0: 0
+  };
+  Object.keys(cases).forEach(k => {
+    assert.strictEqual(r[k], numberWords(cases[k]),
+      k + ': the phone says "' + r[k] + '", the web says "' + numberWords(cases[k]) + '"');
+  });
+});
+
+test('native: the memo sheet is drawn from views, and shares what it shows', () => {
+  /* There is no emulator, so the sheet's wiring is read from the source. Both
+     checks catch a real defect: a memo that shares an empty file, or one whose
+     share button does nothing - which is exactly what the old dialog's Share
+     button did, with an empty handler and a comment saying the shell handled it. */
+  const sheetSrc = fs.readFileSync(path.join(SRC, 'MemoSheet.java'), 'utf8');
+  const dataSrc = fs.readFileSync(path.join(SRC, 'ScreensData.java'), 'utf8');
+  assert.match(sheetSrc, /static Bitmap toBitmap\(View sheet, int widthPx\)/,
+    'the sheet can be drawn onto a bitmap');
+  assert.match(sheetSrc, /toPdf\(Bitmap bmp/,
+    'and onto a PDF page');
+  // The bitmap must be measured and laid out before it is drawn, or it comes out
+  // as a blank white rectangle - a share that silently sends nothing.
+  assert.match(sheetSrc, /sheet\.measure\(/);
+  assert.match(sheetSrc, /sheet\.layout\(/);
+  assert.match(dataSrc, /shareMemoBitmap\(s, sheet, width/,
+    'Share really renders the sheet');
+  assert.match(dataSrc, /saveMemoPdf\(s, sheet, width/,
+    'Save PDF really writes a file');
+  assert.doesNotMatch(dataSrc, /share handled by shell/,
+    'the empty Share handler is gone, not just commented differently');
+  // The memo the customer sees is the shared sheet, not the old monospaced dump.
+  assert.doesNotMatch(dataSrc, /setTypeface\(Typeface\.MONOSPACE\)/,
+    'the monospaced memo dump is gone');
 });
 
 test('native: nothing depends on a WebView or window.print any more', () => {

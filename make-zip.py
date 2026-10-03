@@ -37,6 +37,7 @@ APP_FILES = [
     'js/db.js',
     'js/sync.js',
     'js/voice.js',
+    'js/memoexport.js',
     'sw.js',
     'manifest.webmanifest',
     'icon-192.png',

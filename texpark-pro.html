@@ -200,6 +200,20 @@ tbody tr:hover td{background:#f7fafd}
 .bar-row .fill{height:100%;background:linear-gradient(90deg,var(--navy),#2b7fff);border-radius:6px}
 .bar-row .val{width:100px;text-align:right;font-weight:700;color:var(--navy)}
 
+/* ---------- memo sheet ---------- */
+/* The sheet's own rules live in js/app.js (MEMO_CSS): the PNG/PDF export wraps the
+   same markup in an SVG, which is a separate document and cannot read this
+   stylesheet, so a sheet styled only here would download unstyled. */
+.memo-sheet{background:#fff}
+#viewBody .memo-sheet{margin:0 auto}
+
+/* ---------- toast ---------- */
+/* The phone has no console, so "Memo PDF save hoyeche" has to appear on screen. */
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);
+  background:#12366b;color:#fff;padding:11px 18px;border-radius:999px;font-size:13px;font-weight:600;
+  box-shadow:0 6px 20px rgba(16,32,64,.28);opacity:0;pointer-events:none;transition:.22s;z-index:60;max-width:88vw;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
 /* ---------- print ---------- */
 #printArea{display:none}
 @media print{
@@ -207,23 +221,6 @@ tbody tr:hover td{background:#f7fafd}
   #printArea{display:block!important}
   @page{size:A4;margin:12mm}
 }
-.memo-sheet{font-family:"Segoe UI","Noto Sans Bengali",Arial,sans-serif;color:#111;font-size:12px}
-.memo-sheet .mh{display:flex;justify-content:space-between;border-bottom:2px solid var(--navy);padding-bottom:10px}
-.memo-sheet .mh h1{font-size:27px;margin:0;color:var(--navy);letter-spacing:-.5px}
-.memo-sheet .mh h1 span{color:var(--pink)}
-.memo-sheet .mh .tl{font-weight:700;color:var(--muted);font-size:12px;letter-spacing:.14em;text-transform:uppercase}
-.memo-sheet .mh .ct{text-align:right;font-size:11.5px;line-height:1.6}
-.memo-sheet .mmeta{display:flex;justify-content:space-between;margin:12px 0;font-size:11.5px;line-height:1.6}
-.memo-sheet table{width:100%;border-collapse:collapse;margin-top:6px}
-.memo-sheet th{background:var(--navy);color:#fff;padding:6px;font-size:10.5px;text-align:left}
-.memo-sheet td{padding:6px;border-bottom:1px solid #dde3ec;font-size:11.5px}
-.memo-sheet .mtt{display:flex;justify-content:flex-end;margin-top:10px}
-.memo-sheet .mtt table{width:290px}
-.memo-sheet .mtt td{border:0;padding:4px 6px;font-size:11.5px}
-.memo-sheet .mtt tr.g td{border-top:2px solid var(--navy);font-weight:800;font-size:13px}
-.memo-sheet .words{margin-top:10px;font-size:11.5px;border:1px solid #dde3ec;padding:8px;border-radius:6px;background:#f8fafd}
-.memo-sheet .sign{display:flex;justify-content:space-between;margin-top:52px;font-size:11px}
-.memo-sheet .sign div{border-top:1px solid #333;padding-top:5px;width:190px;text-align:center}
 
 
 
@@ -464,8 +461,14 @@ tbody tr:hover td{background:#f7fafd}
 
           <div class="row" style="margin-top:14px">
             <button class="btn-pink" id="memoSaveBtn" onclick="saveMemo()">Save Memo</button>
-            <button class="btn-light" onclick="printPreviewCurrent()">Print Preview</button>
-            <span class="muted" style="font-size:12.5px">Ctrl+P diyeo print korte parben.</span>
+            <button class="btn-light" onclick="previewCurrentMemo()">Preview</button>
+            <button class="btn-light" onclick="printPreviewCurrent()">Print</button>
+            <button class="btn-light" onclick="savePreviewMemo('png')">Save Image</button>
+            <button class="btn-light" onclick="savePreviewMemo('pdf')">Save PDF</button>
+          </div>
+          <div class="muted" style="font-size:12.5px;margin-top:8px">
+            Save Image / Save PDF memo-r chobi ba PDF file hisebe rekhe dey (print na koreo pathate parben).
+            Ctrl+P diyeo print korte parben.
           </div>
         </div>
       </section>
@@ -907,7 +910,11 @@ tbody tr:hover td{background:#f7fafd}
 <!-- ============ MODALS ============ -->
 <div id="viewModal" class="modal" onclick="if(event.target===this)closeView()">
   <div class="modal-card wide">
-    <div class="row" style="justify-content:flex-end;margin-bottom:10px">
+    <div class="row" id="viewActions" style="justify-content:flex-end;flex-wrap:wrap;margin-bottom:10px">
+      <span class="muted" id="viewMemoNo" style="margin-right:auto;font-size:12.5px"></span>
+      <button class="btn-light btn-sm" onclick="printViewMemo()">Print</button>
+      <button class="btn-light btn-sm" onclick="saveViewMemo('png')">Save Image (PNG)</button>
+      <button class="btn-light btn-sm" onclick="saveViewMemo('pdf')">Save PDF</button>
       <button class="btn-light" onclick="closeView()">Close</button>
     </div>
     <div id="viewBody"></div>
@@ -2869,11 +2876,257 @@ async function pullAndMerge() {
 </script>
 <script>
 /* bundle 3 */
+/* Texpark Pro — save a memo as a picture (PNG) or as a PDF.
+
+   The owner prints memos, but he also sends them on WhatsApp and keeps copies for
+   his own records, so the memo has to leave the app as a file. Both formats come
+   out of one renderer: the sheet's own HTML is wrapped in an SVG <foreignObject>
+   and drawn onto a canvas. That way the download is the same sheet the screen and
+   the printer show, instead of a second layout that slowly drifts away from it.
+
+   No library is used. A PDF that carries one JPEG is a small, well-defined file -
+   writing those few objects directly keeps the app self-contained, which matters
+   because it must also run from a USB stick with no internet.
+
+   The browser APIs here (Image, canvas, Blob, atob) do not exist in the Node test
+   harness, so every entry point returns a value the caller can report rather than
+   throwing: a phone that cannot rasterise should say so, not go blank. */
+
+const MEMO_PAGE = { w: 794, h: 1123, margin: 36 };   // A4 at 96 dpi
+const MEMO_PDF_PAGE = { w: 595.28, h: 841.89 };      // A4 in points
+
+/* How tall the sheet is before it is drawn. The canvas has to be sized up front -
+   an image cannot grow after it is drawn - so this is an estimate with headroom,
+   not a measurement. Too tall only leaves white space at the bottom. */
+function memoSheetHeight(m) {
+  const rows = Math.max(1, (m.items || []).length);
+  let h = 470 + rows * 34;
+  if (m.note) h += 40;
+  if (m.customerAddress) h += 18;
+  const needed = h + MEMO_PAGE.margin * 2;
+  return Math.max(MEMO_PAGE.h, Math.round(needed));
+}
+
+/* The sheet as one standalone SVG document.
+
+   The stylesheet travels inside the SVG because an SVG loaded as an image is its
+   own document: it inherits nothing from the page, so a sheet styled by
+   css/app.css would download as plain black text on white. The page width is
+   pinned here too, so the flex header and the two-column footer lay out the same
+   way they do on screen. */
+function memoSheetSVG(m) {
+  const pad = MEMO_PAGE.margin;
+  const w = MEMO_PAGE.w, inner = w - pad * 2;
+  const h = memoSheetHeight(m);
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h +
+    '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<rect width="' + w + '" height="' + h + '" fill="#ffffff"/>' +
+    '<style>' + MEMO_CSS +
+      ' .memo-sheet{width:' + inner + 'px;max-width:none;margin:0}' +
+      ' .memo-sheet .memo-top{border-radius:10px 10px 0 0}' +
+    '</style>' +
+    '<foreignObject x="' + pad + '" y="' + pad + '" width="' + inner + '" height="' + (h - pad * 2) + '">' +
+      '<div xmlns="http://www.w3.org/1999/xhtml">' + memoSheet(m) + '</div>' +
+    '</foreignObject></svg>';
+}
+
+function memoFileBase(m) {
+  return 'memo-' + String(m.memoNo || 'draft').replace(/[^A-Za-z0-9._-]+/g, '-');
+}
+
+/* Turns a Blob into a download. Kept in one place so every export path triggers the
+   download the same way and the object URL is released again - a memo saved a
+   hundred times should not leak a hundred blobs. */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  if (typeof URL.revokeObjectURL === 'function') setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/* Rasterises the sheet at `scale` and hands back the canvas.
+
+   Returns a Promise because an SVG loaded into an <img> fires load asynchronously;
+   the caller has to wait for it or the canvas is blank. */
+function memoCanvas(m, scale) {
+  return new Promise((resolve, reject) => {
+    if (typeof Image !== 'function' || typeof document.createElement !== 'function') {
+      reject(new Error('ei device-e chobi banano jay na'));
+      return;
+    }
+    const w = MEMO_PAGE.w, h = memoSheetHeight(m);
+    const svg = memoSheetSVG(m);
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(w * scale);
+      cv.height = Math.round(h * scale);
+      const ctx = cv.getContext('2d');
+      if (!ctx) { reject(new Error('canvas khulche na')); return; }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      resolve(cv);
+    };
+    img.onerror = () => reject(new Error('memo ta chobi korte parlam na'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+
+function canvasToBlob(cv, type, quality) {
+  return new Promise((resolve, reject) => {
+    if (typeof cv.toBlob === 'function') {
+      cv.toBlob(b => (b ? resolve(b) : reject(new Error('file banano gelo na'))), type, quality);
+      return;
+    }
+    // Older WebViews have no toBlob; the data URL form always exists.
+    const url = cv.toDataURL(type, quality);
+    const bin = atob(url.split(',')[1]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    resolve(new Blob([bytes], { type }));
+  });
+}
+
+/* ---- the PDF writer ---- */
+
+/* Latin-1 bytes of a string. A PDF is byte-addressed, so every offset in the xref
+   table has to count bytes; a JPEG stream is not valid UTF-8 and would corrupt the
+   offsets if it were carried as a JS string. */
+function pdfBytes(str) {
+  const out = new Uint8Array(str.length);
+  for (let i = 0; i < str.length; i++) out[i] = str.charCodeAt(i) & 0xff;
+  return out;
+}
+
+/* A one-page PDF holding one JPEG.
+
+   Deliberately minimal: catalog, page tree, the image XObject, and a content stream
+   that scales the image to the page width. Anything more (fonts, text, outlines)
+   would be a second renderer to keep in step with the sheet, which is exactly what
+   this avoids. */
+function pdfFromJPEG(jpeg, imgW, imgH) {
+  const pw = MEMO_PDF_PAGE.w, ph = MEMO_PDF_PAGE.h, m = 24;
+  const drawW = pw - m * 2;
+  const drawH = drawW * (imgH / imgW);
+  // A tall sheet is fitted to the page height as well, so nothing is cut off.
+  const scale = drawH > ph - m * 2 ? (ph - m * 2) / drawH : 1;
+  const w = drawW * scale, h = drawH * scale;
+  const x = (pw - w) / 2, y = ph - m - h;
+
+  const content = 'q\n' + w.toFixed(2) + ' 0 0 ' + h.toFixed(2) + ' ' +
+    x.toFixed(2) + ' ' + y.toFixed(2) + ' cm\n/Im0 Do\nQ\n';
+
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pw + ' ' + ph + '] ' +
+      '/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /XObject /Subtype /Image /Width ' + imgW + ' /Height ' + imgH +
+      ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' +
+      jpeg.length + ' >>\nstream\n',
+    '<< /Length ' + content.length + ' >>\nstream\n' + content
+  ];
+  // Streams are assembled separately: object 4 carries binary data, so it cannot go
+  // through the same string concatenation as the dictionaries around it.
+  const head = '%PDF-1.4\n';
+  const parts = [pdfBytes(head)];
+  const offsets = [];
+  let pos = head.length;
+  const push = (s) => { const b = pdfBytes(s); parts.push(b); pos += b.length; };
+
+  for (let i = 0; i < objs.length; i++) {
+    offsets.push(pos);
+    push((i + 1) + ' 0 obj\n' + objs[i]);
+    if (i === 3) { parts.push(jpeg); pos += jpeg.length; push('\nendstream\nendobj\n'); }
+    else if (i === 4) { push('endstream\nendobj\n'); }
+    else { push('\nendobj\n'); }
+  }
+
+  const xrefPos = pos;
+  let xref = 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n';
+  offsets.forEach(o => { xref += String(o).padStart(10, '0') + ' 00000 n \n'; });
+  xref += 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' +
+    xrefPos + '\n%%EOF\n';
+  push(xref);
+
+  const total = parts.reduce((a, b) => a + b.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  parts.forEach(b => { out.set(b, at); at += b.length; });
+  return out;
+}
+
+/* ---- what the buttons call ---- */
+
+/* The JPEG bytes a PDF needs, taken from the same canvas the PNG is drawn on. */
+function memoJPEGBytes(cv) {
+  return new Promise((resolve, reject) => {
+    if (typeof cv.toDataURL !== 'function') { reject(new Error('canvas toDataURL nei')); return; }
+    const url = cv.toDataURL('image/jpeg', 0.92);
+    const bin = atob(url.split(',')[1]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    resolve(bytes);
+  });
+}
+
+function saveMemoPNG(m) {
+  if (!m) return;
+  memoCanvas(m, 2)
+    .then(cv => canvasToBlob(cv, 'image/png'))
+    .then(b => { downloadBlob(b, memoFileBase(m) + '.png'); toast('Memo PNG save hoyeche: ' + memoFileBase(m) + '.png'); })
+    .catch(e => alert('PNG save korte parlam na: ' + e.message));
+}
+
+function saveMemoPDF(m) {
+  if (!m) return;
+  memoCanvas(m, 2)
+    .then(cv => memoJPEGBytes(cv).then(bytes =>
+      ({ bytes, w: cv.width, h: cv.height })))
+    .then(j => {
+      const pdf = pdfFromJPEG(j.bytes, j.w, j.h);
+      downloadBlob(new Blob([pdf], { type: 'application/pdf' }), memoFileBase(m) + '.pdf');
+      toast('Memo PDF save hoyeche: ' + memoFileBase(m) + '.pdf');
+    })
+    .catch(e => alert('PDF save korte parlam na: ' + e.message));
+}
+
+/* What "Print" already did: put the sheet in the print area and hand it to the
+   printer dialog, which also offers "Save as PDF" on every platform. */
+function printMemoSheet(m) {
+  if (!m) return;
+  document.getElementById('printArea').innerHTML = memoSheet(m);
+  window.print();
+}
+
+/* A tiny status line. The phone has no console, so an export that worked has to say
+   so somewhere the owner will see. The element is made on demand: it is only ever
+   needed after a tap, so it costs the first paint nothing. */
+function toast(msg) {
+  if (typeof document === 'undefined' || !document.body) return;
+  let host = document.getElementById('toastHost');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toastHost';
+    host.className = 'toast';
+    document.body.appendChild(host);
+  }
+  host.textContent = msg;
+  host.classList.add('show');
+  setTimeout(() => host.classList.remove('show'), 2600);
+}
+
+</script>
+<script>
+/* bundle 4 */
 /* Texpark Pro — UI + actions. */
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.8';
+const APP_VERSION = '2027-01-01.9';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -2914,6 +3167,9 @@ const PAGES = [
 
 var memoDraft = { items: [] };
 var editingMemoId = null;
+/** Which memo the preview modal is showing, so its Print/Save buttons act on that
+ *  one. Cleared on close: a stale id would export the memo looked at last. */
+var viewingMemoId = null;
 var purchaseDraft = { items: [] };
 var currentPage = "dashboard";
 
@@ -3574,8 +3830,10 @@ function renderHistory() {
           '<td class="right">' + money(m.due) + '</td>' +
           '<td><span class="pill ' + st + '">' + d + '/' + m.totalQty + (r ? ' <b class="red">R' + r + '</b>' : '') + '</span></td>' +
           '<td><button class="btn-light btn-sm" onclick="viewMemo(\'' + m.id + '\')">View</button> ' +
-          '<button class="btn-light btn-sm" onclick="editMemo(\'' + m.id + '\')">Edit</button> ' +
           '<button class="btn-light btn-sm" onclick="printMemoById(\'' + m.id + '\')">Print</button> ' +
+          '<button class="btn-light btn-sm" onclick="exportMemoById(\'' + m.id + '\',\'png\')">Image</button> ' +
+          '<button class="btn-light btn-sm" onclick="exportMemoById(\'' + m.id + '\',\'pdf\')">PDF</button> ' +
+          '<button class="btn-light btn-sm" onclick="editMemo(\'' + m.id + '\')">Edit</button> ' +
           '<button class="btn-danger btn-sm" onclick="deleteMemo(\'' + m.id + '\')">Delete</button></td></tr>';
       }).join('') + '</tbody></table></div>'
     : '<div class="empty">No memos</div>';
@@ -3623,19 +3881,119 @@ function deleteMemo(mid) {
 function viewMemo(mid) {
   const m = db.memos.find(x => x.id === mid);
   if (!m) return;
+  viewingMemoId = mid;
   document.getElementById('viewBody').innerHTML = memoSheet(m);
+  const no = document.getElementById('viewMemoNo');
+  if (no) no.textContent = m.memoNo + '  |  ' + m.customerName;
   document.getElementById('viewModal').classList.add('show');
 }
-function closeView() { document.getElementById('viewModal').classList.remove('show'); }
+function closeView() {
+  document.getElementById('viewModal').classList.remove('show');
+  viewingMemoId = null;
+}
 
 function printMemoById(mid) {
   const m = db.memos.find(x => x.id === mid);
   if (!m) return;
-  document.getElementById('printArea').innerHTML = memoSheet(m);
-  window.print();
+  printMemoSheet(m);
+}
+
+/* Save Image / Save PDF from the preview, the history row, or the memo form. All
+   three go through the same renderer so a saved memo looks like the previewed one. */
+function exportMemoById(mid, kind) {
+  const m = db.memos.find(x => x.id === mid);
+  if (!m) return;
+  kind === 'pdf' ? saveMemoPDF(m) : saveMemoPNG(m);
+}
+
+function printViewMemo() {
+  const m = db.memos.find(x => x.id === viewingMemoId);
+  if (m) printMemoSheet(m);
+}
+
+function saveViewMemo(kind) {
+  const m = db.memos.find(x => x.id === viewingMemoId);
+  if (!m) return;
+  kind === 'pdf' ? saveMemoPDF(m) : saveMemoPNG(m);
 }
 
 /* ===================== memo sheet (screen + A4 print) ===================== */
+/* The sheet's look is defined here, not in css/app.css, because three different
+   things have to render it identically: the on-screen preview, the A4 print, and
+   the SVG that becomes the PNG/PDF download. An SVG is a separate document and
+   cannot read the page's stylesheet, so a sheet styled by the stylesheet would
+   download as an unstyled page of black text. One string, three renderers. */
+const MEMO_CSS = '' +
+  '.memo-sheet{font-family:"Segoe UI","Noto Sans Bengali",Arial,sans-serif;color:#12233f;font-size:12px;' +
+    'background:#fff;padding:0;max-width:820px}' +
+  '.memo-sheet .memo-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;' +
+    'background:#12366b;color:#fff;padding:16px 18px;border-radius:10px 10px 0 0}' +
+  '.memo-sheet .memo-co{display:flex;gap:12px;align-items:center;min-width:0}' +
+  '.memo-sheet .memo-logo{width:46px;height:46px;border-radius:10px;background:#fff;color:#12366b;' +
+    'font-weight:800;font-size:17px;display:flex;align-items:center;justify-content:center;letter-spacing:-.5px;flex:0 0 auto}' +
+  '.memo-sheet .memo-coname{font-size:19px;font-weight:800;letter-spacing:.2px;line-height:1.15}' +
+  '.memo-sheet .memo-cotag{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#c3d2ea;margin-top:2px}' +
+  '.memo-sheet .memo-codoc{font-size:10.5px;color:#c3d2ea;margin-top:4px}' +
+  '.memo-sheet .memo-doc{text-align:right;flex:0 0 auto}' +
+  '.memo-sheet .memo-doc h2{margin:0;font-size:15px;letter-spacing:.22em;font-weight:800;color:#fff}' +
+  '.memo-sheet .memo-doc .memo-docrow{font-size:11px;margin-top:5px;color:#dbe5f5}' +
+  '.memo-sheet .memo-doc .memo-docrow b{color:#fff}' +
+  '.memo-sheet .memo-cards{display:flex;gap:0;border:1px solid #d9e1ec;border-top:0}' +
+  '.memo-sheet .memo-card{flex:1;padding:11px 14px;min-width:0}' +
+  '.memo-sheet .memo-card + .memo-card{border-left:1px solid #d9e1ec}' +
+  '.memo-sheet .memo-card h4{margin:0 0 5px;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:#667085}' +
+  '.memo-sheet .memo-card .memo-big{font-size:12.5px;font-weight:700;color:#12366b}' +
+  '.memo-sheet .memo-card div{font-size:11px;line-height:1.6}' +
+  '.memo-sheet .memo-items{width:100%;border-collapse:collapse;margin-top:14px}' +
+  '.memo-sheet .memo-items th{background:#eef3f9;color:#12366b;padding:8px;font-size:10px;' +
+    'letter-spacing:.08em;text-transform:uppercase;text-align:left;border-bottom:2px solid #12366b}' +
+  '.memo-sheet .memo-items td{padding:8px;border-bottom:1px solid #e6eaf0;font-size:11.5px}' +
+  '.memo-sheet .memo-items tr:nth-child(even) td{background:#f8fafd}' +
+  '.memo-sheet .memo-items .right,.memo-sheet .right{text-align:right}' +
+  '.memo-sheet .memo-items .memo-sl{color:#667085;font-weight:700;width:34px}' +
+  '.memo-sheet .memo-items .memo-empty{text-align:center;color:#667085;padding:14px}' +
+  '.memo-sheet .memo-foot{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-top:14px}' +
+  '.memo-sheet .memo-left{flex:1;min-width:0}' +
+  '.memo-sheet .memo-words{border:1px solid #d9e1ec;border-left:4px solid #12366b;background:#f8fafd;' +
+    'padding:9px 11px;border-radius:6px;font-size:11px;line-height:1.55}' +
+  '.memo-sheet .memo-words b{color:#667085;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:2px}' +
+  '.memo-sheet .memo-note{margin-top:9px;font-size:11px;line-height:1.55}' +
+  '.memo-sheet .memo-note b{color:#667085;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:2px}' +
+  '.memo-sheet .memo-tot{width:288px;flex:0 0 auto}' +
+  '.memo-sheet .memo-tot table{width:100%;border-collapse:collapse}' +
+  '.memo-sheet .memo-tot td{padding:5px 10px;font-size:11.5px;border-bottom:1px solid #eef2f8}' +
+  '.memo-sheet .memo-tot tr.memo-grand td{background:#12366b;color:#fff;font-weight:800;font-size:13px;border:0}' +
+  '.memo-sheet .memo-tot tr.memo-due td{background:#fff1f5;color:#c2185b;font-weight:800;font-size:12.5px;border:0}' +
+  '.memo-sheet .memo-tot tr.memo-due td:first-child{color:#8a1240}' +
+  '.memo-sheet .memo-terms{margin-top:10px;border-top:1px dashed #c9d4e4;padding-top:9px;' +
+    'font-size:10px;color:#667085;line-height:1.55}' +
+  '.memo-sheet .memo-terms b{color:#12366b}' +
+  '.memo-sheet .memo-sign{display:flex;justify-content:space-between;gap:24px;margin-top:44px}' +
+  '.memo-sheet .memo-sign div{border-top:1px solid #12233f;padding-top:5px;width:210px;' +
+    'text-align:center;font-size:10.5px;color:#667085}' +
+  '.memo-sheet .memo-thanks{margin-top:16px;border-top:2px solid #12366b;padding-top:9px;' +
+    'text-align:center;font-size:10.5px;color:#667085}';
+
+/* Company contact lines, shared by the header block and the exported SVG, so the
+   two can never disagree about what the shop's details are. */
+function memoCompanyLines(c) {
+  c = c || {};
+  return [
+    c.phone ? 'Phone: ' + c.phone : '',
+    c.email ? 'Email: ' + c.email : '',
+    c.address ? 'Address: ' + c.address : '',
+    c.bin ? 'BIN: ' + c.bin : '',
+    c.vatReg ? 'VAT Reg: ' + c.vatReg : ''
+  ].filter(Boolean);
+}
+
+function memoInitials(name) {
+  const w = String(name || 'T').replace(/[^A-Za-z0-9 ]/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return 'T';
+  if (w.length === 1) return w[0].slice(0, 2).toUpperCase();
+  return (w[0][0] + w[1][0]).toUpperCase();
+}
+
 function numberWords(n) {
   n = Math.round(num(n));
   if (!n) return 'Zero';
@@ -3653,35 +4011,68 @@ function numberWords(n) {
   return cv(n);
 }
 
+/* One product line. The exported renderers walk this instead of the markup, so a
+   blank row, a wrapped name or a rounding rule is decided once. */
+function memoLineRows(m) {
+  return (m.items || []).map((x, i) => ({
+    sl: String(i + 1).padStart(2, '0'),
+    name: x.productName || '',
+    rate: num(x.rate),
+    qty: num(x.qty),
+    amount: num(x.amount)
+  }));
+}
+
 function memoSheet(m) {
   const c = db.settings.company || {};
-  const rows = (m.items || []).map((x, i) => '<tr><td>' + String(i + 1).padStart(2, '0') + '</td><td>' +
-    esc(x.productName) + '</td><td class="right">' + num(x.rate).toLocaleString('en-US') + '</td>' +
-    '<td class="right">' + num(x.qty) + '</td><td class="right">' + num(x.amount).toLocaleString('en-US') + '</td></tr>').join('');
+  const rows = memoLineRows(m);
+  const body = rows.length
+    ? rows.map(r => '<tr><td class="memo-sl">' + r.sl + '</td><td>' + esc(r.name) + '</td>' +
+        '<td class="right">' + money(r.rate) + '</td><td class="right">' + num(r.qty) +
+        '</td><td class="right"><b>' + money(r.amount) + '</b></td></tr>').join('')
+    : '<tr><td class="memo-empty" colspan="5">Kono product nei</td></tr>';
+  const contacts = memoCompanyLines(c).map(l => '<div>' + esc(l) + '</div>').join('');
   return '<div class="memo-sheet">' +
-    '<div class="mh"><div><h1>TEX<span>PARK</span></h1><div class="tl">' + esc(c.tagline || 'Buying House') + '</div>' +
-    (c.md ? '<div style="font-size:11px;margin-top:3px"><b>MD:</b> ' + esc(c.md) + '</div>' : '') + '</div>' +
-    '<div class="ct"><div><b>Phone:</b> ' + esc(c.phone || '') + '</div><div><b>Email:</b> ' + esc(c.email || '') + '</div>' +
-    '<div><b>Address:</b> ' + esc(c.address || '') + '</div>' +
-    (c.bin ? '<div><b>BIN:</b> ' + esc(c.bin) + '</div>' : '') + '</div></div>' +
-    '<div class="mmeta"><div><b>Customer:</b> ' + esc(m.customerName) + '<br><b>Phone:</b> ' + esc(m.customerPhone || '-') +
-    '<br><b>Address:</b> ' + esc(m.customerAddress || '-') + '</div>' +
-    '<div style="text-align:right"><b>Memo No:</b> ' + esc(m.memoNo) + '<br><b>Date:</b> ' + esc(m.date) + '</div></div>' +
-    '<table><thead><tr><th>SL</th><th>PRODUCT NAME</th><th class="right">RATE</th><th class="right">QTY</th>' +
-    '<th class="right">AMOUNT</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-    '<div class="mtt"><table>' +
-    '<tr><td>Total Qty</td><td class="right">' + num(m.totalQty) + '</td></tr>' +
-    '<tr><td>Subtotal</td><td class="right">' + money(m.subtotal) + '</td></tr>' +
-    '<tr><td>Discount</td><td class="right">- ' + money(m.discount) + '</td></tr>' +
-    '<tr><td>Delivery Charge</td><td class="right">+ ' + money(m.deliveryCharge) + '</td></tr>' +
-    (num(m.vat) ? '<tr><td>VAT</td><td class="right">+ ' + money(m.vat) + '</td></tr>' : '') +
-    '<tr class="g"><td>Grand Total</td><td class="right">' + money(m.grandTotal) + '</td></tr>' +
-    '<tr><td>Advance</td><td class="right">- ' + money(m.advance) + '</td></tr>' +
-    '<tr class="g"><td>Due</td><td class="right">' + money(m.due) + '</td></tr>' +
-    '</table></div>' +
-    '<div class="words"><b>Amount in Words:</b> ' + numberWords(num(m.grandTotal)) + ' Taka Only.</div>' +
-    (m.note ? '<div style="margin-top:8px;font-size:11px"><b>Note:</b> ' + esc(m.note) + '</div>' : '') +
-    '<div class="sign"><div>Customer Signature</div><div>Authorized Signature</div></div></div>';
+    '<div class="memo-top">' +
+      '<div class="memo-co"><div class="memo-logo">' + esc(memoInitials(c.name)) + '</div>' +
+        '<div><div class="memo-coname">' + esc(c.name || 'TEXPARK BUYING HOUSE') + '</div>' +
+        '<div class="memo-cotag">' + esc(c.tagline || 'Buying House') + '</div>' +
+        (c.md ? '<div class="memo-codoc">MD: ' + esc(c.md) + '</div>' : '') + '</div></div>' +
+      '<div class="memo-doc"><h2>SALES MEMO</h2>' +
+        '<div class="memo-docrow"><b>Memo No:</b> ' + esc(m.memoNo) + '</div>' +
+        '<div class="memo-docrow"><b>Date:</b> ' + esc(m.date) + '</div>' +
+        '<div class="memo-docrow"><b>Total Qty:</b> ' + num(m.totalQty) + '</div></div>' +
+    '</div>' +
+    '<div class="memo-cards">' +
+      '<div class="memo-card"><h4>Bill To</h4>' +
+        '<div class="memo-big">' + esc(m.customerName) + '</div>' +
+        (m.customerPhone ? '<div>Phone: ' + esc(m.customerPhone) + '</div>' : '') +
+        (m.customerAddress ? '<div>' + esc(m.customerAddress) + '</div>' : '') + '</div>' +
+      '<div class="memo-card"><h4>From</h4>' +
+        '<div class="memo-big">' + esc(c.name || '') + '</div>' + contacts + '</div>' +
+    '</div>' +
+    '<table class="memo-items"><thead><tr><th>SL</th><th>Product Description</th>' +
+      '<th class="right">Rate</th><th class="right">Qty</th><th class="right">Amount</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table>' +
+    '<div class="memo-foot"><div class="memo-left">' +
+      '<div class="memo-words"><b>Amount in Words</b>' + esc(numberWords(num(m.grandTotal))) + ' Taka Only.</div>' +
+      (m.note ? '<div class="memo-note"><b>Note</b>' + esc(m.note) + '</div>' : '') +
+      '<div class="memo-terms"><b>Sharto:</b> Panyo bikri-r por ferot neya hoy na (damaged chara). ' +
+        'Delivery charge memo-te add kora hoyeche. Due amount memo-r tarikh theke 15 diner moddhe porishodh korben.</div>' +
+      '</div>' +
+      '<div class="memo-tot"><table>' +
+        '<tr><td>Total Qty</td><td class="right">' + num(m.totalQty) + '</td></tr>' +
+        '<tr><td>Subtotal</td><td class="right">' + money(m.subtotal) + '</td></tr>' +
+        '<tr><td>Discount</td><td class="right">- ' + money(m.discount) + '</td></tr>' +
+        '<tr><td>Delivery Charge</td><td class="right">+ ' + money(m.deliveryCharge) + '</td></tr>' +
+        (num(m.vat) ? '<tr><td>VAT</td><td class="right">+ ' + money(m.vat) + '</td></tr>' : '') +
+        '<tr class="memo-grand"><td>Grand Total</td><td class="right">' + money(m.grandTotal) + '</td></tr>' +
+        '<tr><td>Advance</td><td class="right">- ' + money(m.advance) + '</td></tr>' +
+        '<tr class="memo-due"><td>Due</td><td class="right">' + money(m.due) + '</td></tr>' +
+      '</table></div></div>' +
+    '<div class="memo-sign"><div>Customer Signature</div><div>Authorized Signature</div></div>' +
+    '<div class="memo-thanks">Dhonnobad! Panyo-r gunogota niye kono obhijog thakle 3 diner moddhe janan.</div>' +
+    '</div>';
 }
 
 /* ===================== delivery & return ===================== */
@@ -5114,11 +5505,14 @@ function setRange(fromId, toId, mode) {
 }
 
 /* ===================== print preview ===================== */
-function printPreviewCurrent() {
+/* The memo on the form, as a sheet. Print and the two downloads all start from this
+   one object, so a memo cannot be saved as a picture showing different figures from
+   the copy that gets printed. Returns null when the form has no lines yet. */
+function memoPreviewDraft() {
   const valid = memoDraft.items.filter(x => x.productId && num(x.qty) > 0);
-  if (!valid.length) return alert('Age product din, tarpor print korun.');
+  if (!valid.length) return null;
   const fin = memoMath(valid, memoCharges());
-  const preview = {
+  return {
     memoNo: document.getElementById('memoNo').value,
     date: document.getElementById('memoDate').value || today(),
     customerName: document.getElementById('customerName').value.trim() || '-',
@@ -5133,8 +5527,29 @@ function printPreviewCurrent() {
     vat: fin.vat, grandTotal: fin.grandTotal, advance: fin.advance, due: fin.due,
     note: document.getElementById('memoNote').value.trim()
   };
-  document.getElementById('printArea').innerHTML = memoSheet(preview);
-  window.print();
+}
+
+function printPreviewCurrent() {
+  const preview = memoPreviewDraft();
+  if (!preview) return alert('Age product din, tarpor print korun.');
+  printMemoSheet(preview);
+}
+
+/* Preview the memo being written, in the same modal the history uses, so the export
+   buttons sit next to it. Nothing is saved to the book by looking. */
+function previewCurrentMemo() {
+  const preview = memoPreviewDraft();
+  if (!preview) return alert('Age product din, tarpor preview korun.');
+  document.getElementById('viewBody').innerHTML = memoSheet(preview);
+  const no = document.getElementById('viewMemoNo');
+  if (no) no.textContent = (preview.memoNo || '(unsaved)') + '  |  ' + preview.customerName;
+  document.getElementById('viewModal').classList.add('show');
+}
+
+function savePreviewMemo(kind) {
+  const preview = memoPreviewDraft();
+  if (!preview) return alert('Age product din, tarpor save korun.');
+  kind === 'pdf' ? saveMemoPDF(preview) : saveMemoPNG(preview);
 }
 
 /* ===================== CSV export ===================== */
