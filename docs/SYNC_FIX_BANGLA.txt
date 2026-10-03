@@ -1,0 +1,98 @@
+SYNC THIK KORAR NIYOM (Apps Script re-deploy)
+=============================================
+
+Keno dorkar:
+  Apnar sync URL ta ekhono PURONO Code.gs chalacche. Tai phone ar PC-er
+  data ek dusrore jay na, ar notun feature (verified sync, auto-pull,
+  purono memo-r profit repair) kaaj kore na. URL ta same rakhbo, shudhu
+  tar pichone notun code boshabo. Data kichui muchbe na.
+
+
+STEP 1 — Apps Script kholun
+---------------------------
+  Browser-e jaan:  https://script.google.com
+  Apnar Texpark project ta khulun (je ta apnar Google Sheet-er sathe juda).
+  Na pele: apnar Sheet kholun -> Extensions -> Apps Script.
+
+
+STEP 2 — Purono code muchun
+---------------------------
+  Bame file list-e "Code.gs" e click korun.
+  Editor-er bhitore click kore  Ctrl+A  (sob select)  ->  Delete.
+  Editor ta ekhon faka hobe. (Bhoy nei, GitHub-e code rakha ache.)
+
+
+STEP 3 — Notun code nin
+-----------------------
+  Ei link khulun (phone-e-o khulbe):
+  https://raw.githubusercontent.com/appleziarash1/texpark-pro/main/Code.gs
+  Pura text ta  Ctrl+A  ->  Ctrl+C  (copy).
+
+
+STEP 4 — Paste korun ar save korun
+----------------------------------
+  Apps Script editor-e ferot giye  Ctrl+V  (paste)  ->  Ctrl+S  (save).
+  Save na hole deploy korle purono code-i jabe.
+
+
+STEP 5 — Notun version deploy korun (guruttopurno step)
+-------------------------------------------------------
+  Upore dane  Deploy  ->  Manage deployments.
+  Apnar current deployment-er dane  pencil (Edit)  icon-e click korun.
+  Version  box-e giye  "New version"  select korun.
+  Deploy  e click korun.
+
+  ** Manage deployments na pele: Deploy -> New deployment -> Web app.
+     Sekhetre URL NOTUN hobe. Tokhon notun URL ta copy kore app-er
+     Settings-e (PC ar phone dutotei) boshate hobe.
+
+
+STEP 6 — Settings gulo thik rak hun
+-----------------------------------
+  Deployment settings:
+    Execute as        : Me (apnar email)
+    Who has access    : Anyone
+  Deploy korar por je URL dekhbe seta AGER URL-er sathe ek hobe.
+  Same thakle app-e kichu bodlate hobe na.
+
+
+STEP 7 — Test korun
+-------------------
+  App kholun -> Settings -> "Google Sheets Sync" ->  Test Sync  chepun.
+  Thik hole asbe:   "✓ Sync kaj korche. Sheet-e response esheche: ..."
+
+  Jodi ashe:  "✗ Ei URL-e purono Code.gs cholche"
+  Tahole STEP 5 ta hoy ni — "New version" select korechen kina abar dekhen.
+
+
+STEP 8 — Purono memo-r profit thik korun
+----------------------------------------
+  Redeploy sesh hole:
+  App -> Backup / Data -> "Ki ki bhul ache dekhun"  (koto gulo memo bhul dekhabe)
+  Tarpor  "Profit thik kore din"  chepun.
+
+  Ki bodlabe   : shudhu cost ar profit.
+  Ki bodlabe na: bikri, customer, qty, due, stock — kichui na.
+  Bhul na thakle button kichui korbe na (abar chalale kono khoti nei).
+
+  Warning banner ta Dashboard-e ar Profit page-e-o ashe, ar ek click-e
+  soja ei repair card khule dey.
+
+
+STEP 9 — Onno device
+--------------------
+  Auto-pull on thakle PC/phone nijei notun data niye ashe (app khola
+  thakle ~30 second por por). Tachara o parben: Settings -> Test Sync,
+  ba Backup / Data -> "Sheet-e ki ki ache".
+
+
+PROBLEM HOLE
+------------
+  * "Page not found (404)" Apps Script-e  -> Deploy ta "Web app" hisebe
+    kora hoyni. Manage deployments theke type thik korun.
+  * Test Sync-e permission error           -> "Who has access: Anyone" din,
+    ar ekbar authorize korun (Advanced -> Go to project -> Allow).
+  * App-e purono version atke ache         -> Settings -> App Update ->
+    "Update chek korun". Version 2027-01-01.8 ba beshi thaka uchit.
+  * Kichu bujhte na parle               -> ei file ta repo-te rakha ache:
+    https://github.com/appleziarash1/texpark-pro/blob/main/docs/SYNC_FIX_BANGLA.txt
