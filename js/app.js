@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.7';
+const APP_VERSION = '2027-01-01.8';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -241,6 +241,51 @@ function adoptSyncFromLink() {
   return true;
 }
 
+/* A device whose memos froze a cost of 0 (or a stale one) reports profit that is
+   too high - at the extreme, profit equals the whole sale. The owner read this as
+   "profit ulta palta" and had no way to tell it apart from the app being broken.
+   Say it where he looks, with the exact number and the fix one click away. */
+function costWarnHTML() {
+  const s = staleCostSummary();
+  if (!s.count) return '';
+  const over = s.diff < 0;
+  return '<div class="sw-head">⚠ ' + s.count + ' ta memo-r profit bhul ache</div>' +
+    '<div class="sw-body">' +
+      'Ei memo gulo jokhon lekha hoyechilo tokhon product-e buying price (cost) chilo na, ' +
+      'tai memo-te cost <b>0</b> boshe geche. Ekhon product-e dam ache, kintu purono memo ' +
+      'seta jane na — tai profit <b>' + money(s.wasProfit) + '</b> dekhacche, ashole ' +
+      '<b>' + money(s.nowProfit) + '</b> hobe' +
+      (over ? ' (<b>' + money(Math.abs(s.diff)) + ' beshi</b> dekhacche)' : '') + '.' +
+      '<br><br>' +
+      '<b>Bikri, qty, due ar stock kichui bodlabe na</b> — shudhu profit ar cost thik hobe. ' +
+      'Apni dekhe onumoti dile tarpor likhbe.' +
+    '</div>' +
+    '<div class="row">' +
+      '<button class="btn-pink btn-sm" onclick="goFixMemoCost()">Profit thik korun</button>' +
+    '</div>';
+}
+
+/* Send the owner to the repair panel with the preview already open, so he does not
+   have to find the card on the Backup page himself. */
+function goFixMemoCost() {
+  nav('backup');
+  setTimeout(function () {
+    previewMemoCostRepair();
+    const out = document.getElementById('repairOut');
+    if (out && out.scrollIntoView) out.scrollIntoView({ block: 'center' });
+  }, 60);
+}
+
+function renderCostWarn() {
+  const html = costWarnHTML();
+  [['costWarn', 'dashboard'], ['costWarnProfit', 'profit']].forEach(pair => {
+    const box = document.getElementById(pair[0]);
+    if (!box) return;
+    box.style.display = html ? '' : 'none';
+    box.innerHTML = html;
+  });
+}
+
 function renderDashboard() {
   const t0 = today();
   const monthStart = t0.slice(0, 8) + '01';
@@ -305,6 +350,7 @@ function renderDashboard() {
 
   document.getElementById('dashDeliveries').innerHTML = pendingDeliveryHTML();
   renderSyncWarning();
+  renderCostWarn();
 }
 
 function pendingDeliveryHTML() {
@@ -1566,6 +1612,8 @@ function renderProfit() {
         '<td class="right">' + (r.sales ? round2((r.profit / r.sales) * 100) : 0) + '%</td></tr>').join('') +
       '</tbody></table></div>'
     : '<div class="empty">Ei timeframe-e kono sale nei</div>';
+
+  renderCostWarn();
 }
 
 function renderPL() {
@@ -1890,6 +1938,16 @@ async function testSync() {
   if (!url) { out.innerHTML = '<span class="red">Sync URL nei. Age URL save korun.</span>'; return; }
   out.textContent = 'Testing...';
   try {
+    /* Probe GET first. The old deployment answers every GET with a plain
+       "running" message and has no doPost at all, so a POST alone looked like a
+       network problem when it was really a stale deployment. Asking for the pull
+       action tells the two apart: the current script echoes the action it ran. */
+    const probe = await fetch(url + '?action=pullall', { method: 'GET' });
+    const ptxt = await probe.text();
+    let pj = null;
+    try { pj = JSON.parse(ptxt); } catch (e) {}
+    const stale = pj && pj.success === true && !('devices' in pj) && !('json' in pj);
+
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -1900,6 +1958,15 @@ async function testSync() {
     try { parsed = JSON.parse(txt); } catch (e) {}
     if (parsed && parsed.success !== false) {
       out.innerHTML = '<span class="green">✓ Sync kaj korche. Sheet-e response esheche: ' + esc(parsed.message || 'ok') + '</span>';
+    } else if (stale) {
+      out.innerHTML = '<span class="red">✗ Ei URL-e purono Code.gs cholche — sync kaj korbe na.</span>' +
+        '<div class="hint">Ei deployment purono: POST (data pathano) support kore na, ar ' +
+        'GET ?action=pull-o bujhe na. Tai memo phone theke PC-e jabe na, abar phone-e ' +
+        'PC-er data ashbe na — apni bhabchen sync hocche, hocche na.<br><br>' +
+        '<b>Thik korar upay:</b> Apps Script kholun → <b>Code.gs</b>-er pura code muche ' +
+        'repo-r <b>Code.gs</b> bosan → <b>Deploy → Manage deployments → Edit (pencil) → ' +
+        'Version: New version → Deploy</b>. URL ta same thakbe, kintu notun code cholbe. ' +
+        'Tarpor abar Test korun.</div>';
     } else {
       out.innerHTML = '<span class="orange">Response esheche kintu success na: ' + esc(txt.slice(0, 160)) + '</span>' +
         '<div class="hint">Code.gs update kore notun version deploy korechen kina check korun.</div>';

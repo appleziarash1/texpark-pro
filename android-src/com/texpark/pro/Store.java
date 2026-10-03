@@ -1052,6 +1052,25 @@ public class Store {
         return plan.size();
     }
 
+    /** One-line summary of the repair for a warning banner: how many memos are
+     *  wrong and how far the reported profit is off. Reads the same plan the apply
+     *  writes, so the banner can never promise a different number from the fix. */
+    public Map<String, Object> staleCostSummary() {
+        List<Map<String, Object>> plan = planMemoCostRepair();
+        double was = 0, now = 0;
+        for (Object po : plan) {
+            Map<String, Object> row = rec(po);
+            was += num(row.get("wasProfit"));
+            now += num(row.get("nowProfit"));
+        }
+        Map<String, Object> out = new LinkedHashMap<String, Object>();
+        out.put("count", (double) plan.size());
+        out.put("wasProfit", round2(was));
+        out.put("nowProfit", round2(now));
+        out.put("diff", round2(now - was));
+        return out;
+    }
+
     /* ============================ ageing ============================ */
 
     public Map<String, Object> ageingBuckets(List<Object> items, String todayStr) {

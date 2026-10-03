@@ -868,6 +868,16 @@ function applyMemoCostRepair() {
   return plan.length;
 }
 
+/* One-line summary of the repair for a warning banner: how many memos are wrong
+   and how far the reported profit is off. Reads the same plan the apply writes,
+   so the banner can never promise a different number from the fix. */
+function staleCostSummary() {
+  const plan = planMemoCostRepair();
+  const was = round2(plan.reduce((a, r) => a + r.wasProfit, 0));
+  const now = round2(plan.reduce((a, r) => a + r.nowProfit, 0));
+  return { count: plan.length, wasProfit: was, nowProfit: now, diff: round2(now - was) };
+}
+
 /* ============================ ageing ============================ */
 function ageingBuckets(items, todayStr) {
   const t = new Date(todayStr || today()).getTime();

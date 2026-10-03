@@ -8,7 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/logic.test.js && node test/sheet.test.js && node test/e2e.test.js && node test/cost.test.js && node test/journey.test.js && node test/autopull.test.js && node test/return.test.js && node test/pairing.test.js && node test/repair.test.js && node --test test/android.test.js && node --test test/native.test.js",
+    "test": "node test/logic.test.js && node test/sheet.test.js && node test/e2e.test.js && node test/cost.test.js && node test/journey.test.js && node test/autopull.test.js && node test/return.test.js && node test/pairing.test.js && node test/repair.test.js && node test/ownerdata.test.js && node --test test/android.test.js && node --test test/native.test.js",
     "dist": "electron-builder --win portable nsis"
   },
   "devDependencies": {

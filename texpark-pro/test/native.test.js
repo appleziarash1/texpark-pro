@@ -495,6 +495,11 @@ public class Driver {
       st.setProductCost(p, 180);                       // the correction
       List<Map<String,Object>> plan = st.planMemoCostRepair();
       out.put("planCount", plan.size());
+      Map<String,Object> staleBefore = st.staleCostSummary();
+      out.put("staleCount", staleBefore.get("count"));
+      out.put("staleWas", staleBefore.get("wasProfit"));
+      out.put("staleNow", staleBefore.get("nowProfit"));
+      out.put("staleDiff", staleBefore.get("diff"));
       Map<String,Object> row = plan.get(0);
       out.put("planMemoNo", row.get("memoNo"));
       out.put("wasCogs", row.get("wasCogs"));
@@ -650,6 +655,10 @@ test('native: the repair fixes old memos profit and leaves everything else alone
      the native half of the same repair the web app runs from Backup / Data. */
   const r = runNative({ op: 'costRepair' });
   assert.strictEqual(r.planCount, 1, 'only the stale memo is in the plan');
+  assert.strictEqual(r.staleCount, 1, 'the dashboard banner counts the stale memo');
+  assert.strictEqual(r.staleWas, 550, 'banner says what profit reads now');
+  assert.strictEqual(r.staleNow, 400, 'banner says what it should be');
+  assert.strictEqual(r.staleDiff, -150, 'banner says the figure is too high');
   assert.strictEqual(r.planMemoNo, 'TXP/SM/T-OLD');
   assert.strictEqual(r.wasCogs, 1650, 'old COGS was 10 x 165');
   assert.strictEqual(r.nowCogs, 1800, 'correct COGS is 10 x 180');

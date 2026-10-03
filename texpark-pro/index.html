@@ -70,6 +70,9 @@
              PC held four memos and the phone showed a fresh, empty shop; nothing on
              screen said why. -->
         <div id="syncWarn" class="sync-warn" style="display:none"></div>
+        <!-- The profit figure itself is the wrong one when a memo froze a 0 cost.
+             Shown on the page he opens first, next to the number it explains. -->
+        <div id="costWarn" class="sync-warn" style="display:none"></div>
         <div class="grid" style="margin-top:14px">
           <div class="card stat"><div class="label">Today Sales</div><div class="value" id="kTodaySales">৳0</div><div class="sub">Aaj-er bikri</div></div>
           <div class="card stat"><div class="label">Today Profit</div><div class="value green" id="kTodayProfit">৳0</div><div class="sub">Aaj-er labh</div></div>
@@ -353,6 +356,7 @@
       <section id="page-profit" class="page">
         <h1>Profit / Item</h1>
         <div class="muted">Kon product theke koto labh — cost baad diye</div>
+        <div id="costWarnProfit" class="sync-warn" style="display:none"></div>
         <div class="card" style="margin-top:13px">
           <div class="formgrid">
             <div><label>From</label><input id="prFrom" type="date" onchange="renderProfit()"></div>

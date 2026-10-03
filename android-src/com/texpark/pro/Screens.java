@@ -293,6 +293,29 @@ public class Screens {
             body.addView(warn);
         }
 
+        /* The profit figure itself is wrong when a memo froze a 0 cost: at the
+           extreme profit equals the whole sale, which the owner read as the app
+           being broken. Say it here, next to the number it explains. */
+        Map<String, Object> stale = store.staleCostSummary();
+        if (Store.num(stale.get("count")) > 0) {
+            final double wasP = Store.num(stale.get("wasProfit"));
+            final double nowP = Store.num(stale.get("nowProfit"));
+            int cnt = (int) Store.num(stale.get("count"));
+            LinearLayout warn = Ui.card(act, "\u26A0 " + cnt + " ta memo-r profit bhul ache");
+            warn.addView(Ui.label(act,
+                "Ei memo gulo jokhon lekha hoyechilo tokhon product-e buying price (cost) "
+                + "chilo na, tai memo-te cost 0 boshe geche. Ekhon product-e dam ache, kintu "
+                + "purono memo seta jane na \u2014 tai profit " + Ui.money(wasP) + " dekhacche, "
+                + "ashole " + Ui.money(nowP) + " hobe. Bikri, qty, due ar stock kichui "
+                + "bodlabe na \u2014 shudhu profit ar cost thik hobe."));
+            Button fix = Ui.primary(act, "Profit thik korun");
+            fix.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { go("backup"); }
+            });
+            warn.addView(fix);
+            body.addView(warn);
+        }
+
         body.addView(Ui.kpiRow(act,
             Ui.kpi(act, Ui.money(plToday.get("sales")), "Aaj-er bikri", Ui.NAVY),
             Ui.kpi(act, Ui.money(plToday.get("grossProfit")), "Aaj-er labh", Ui.GREEN)));
