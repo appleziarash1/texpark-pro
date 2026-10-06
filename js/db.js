@@ -17,12 +17,12 @@ const DEFAULT_SETTINGS = {
     vatReg: ''
   },
   memoPrefix: 'TXP/SM/',
-  deviceTag: '',               // 'PC' / 'PH' auto-boshe, Settings-e bodlano jay
+  deviceTag: '',               // 'PC' / 'PH' is set automatically, editable in Settings
   warnOnShortStock: true,      // show a reminder when stock is not entered yet
   lowStockLevel: 10,
   vatPercent: 0,
   autoBackup: true,
-  autoPull: true        // cloud theke notun data nijei niye asha
+  autoPull: true        // pull new data from the cloud by itself
 };
 
 function blankDB() {
@@ -479,16 +479,16 @@ function listSnapshots() {
 function restoreSnapshot(index) {
   const arr = listSnapshots();
   const s = arr[index];
-  if (!s) return alert('Snapshot nei.');
-  if (!confirm('Snapshot (' + new Date(s.at).toLocaleString() + ') restore korben? Ekhonkar data replace hobe.')) return;
+  if (!s) return alert('No snapshot.');
+  if (!confirm('Restore the snapshot from ' + new Date(s.at).toLocaleString() + '? The current data will be replaced.')) return;
   try {
     db = migrate(JSON.parse(s.data));
     if (!db.users || !db.users.length) db.users = defaultUsers();
     localStorage.setItem(KEY, JSON.stringify(db));
-    alert('Snapshot restore hoyeche. Page reload hobe.');
+    alert('Snapshot restored. The page will reload.');
     location.reload();
   } catch (e) {
-    alert('Snapshot restore fail: ' + e.message);
+    alert('Snapshot restore failed: ' + e.message);
   }
 }
 
@@ -589,7 +589,7 @@ function ensureStockCard(productId) {
     db.ledger.push({
       id: id(), at: new Date().toISOString(), date: today(), productId,
       type: 'AutoAdd', qty: 0, balance: s.available, ref: 'Memo',
-      note: 'Stock card created from a sales memo - received qty ekhono deya hoy ni'
+      note: 'Stock card created from a sales memo - received qty not entered yet'
     });
   }
   return s;

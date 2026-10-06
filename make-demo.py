@@ -32,7 +32,7 @@ GUIDE_URL = APP_URL + 'ANDROID_BANGLA.txt'
 TEMPLATE = """<!DOCTYPE html>
 <html lang="bn"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Texpark Pro &mdash; App nin</title>
+<title>Texpark Pro &mdash; Get the app</title>
 <style>
  body{margin:0;font-family:system-ui,'Segoe UI',sans-serif;background:#eef3f9;color:#233}
  .wrap{max-width:820px;margin:0 auto;padding:18px}
@@ -56,49 +56,44 @@ TEMPLATE = """<!DOCTYPE html>
  .foot{text-align:center;color:#7b8aa0;font-size:12px;margin:22px 0 8px}
 </style></head><body><div class="wrap">
 <header>
-  <h1>Texpark Pro &mdash; app nin</h1>
-  <p>TEXPARK BUYING HOUSE &middot; phone-er camera diye QR scan korun</p>
+  <h1>Texpark Pro &mdash; get the app</h1>
+  <p>TEXPARK BUYING HOUSE &middot; scan the QR with your phone camera</p>
 </header>
 
 <div class="grid">
   <div class="card">
     <h2>1. Android app (APK)</h2>
-    <div class="sub">Ei ta apnar asol app &mdash; memo, stock, hisheb sob</div>
+    <div class="sub">The real app &mdash; memos, stock, accounts and more</div>
     __QR_APK__
     <code class="url">__APK__</code>
     <ol class="steps">
-      <li>QR scan korun &mdash; APK file ta neme asbe</li>
-      <li>File ta tap korun, Android <b>Install</b> chepte bolbe</li>
-      <li>Prothom bar <b>"Install unknown apps"</b> permission chaibe &mdash; Allow korun</li>
-      <li>App khulbe, login: <code>admin</code> / <code>admin123</code></li>
+      <li>Scan the QR &mdash; the APK file downloads</li>
+      <li>Tap the file and Android will ask you to <b>Install</b></li>
+      <li>The first time it asks for <b>"Install unknown apps"</b> permission &mdash; tap Allow</li>
+      <li>The app opens. Sign in with your account</li>
     </ol>
   </div>
 
   <div class="card">
-    <h2>2. PC/phone browser e (web app)</h2>
-    <div class="sub">PC theke memo print korte ei ta khulun</div>
+    <h2>2. In a PC/phone browser (web app)</h2>
+    <div class="sub">Open this to print memos from the PC</div>
     __QR_APP__
     <code class="url">__APP__</code>
     <ol class="steps">
-      <li>Ei link ta PC-er browser-e khulun</li>
-      <li>Memo, stock, hisheb &mdash; sob ek-i jaygay</li>
-      <li>PC theke print korle memo ta kagaz-e beriye asbe</li>
+      <li>Open this link in the PC browser</li>
+      <li>Memos, stock, accounts &mdash; all in one place</li>
+      <li>Printing from the PC puts the memo on paper</li>
     </ol>
   </div>
 </div>
 
-<div class="cred">
-  <b>Login:</b> username <code>admin</code> &middot; password <code>admin123</code><br>
-  <span style="font-size:13px;color:#4a5b73">Prothom bar dhukar por password ta bodle nin (Users &amp; Roles page).</span>
-</div>
-
 <div class="note">
-  <b>Ei link ta paka &mdash; bondho hobe na.</b>
+  <b>This link is permanent &mdash; it will not go away.</b>
   <ol class="steps">
-    <li>App-er data apnar phone-ei thake &mdash; memo, stock, customer kothao jay na</li>
-    <li><b>Backup nin niyomito:</b> Settings &rarr; Backup / Data</li>
-    <li>Phone ar PC dutai ek data pabe &mdash; App-er Settings &rarr; Sync address-e
-        Google Sheet-er link ta din (ta hole dutai nijei milay)</li>
+    <li>The app's data stays on your phone &mdash; memos, stock and customers do not go anywhere</li>
+    <li><b>Back up regularly:</b> Settings &rarr; Backup / Data</li>
+    <li>Phone and PC can share one dataset &mdash; in the app's Settings &rarr; Sync address,
+        paste the Google Sheet link (then the two keep in step by themselves)</li>
     <li>Step-by-step Bangla guide: <a href="__GUIDE__">ANDROID_BANGLA.txt</a></li>
   </ol>
 </div>

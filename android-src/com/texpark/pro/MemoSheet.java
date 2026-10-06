@@ -247,7 +247,7 @@ final class MemoSheet {
         List<Object> items = Json.arr(m.get("items"));
         if (items.isEmpty()) {
             TextView empty = new TextView(c);
-            empty.setText("Kono product nei");
+            empty.setText("No products");
             empty.setTextColor(MUTED);
             empty.setTextSize(11f);
             empty.setGravity(Gravity.CENTER);

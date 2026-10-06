@@ -135,10 +135,10 @@ eq(plSummary('', '').grossProfit, 61460, 'the P&L gross profit is wrong by the s
 
 console.log('\n--- the dashboard now says so, with the real figure ---');
 nav('dashboard');
-ok(el('costWarn').innerHTML.includes('5 ta memo'), 'dashboard banner counts the five memos');
+ok(el('costWarn').innerHTML.includes('5 memo(s)'), 'dashboard banner counts the five memos');
 ok(el('costWarn').innerHTML.includes('61,460'), 'banner shows what is being reported now');
 ok(el('costWarn').innerHTML.includes('17,135'), 'banner shows what it should be');
-ok(el('costWarn').innerHTML.includes('beshi'), 'banner says the figure is too high, not too low');
+ok(el('costWarn').innerHTML.includes('too high'), 'banner says the figure is too high, not too low');
 eq(el('costWarn').style.display, '', 'banner is visible');
 
 console.log('\n--- the Profit page carries the same warning ---');

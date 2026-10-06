@@ -43,14 +43,14 @@ public class ScreensMore {
         Button save = Ui.primary(s.act, "Save Customer");
         save.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (name.getText().toString().trim().isEmpty()) { s.toast("Nam din."); return; }
+                if (name.getText().toString().trim().isEmpty()) { s.toast("Enter a name."); return; }
                 Map<String, Object> c = new LinkedHashMap<String, Object>();
                 c.put("id", Store.id());
                 c.put("name", name.getText().toString().trim());
                 c.put("phone", phone.getText().toString().trim());
                 c.put("address", addr.getText().toString().trim());
                 store.list("customers").add(c);
-                s.afterSave("Customer save hoyeche.");
+                s.afterSave("Customer saved.");
             }
         });
         form.addView(save);
@@ -96,14 +96,14 @@ public class ScreensMore {
                                 pay.put("note", "Received payment");
                                 store.list("payments").add(pay);
                                 applyPayment(store, Store.str(c, "id"), Store.str(c, "name"), amt);
-                                s.afterSave("Payment niye newa hoyeche.");
+                                s.afterSave("Payment received.");
                             }
                         });
                 }
             });
             list.addView(r);
             if (due != 0) {
-                list.addView(Ui.label(s.act, "Baki " + Ui.money(dueFig) + " \u2014 tap kore payment nin"));
+                list.addView(Ui.label(s.act, "Pending " + Ui.money(dueFig) + " \u2014 tap to take a payment"));
             }
         }
         body.addView(list);
@@ -161,7 +161,7 @@ public class ScreensMore {
                 new String[]{e.getKey(), Ui.money(billed), Ui.money(billed - due), Ui.money(due)},
                 new float[]{3.4f, 2f, 2f, 2f}, due > 0 ? Ui.AMBER : Ui.TEXT, false));
         }
-        if (byName.isEmpty()) list.addView(Ui.label(s.act, "Kono memo nei."));
+        if (byName.isEmpty()) list.addView(Ui.label(s.act, "No memos."));
         body.addView(list);
         return Ui.scroller(s.act, body);
     }
@@ -180,7 +180,7 @@ public class ScreensMore {
         Button save = Ui.primary(s.act, "Save Supplier");
         save.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (name.getText().toString().trim().isEmpty()) { s.toast("Nam din."); return; }
+                if (name.getText().toString().trim().isEmpty()) { s.toast("Enter a name."); return; }
                 Map<String, Object> c = new LinkedHashMap<String, Object>();
                 c.put("id", Store.id());
                 c.put("name", name.getText().toString().trim());
@@ -188,13 +188,13 @@ public class ScreensMore {
                 c.put("phone", phone.getText().toString().trim());
                 c.put("address", addr.getText().toString().trim());
                 store.list("suppliers").add(c);
-                s.afterSave("Supplier save hoyeche.");
+                s.afterSave("Supplier saved.");
             }
         });
         form.addView(save);
         body.addView(form);
 
-        LinearLayout list = Ui.card(s.act, "Supplier list o payable");
+        LinearLayout list = Ui.card(s.act, "Supplier list and payable");
         list.addView(Ui.cells(s.act,
             new String[]{"SUPPLIER", "PHONE", "PURCHASED", "PAYABLE"},
             new float[]{3.4f, 2.4f, 2.2f, 2.2f}, Ui.NAVY, true));
@@ -261,7 +261,7 @@ public class ScreensMore {
             public void onClick(View v) {
                 String pname = product.getText().toString().trim();
                 double q = Store.num(qty.getText().toString());
-                if (pname.isEmpty() || q <= 0) { s.toast("Product ar qty din."); return; }
+                if (pname.isEmpty() || q <= 0) { s.toast("Enter a product and qty."); return; }
                 // A purchase may name a product that does not exist yet: buying it is
                 // exactly the moment it becomes real, so it is created here.
                 Map<String, Object> p = null;
@@ -307,7 +307,7 @@ public class ScreensMore {
                 store.map("seq").put("purchase", Long.valueOf((long) Store.num(store.map("seq").get("purchase")) + 1));
                 store.applyPurchaseToStock(pu);
                 pd.reset(store);
-                s.afterSave("Purchase save hoyeche, stock barche.");
+                s.afterSave("Purchase saved, stock raised.");
             }
         });
         form.addView(save);
@@ -334,7 +334,7 @@ public class ScreensMore {
     static View delivery(final Screens s) {
         final Store store = s.store;
         LinearLayout body = Ui.col(s.act);
-        body.addView(Ui.label(s.act, "Memo select korle update form khulbe."));
+        body.addView(Ui.label(s.act, "Select a memo to open the update form."));
 
         LinearLayout list = Ui.card(s.act, "Delivery Tracking");
         for (Object o : store.list("deliveries")) {
@@ -342,7 +342,7 @@ public class ScreensMore {
             double left = Store.num(d.get("qty")) - Store.num(d.get("delivered"));
             list.addView(Ui.cells(s.act,
                 new String[]{Store.str(d, "memoNo"), Store.str(d, "date"),
-                             Ui.qty(left) + " baki"},
+                             Ui.qty(left) + " pending"},
                 new float[]{3f, 2.4f, 2.4f}, left > 0 ? Ui.AMBER : Ui.GREEN, true));
             list.addView(Ui.cells(s.act,
                 new String[]{Store.str(d, "receiver"), Store.str(d, "driver"),
@@ -350,7 +350,7 @@ public class ScreensMore {
                 new float[]{3f, 3f, 2.4f}, Ui.MUTED, false));
         }
         if (store.list("deliveries").isEmpty()) {
-            list.addView(Ui.label(s.act, "Ekhono delivery nei."));
+            list.addView(Ui.label(s.act, "No deliveries yet."));
         }
         body.addView(list);
 
@@ -373,14 +373,14 @@ public class ScreensMore {
                 public void onClick(View v) {
                     store.reverseReturnFromStock(r);
                     store.list("returns").remove(r);
-                    s.afterSave("Return delete hoyeche, stock thik kora hoyeche.");
+                    s.afterSave("Return deleted, stock corrected.");
                 }
             });
             line.addView(del);
             rets.addView(line);
         }
         if (store.list("returns").isEmpty()) {
-            rets.addView(Ui.label(s.act, "Ekhono return nei."));
+            rets.addView(Ui.label(s.act, "No returns yet."));
         }
         body.addView(rets);
 
@@ -392,7 +392,7 @@ public class ScreensMore {
             if (store.pendingQtyOf(m) > 0) {
                 rMemoIds.add(Store.str(m, "id"));
                 rMemoNos.add(Store.str(m, "memoNo") + " \u2022 " + Store.str(m, "customerName")
-                    + " \u2022 " + Ui.qty(store.pendingQtyOf(m)) + " baki");
+                    + " \u2022 " + Ui.qty(store.pendingQtyOf(m)) + " pending");
             }
         }
         if (!rMemoIds.isEmpty()) {
@@ -400,13 +400,13 @@ public class ScreensMore {
             final int[] chosen = {0};
             final Button rpicker = Ui.ghost(s.act, rMemoNos.get(0));
             final EditText rqty = Ui.number(s.act, "Return Qty", "");
-            final EditText rnote = Ui.field(s.act, "Note (kotha theke firse)", "", InputType.TYPE_CLASS_TEXT);
+            final EditText rnote = Ui.field(s.act, "Note (where it came back from)", "", InputType.TYPE_CLASS_TEXT);
             final String[] conditions = {"good", "damaged"};
             final String[] condition = {"good"};
             final Button rcond = Ui.ghost(s.act, "Condition: Good");
             rpicker.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
-                    s.choose("Memo bachun", rMemoNos, new Screens.OnText() {
+                    s.choose("Choose a memo", rMemoNos, new Screens.OnText() {
                         public void on(String idx) {
                             chosen[0] = (int) Store.num(idx);
                             rpicker.setText(rMemoNos.get(chosen[0]));
@@ -418,7 +418,7 @@ public class ScreensMore {
             });
             rcond.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
-                    s.choose("Condition bachun", new ArrayList<String>(java.util.Arrays.asList(conditions)),
+                    s.choose("Choose a condition", new ArrayList<String>(java.util.Arrays.asList(conditions)),
                         new Screens.OnText() {
                             public void on(String idx) {
                                 condition[0] = conditions[(int) Store.num(idx)];
@@ -431,11 +431,11 @@ public class ScreensMore {
             rsave.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
                     Map<String, Object> m = ScreensData.findMemo(store, rMemoIds.get(chosen[0]));
-                    if (m == null) { s.afterSave("Memo pawa jay ni."); return; }
+                    if (m == null) { s.afterSave("Memo not found."); return; }
                     double q = Store.num(rqty.getText().toString());
                     double pend = store.pendingQtyOf(m);
-                    if (q <= 0) { s.afterSave("Return qty din."); return; }
-                    if (q > pend) { s.afterSave("Return qty baki " + Ui.qty(pend) + "-er beshi hote pare na."); return; }
+                    if (q <= 0) { s.afterSave("Enter a return qty."); return; }
+                    if (q > pend) { s.afterSave("Return qty cannot exceed the pending " + Ui.qty(pend) + "."); return; }
                     Map<String, Object> r = new LinkedHashMap<String, Object>();
                     r.put("id", Store.id());
                     r.put("memoId", Store.str(m, "id"));
@@ -462,8 +462,8 @@ public class ScreensMore {
                     }
                     r.put("lines", lines);
                     store.saveReturn(r);
-                    s.afterSave("Return save hoyeche" +
-                        ("good".equals(condition[0]) ? ", stock-e jog hoyeche." : ", stock-e jog hoy ni (damaged)."));
+                    s.afterSave("Return saved" +
+                        ("good".equals(condition[0]) ? ", stock added." : ", not added to stock (damaged)."));
                 }
             });
             addR.addView(rpicker);
@@ -498,7 +498,7 @@ public class ScreensMore {
             final EditText receiver = Ui.field(s.act, "Receiver Name", "", InputType.TYPE_CLASS_TEXT);
             picker.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
-                    s.choose("Memo bachun", memoNos, new Screens.OnText() {
+                    s.choose("Choose a memo", memoNos, new Screens.OnText() {
                         public void on(String idx) {
                             chosen[0] = (int) Store.num(idx);
                             picker.setText(memoNos.get(chosen[0]));
@@ -533,7 +533,7 @@ public class ScreensMore {
                     d.put("vehicle", vehicle.getText().toString().trim());
                     d.put("receiver", receiver.getText().toString().trim());
                     store.list("deliveries").add(d);
-                    s.afterSave("Delivery add hoyeche.");
+                    s.afterSave("Delivery added.");
                 }
             });
             add.addView(save);
@@ -574,7 +574,7 @@ public class ScreensMore {
                              Ui.qty(t[0]), Ui.money(t[1]), Ui.money(t[2]), Ui.money(profit)},
                 new float[]{3.4f, 1.2f, 2f, 2f, 2f}, profit >= 0 ? Ui.GREEN : Ui.RED, false));
         }
-        if (byProduct.isEmpty()) list.addView(Ui.label(s.act, "Kono memo nei."));
+        if (byProduct.isEmpty()) list.addView(Ui.label(s.act, "No memos."));
         list.addView(Ui.divider(s.act));
         list.addView(Ui.cells(s.act, new String[]{"Total", "", "", "", Ui.money(totProfit)},
                 new float[]{3.4f, 1.2f, 2f, 2f, 2f}, Ui.NAVY, true));
@@ -701,7 +701,7 @@ public class ScreensMore {
             pay.addView(Ui.cells(s.act, new String[]{e.getKey(), Ui.money(e.getValue())},
                 new float[]{3f, 2f}, e.getValue() > 0 ? Ui.RED : Ui.TEXT, false));
         }
-        if (bySupplier.isEmpty()) pay.addView(Ui.label(s.act, "Kono purchase nei."));
+        if (bySupplier.isEmpty()) pay.addView(Ui.label(s.act, "No purchases."));
         body.addView(pay);
         return Ui.scroller(s.act, body);
     }
@@ -739,7 +739,7 @@ public class ScreensMore {
         save.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 double amt = Store.num(amount.getText().toString());
-                if (amt <= 0) { s.toast("Amount din."); return; }
+                if (amt <= 0) { s.toast("Enter an amount."); return; }
                 Map<String, Object> e = new LinkedHashMap<String, Object>();
                 e.put("id", Store.id());
                 e.put("date", date.getText().toString());
@@ -747,7 +747,7 @@ public class ScreensMore {
                 e.put("amount", Double.valueOf(amt));
                 e.put("note", note.getText().toString().trim());
                 store.list("expenses").add(e);
-                s.afterSave("Expense save hoyeche.");
+                s.afterSave("Expense saved.");
             }
         });
         form.addView(save);
@@ -782,7 +782,7 @@ public class ScreensMore {
                 | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         final String[] roles = {"admin", "manager", "salesman", "accountant"};
         final int[] role = {2};
-        final Button roleBtn = Ui.ghost(s.act, "Salesman \u2014 memo o delivery");
+        final Button roleBtn = Ui.ghost(s.act, "Salesman \u2014 memo and delivery");
         roleBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 s.choose("Role", new ArrayList<String>(java.util.Arrays.asList(roles)),
@@ -803,10 +803,10 @@ public class ScreensMore {
             public void onClick(View v) {
                 String u = un.getText().toString().trim();
                 String p = pw.getText().toString();
-                if (u.isEmpty() || p.isEmpty()) { s.toast("Username ar password din."); return; }
+                if (u.isEmpty() || p.isEmpty()) { s.toast("Enter a username and password."); return; }
                 for (Object o : store.list("users")) {
                     if (Store.str(o, "username").equals(u)) {
-                        s.toast("Ei username age ache.");
+                        s.toast("That username already exists.");
                         return;
                     }
                 }
@@ -820,7 +820,7 @@ public class ScreensMore {
                 nuser.put("active", Boolean.TRUE);
                 nuser.put("createdAt", Store.today());
                 store.list("users").add(nuser);
-                s.afterSave("User add hoyeche.");
+                s.afterSave("User added.");
             }
         });
         form.addView(add);
@@ -837,10 +837,10 @@ public class ScreensMore {
                 del.setTextColor(Ui.RED);
                 del.setOnClickListener(new View.OnClickListener() {
                     public void onClick(View v) {
-                        s.confirm("User ta muchhe felben?", new Runnable() {
+                        s.confirm("Delete this user?", new Runnable() {
                             public void run() {
                                 store.list("users").remove(u);
-                                s.afterSave("User delete hoyeche.");
+                                s.afterSave("User deleted.");
                             }
                         });
                     }
@@ -863,12 +863,12 @@ public class ScreensMore {
                 Map<String, Object> me = me(store);
                 if (me == null) return;
                 if (!Store.str(me, "pass").equals(Store.hash(oldP.getText().toString()))) {
-                    s.toast("Purono password bhul.");
+                    s.toast("The current password is wrong.");
                     return;
                 }
-                if (newP.getText().toString().isEmpty()) { s.toast("Notun password din."); return; }
+                if (newP.getText().toString().isEmpty()) { s.toast("Enter a new password."); return; }
                 me.put("pass", Store.hash(newP.getText().toString()));
-                s.afterSave("Password bodlano hoyeche.");
+                s.afterSave("Password changed.");
             }
         });
         pass.addView(chg);
@@ -892,7 +892,7 @@ public class ScreensMore {
         final Map<String, Object> comp = store.company();
         LinearLayout body = Ui.col(s.act);
 
-        LinearLayout form = Ui.card(s.act, "Company (memo-te print hobe)");
+        LinearLayout form = Ui.card(s.act, "Company (printed on memos)");
         final EditText cName = Ui.field(s.act, "Company Name", Store.str(comp, "name"), InputType.TYPE_CLASS_TEXT);
         final EditText tag = Ui.field(s.act, "Tagline", Store.str(comp, "tagline"), InputType.TYPE_CLASS_TEXT);
         final EditText md = Ui.field(s.act, "Managing Director", Store.str(comp, "md"), InputType.TYPE_CLASS_TEXT);
@@ -929,7 +929,7 @@ public class ScreensMore {
                 String now = Store.nowIso();
                 set.put("companyUpdatedAt", now);
                 set.put("settingsUpdatedAt", now);
-                s.afterSave("Settings save hoyeche.");
+                s.afterSave("Settings saved.");
             }
         });
         form.addView(save);
@@ -937,8 +937,8 @@ public class ScreensMore {
 
         LinearLayout sync = Ui.card(s.act, "Google Sheets Sync");
         sync.addView(Ui.label(s.act,
-            "Ei sync verify kore \u2014 response na pele \"synced\" bole na. Internet na thakle "
-            + "ar pore pathano hoy."));
+            "This sync verifies the reply \u2014 with no reply it will not say \"synced\". If the "
+            + "internet is down, it sends later."));
         final EditText url = Ui.field(s.act, "Apps Script Web App URL",
                 Store.str(set, "syncUrl"), InputType.TYPE_TEXT_VARIATION_URI);
         sync.addView(url);
@@ -946,17 +946,17 @@ public class ScreensMore {
         saveUrl.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 set.put("syncUrl", url.getText().toString().trim());
-                s.afterSave("Sync URL save hoyeche.");
+                s.afterSave("Sync URL saved.");
             }
         });
         Button test = Ui.ghost(s.act, "Test Sync");
         test.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 final String u = url.getText().toString().trim();
-                if (u.isEmpty()) { s.toast("Age sync URL din."); return; }
+                if (u.isEmpty()) { s.toast("Enter the sync URL first."); return; }
                 set.put("syncUrl", u);
                 store.commit();
-                s.toast("Sync test pathano hoche...");
+                s.toast("Sending the sync test...");
                 new Thread(new Runnable() {
                     public void run() {
                         final String r = Sync.push(store, u);
@@ -973,8 +973,8 @@ public class ScreensMore {
 
         LinearLayout rule = Ui.card(s.act, "Stock Rule");
         rule.addView(Ui.label(s.act,
-            "Memo-i ashol. Stock na thakleo memo save hobe \u2014 ar jei product memo-te "
-            + "uthbe seta Stock page-e nijei bose jabe. Memo kokhono atkabe na."));
+            "The memo is the source of truth. It saves even with no stock \u2014 and any "
+            + "product on it lands in the Stock page by itself. A memo never gets stuck."));
         body.addView(rule);
 
         LinearLayout about = Ui.card(s.act, "App");
@@ -995,31 +995,31 @@ public class ScreensMore {
 
         LinearLayout b = Ui.card(s.act, "Backup & Restore");
         b.addView(Ui.label(s.act,
-            "Data apnar phone-e (app-er private folder-e) thake. Cloud backup thakle "
-            + "PC/phone hariye gele sekhan theke sob fire asha jabe."));
-        Button file = Ui.ghost(s.act, "Backup file likhun");
+            "Data stays on your phone (in the app's private folder). With a cloud backup, "
+            + "if the PC/phone is lost, everything can be brought back from there."));
+        Button file = Ui.ghost(s.act, "Write a backup file");
         file.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 String path = MainActivity.writeBackup(store);
-                s.toast(path == null ? "Backup likhte parlam na."
-                        : "Backup likha hoyeche:\n" + path);
+                s.toast(path == null ? "Could not write the backup."
+                        : "Backup written:\n" + path);
             }
         });
-        Button restore = Ui.ghost(s.act, "Latest safety copy fire aan");
+        Button restore = Ui.ghost(s.act, "Bring back the latest safety copy");
         restore.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 final List<Object> snaps = MainActivity.listSnapshots(store);
-                if (snaps.isEmpty()) { s.toast("Kono snapshot nei."); return; }
+                if (snaps.isEmpty()) { s.toast("No snapshots."); return; }
                 List<String> labels = new ArrayList<String>();
                 for (Object o : snaps) {
                     labels.add(String.valueOf(Store.rec(o).get("sig")) + " @ "
                             + new java.text.SimpleDateFormat("dd/MM HH:mm", Locale.US)
                                 .format(new java.util.Date((long) Store.num(Store.rec(o).get("at")))));
                 }
-                s.choose("Snapshot restore", labels, new Screens.OnText() {
+                s.choose("Restore a snapshot", labels, new Screens.OnText() {
                     public void on(String idx) {
                         final int i = (int) Store.num(idx);
-                        s.confirm("Snapshot ta restore korben? Ekhonkar data replace hobe.",
+                        s.confirm("Restore this snapshot? The current data will be replaced.",
                             new Runnable() {
                                 public void run() {
                                     String r = MainActivity.restoreSnapshot(store, i);
@@ -1038,17 +1038,17 @@ public class ScreensMore {
         /* Old memos froze the buying price they were written with, so a product price
            corrected today does not reach back into them. Same repair as the web app:
            show what is wrong, then rewrite cost/cogs/profit only after he says yes. */
-        LinearLayout fix = Ui.card(s.act, "Purono memo-r profit thik korun");
+        LinearLayout fix = Ui.card(s.act, "Fix old memos' profit");
         fix.addView(Ui.label(s.act,
-            "Memo save howar shomoy tar buying price memo-te lekha hoye jay. Tai product-e "
-            + "dam thik korleo purono memo-r profit nijei thik hoy na. Niche dekhun koto "
-            + "gulo bhul ache, tarpor onumoti dile product-er ekhonkar dam diye hishab thik "
-            + "kore dibo. Bikri, qty, due ar stock kichui bodlabe na."));
-        Button scan = Ui.ghost(s.act, "Ki ki bhul ache dekhun");
+            "When a memo is saved, its buying price is written onto the memo. So even after "
+            + "the product price is corrected, an old memo's profit does not fix itself. Below "
+            + "you can see how many are wrong; approve it and the figures will be recalculated "
+            + "with the product's current price. Sales, qty, due and stock are all untouched."));
+        Button scan = Ui.ghost(s.act, "Show what is wrong");
         scan.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 List<Map<String, Object>> plan = store.planMemoCostRepair();
-                if (plan.isEmpty()) { s.toast("Sob memo-r profit already thik ache."); return; }
+                if (plan.isEmpty()) { s.toast("Every memo's profit is already correct."); return; }
                 double was = 0, now = 0;
                 List<String> lines = new ArrayList<String>();
                 for (Object po : plan) {
@@ -1060,20 +1060,20 @@ public class ScreensMore {
                             + "\n" + Ui.money(r.get("wasProfit")) + "  \u2192  " + Ui.money(r.get("nowProfit")));
                 }
                 final double fw = Store.round2(was), fn = Store.round2(now);
-                s.choose("Profit thik korun (" + plan.size() + " memo)\n"
-                        + "Purono: " + Ui.money(fw) + "\nNotun:  " + Ui.money(fn),
+                s.choose("Fix the profit (" + plan.size() + " memo)\n"
+                        + "Was: " + Ui.money(fw) + "\nNow: " + Ui.money(fn),
                     lines, new Screens.OnText() {
                         public void on(String idx) {
                             final int i = (int) Store.num(idx);
-                            s.confirm(plan.size() + " ta memo-r cost/profit thik korben?\n\n"
-                                    + "Purono profit: " + Ui.money(fw) + "\n"
-                                    + "Notun profit:  " + Ui.money(fn) + "\n\n"
-                                    + "Bikri, qty, due ar stock kichui bodlabe na.",
+                            s.confirm("Fix the cost/profit of " + plan.size() + " memo(s)?\n\n"
+                                    + "Old profit: " + Ui.money(fw) + "\n"
+                                    + "New profit: " + Ui.money(fn) + "\n\n"
+                                    + "Sales, qty, due and stock are all untouched.",
                                 new Runnable() {
                                     public void run() {
                                         int n = store.applyMemoCostRepair();
                                         store.commit();
-                                        s.toast(n + " ta memo-r profit thik kora hoyeche.");
+                                        s.toast(n + " memo(s)' profit fixed.");
                                         s.render();
                                     }
                                 });
@@ -1086,14 +1086,14 @@ public class ScreensMore {
 
         LinearLayout cloud = Ui.card(s.act, "Cloud Backup & Restore");
         cloud.addView(Ui.label(s.act,
-            "Ei phone-er pura data Google Sheet-e ek row hisebe rakha jay, ar "
-            + "onno device-er data ekhane nijei chole ashe."));
-        Button push = Ui.primary(s.act, "Cloud-e backup pathaan");
+            "This phone's whole database can be kept as one row in a Google Sheet, and "
+            + "other devices' data flows in here by itself."));
+        Button push = Ui.primary(s.act, "Send a cloud backup");
         push.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 String url = Store.str(store.settings(), "syncUrl");
-                if (url.isEmpty()) { s.toast("Age Settings-e sync URL bosan."); return; }
-                s.toast("Pathano hoche...");
+                if (url.isEmpty()) { s.toast("Set the sync URL in Settings first."); return; }
+                s.toast("Sending...");
                 new Thread(new Runnable() {
                     public void run() {
                         final String r = Sync.backup(store, url);
@@ -1104,12 +1104,12 @@ public class ScreensMore {
                 }).start();
             }
         });
-        Button pull = Ui.ghost(s.act, "Sheet theke sob data merge korun");
+        Button pull = Ui.ghost(s.act, "Merge all data from the sheet");
         pull.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 String url = Store.str(store.settings(), "syncUrl");
-                if (url.isEmpty()) { s.toast("Age Settings-e sync URL bosan."); return; }
-                s.toast("Sheet theke anaa hoche...");
+                if (url.isEmpty()) { s.toast("Set the sync URL in Settings first."); return; }
+                s.toast("Fetching from the sheet...");
                 new Thread(new Runnable() {
                     public void run() {
                         final String r = Sync.pullAll(store, url);

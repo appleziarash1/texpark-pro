@@ -247,15 +247,15 @@ public class Screens {
                 if (store.login(u.getText().toString(), pw.getText().toString())) {
                     go("dashboard");
                 } else {
-                    toast("Username ba password bhul.");
+                    toast("Wrong username or password.");
                 }
             }
         });
         body.addView(go);
 
         TextView hint = new TextView(act);
-        hint.setText("First time login: username admin, password admin123.\n"
-                + "Login korar por Settings \u2192 Change my password theke password bodle nin.");
+        hint.setText("Sign in with the shop's admin username and password.\n"
+                + "Change them any time in Settings \u2192 Change my password.");
         hint.setTextColor(Ui.MUTED);
         hint.setTextSize(11.5f);
         hint.setPadding(0, Ui.dp(act, 14), 0, 0);
@@ -279,13 +279,13 @@ public class Screens {
            it at the top of the page he actually opens, with the one fix available. */
         String syncUrl = Store.str(store.settings(), "syncUrl");
         if (syncUrl.isEmpty()) {
-            LinearLayout warn = Ui.card(act, "\u26A0 Sync bondho \u2014 onno device-er data ekhane ashbe na");
+            LinearLayout warn = Ui.card(act, "\u26A0 Sync is off \u2014 other devices' data will not appear here");
             warn.addView(Ui.label(act,
-                "Ei device ta ekhono Google Sheet-er sathe joda lage ni. Tai onno device-e "
-                + "(PC/phone) lekha memo/stock ekhane dekhabe na, ar ekhane lekha data-o "
-                + "onno jaygay jabe na. Settings \u2192 Google Sheets Sync-e giye Apps "
-                + "Script-er /exec URL ta bosan."));
-            Button openSettings = Ui.primary(act, "Settings-e URL bosan");
+                "This device is not yet paired with the Google Sheet. So any memo/stock "
+                + "written on another device (PC/phone) will not appear here, and data written "
+                + "here will not go anywhere else. Open Settings \u2192 Google Sheets Sync and "
+                + "enter the Apps Script /exec URL."));
+            Button openSettings = Ui.primary(act, "Set the URL in Settings");
             openSettings.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) { go("settings"); }
             });
@@ -301,14 +301,14 @@ public class Screens {
             final double wasP = Store.num(stale.get("wasProfit"));
             final double nowP = Store.num(stale.get("nowProfit"));
             int cnt = (int) Store.num(stale.get("count"));
-            LinearLayout warn = Ui.card(act, "\u26A0 " + cnt + " ta memo-r profit bhul ache");
+            LinearLayout warn = Ui.card(act, "\u26A0 " + cnt + " memo(s) show the wrong profit");
             warn.addView(Ui.label(act,
-                "Ei memo gulo jokhon lekha hoyechilo tokhon product-e buying price (cost) "
-                + "chilo na, tai memo-te cost 0 boshe geche. Ekhon product-e dam ache, kintu "
-                + "purono memo seta jane na \u2014 tai profit " + Ui.money(wasP) + " dekhacche, "
-                + "ashole " + Ui.money(nowP) + " hobe. Bikri, qty, due ar stock kichui "
-                + "bodlabe na \u2014 shudhu profit ar cost thik hobe."));
-            Button fix = Ui.primary(act, "Profit thik korun");
+                "When these memos were written the product had no buying price (cost), so the "
+                + "memo recorded cost 0. The product now has a price, but the old memo does not "
+                + "know it \u2014 so the profit reads " + Ui.money(wasP) + " when it should be "
+                + Ui.money(nowP) + ". Sales, qty, due and stock are all untouched \u2014 only "
+                + "profit and cost are fixed."));
+            Button fix = Ui.primary(act, "Fix the profit");
             fix.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) { go("backup"); }
             });
@@ -317,14 +317,14 @@ public class Screens {
         }
 
         body.addView(Ui.kpiRow(act,
-            Ui.kpi(act, Ui.money(plToday.get("sales")), "Aaj-er bikri", Ui.NAVY),
-            Ui.kpi(act, Ui.money(plToday.get("grossProfit")), "Aaj-er labh", Ui.GREEN)));
+            Ui.kpi(act, Ui.money(plToday.get("sales")), "Today's Sales", Ui.NAVY),
+            Ui.kpi(act, Ui.money(plToday.get("grossProfit")), "Today's Profit", Ui.GREEN)));
         body.addView(Ui.kpiRow(act,
-            Ui.kpi(act, Ui.money(plMonth.get("sales")), "Cholti mash", Ui.NAVY),
-            Ui.kpi(act, Ui.money(plMonth.get("grossProfit")), "Cholti mash labh", Ui.GREEN)));
+            Ui.kpi(act, Ui.money(plMonth.get("sales")), "This Month", Ui.NAVY),
+            Ui.kpi(act, Ui.money(plMonth.get("grossProfit")), "This Month Profit", Ui.GREEN)));
         body.addView(Ui.kpiRow(act,
-            Ui.kpi(act, Ui.money(store.totalReceivable()), "Receivable (pabo)", Ui.AMBER),
-            Ui.kpi(act, Ui.money(store.totalPayable()), "Payable (dibo)", Ui.RED)));
+            Ui.kpi(act, Ui.money(store.totalReceivable()), "Receivable", Ui.AMBER),
+            Ui.kpi(act, Ui.money(store.totalPayable()), "Payable", Ui.RED)));
         body.addView(Ui.kpiRow(act,
             Ui.kpi(act, Ui.money(store.stockValue()), "Stock Value", Ui.NAVY),
             Ui.kpi(act, Ui.money(store.plSummary("", "").get("netProfit")), "Net Profit (all)", Ui.GREEN)));
@@ -385,7 +385,7 @@ public class Screens {
                     new float[]{3f, 1f}, avail <= 0 ? Ui.RED : Ui.AMBER, false));
             }
         }
-        if (n == 0) low.addView(Ui.label(act, "Sob product-er stock thik ache."));
+        if (n == 0) low.addView(Ui.label(act, "All products have enough stock."));
         body.addView(low);
 
         // Recent memos
@@ -403,7 +403,7 @@ public class Screens {
             });
             rec.addView(r);
         }
-        if (shown == 0) rec.addView(Ui.label(act, "Ekhono kono memo nei."));
+        if (shown == 0) rec.addView(Ui.label(act, "No memos yet."));
         body.addView(rec);
 
         // Delivery pending
@@ -419,7 +419,7 @@ public class Screens {
                              Ui.qty(left)},
                 new float[]{3f, 3f, 1.6f}, Ui.AMBER, false));
         }
-        if (dpc == 0) dp.addView(Ui.label(act, "Kono delivery baki nei."));
+        if (dpc == 0) dp.addView(Ui.label(act, "No deliveries pending."));
         body.addView(dp);
 
         return Ui.scroller(act, body);
@@ -455,7 +455,7 @@ public class Screens {
     void confirm(String message, final Runnable then) {
         new AlertDialog.Builder(act)
             .setMessage(message)
-            .setPositiveButton("Hyan", new DialogInterface.OnClickListener() {
+            .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface d, int w) { then.run(); }
             })
             .setNegativeButton("Cancel", null)
@@ -469,7 +469,7 @@ public class Screens {
         new AlertDialog.Builder(act)
             .setTitle(title)
             .setView(e)
-            .setPositiveButton("Thik ache", new DialogInterface.OnClickListener() {
+            .setPositiveButton("OK", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface d, int w) { then.on(e.getText().toString()); }
             })
             .setNegativeButton("Cancel", null)

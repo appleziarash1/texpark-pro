@@ -69,10 +69,10 @@ public final class Sync {
 
     /** What to tell the owner after an upload attempt. */
     public static String pushReport(boolean accepted, String reply, String device) {
-        if (accepted) return "Cloud backup pathano hoyeche (" + device + ").";
+        if (accepted) return "Cloud backup sent (" + device + ").";
         String err = errorOf(reply);
-        if (err != null) return "Sheet bollo: " + err;
-        return "Cloud backup pathate parlam na \u2014 internet ba URL ta dekhun.";
+        if (err != null) return "The sheet said: " + err;
+        return "Could not send the cloud backup \u2014 check the internet and the URL.";
     }
 
     /** What to tell the owner after a pull-and-merge.
@@ -84,22 +84,22 @@ public final class Sync {
     public static String mergeReport(boolean pushOk, int merged, boolean committed, String saveError) {
         StringBuilder b = new StringBuilder();
         if (!pushOk) {
-            b.append("Ei device-er data sheet-e uthlo na \u2014 abar chesta hobe.")
-             .append(" (Internet, URL, othoba sheet-er JSON cell size dekhun.)");
+            b.append("This device's data did not reach the sheet \u2014 it will retry.")
+             .append(" (Check the internet, the URL, or the sheet's JSON cell size.)");
         }
         if (!committed) {
             b.append(b.length() > 0 ? "\n" : "")
-             .append("Merge ta save korte parlam na")
+             .append("Could not save the merge")
              .append(saveError == null || saveError.isEmpty() ? "." : ": " + saveError);
             return b.toString();
         }
         if (merged == 0) {
             b.append(b.length() > 0 ? "\n" : "")
-             .append("Sheet-e kono notun backup nei.");
+             .append("No new backup in the sheet.");
             return b.toString();
         }
         b.append(b.length() > 0 ? "\n" : "")
-         .append(merged).append(" ta snapshot merge hoyeche.");
+         .append(merged).append(" snapshot(s) merged.");
         return b.toString();
     }
 
@@ -107,7 +107,7 @@ public final class Sync {
 
     /** Sends this device's whole database up. Returns a sentence for the owner. */
     public static String backup(Store store, String url) {
-        if (url == null || url.trim().isEmpty()) return "Age Settings-e sync URL bosan.";
+        if (url == null || url.trim().isEmpty()) return "Set the sync URL in Settings first.";
         Map<String, Object> data = new LinkedHashMap<String, Object>();
         data.put("device", store.deviceTag());
         data.put("date", Store.today());
@@ -141,7 +141,7 @@ public final class Sync {
     /** Pushes, then pulls and merges: the direction that cannot lose this device's work. */
     public static String pullAll(Store store, String url) {
         String trimmed = trimSlash(url);
-        if (trimmed.isEmpty()) return "Age Settings-e sync URL bosan.";
+        if (trimmed.isEmpty()) return "Set the sync URL in Settings first.";
 
         // Push first. If this device's work only exists locally, merging a pull over
         // the top of it would lose it; sending it up first makes the cloud a superset.
@@ -153,7 +153,7 @@ public final class Sync {
         String res = get(trimmed + "?action=pullall");
         if (res == null) return mergeReport(pushed, 0, true, null);
         String err = errorOf(res);
-        if (err != null) return "Sheet bollo: " + err;
+        if (err != null) return "The sheet said: " + err;
 
         Object parsed = Json.read(res);
         Map<String, Object> root = Json.obj(parsed);
@@ -191,22 +191,22 @@ public final class Sync {
     /** A single-device pull, used to repair one machine from the sheet. */
     public static String pullDevice(Store store, String url, String device) {
         String trimmed = trimSlash(url);
-        if (trimmed.isEmpty()) return "Age Settings-e sync URL bosan.";
+        if (trimmed.isEmpty()) return "Set the sync URL in Settings first.";
         String res = get(trimmed + "?action=pull&device=" + enc(device));
-        if (res == null) return "Sheet theke anaa gelo na.";
+        if (res == null) return "Could not fetch from the sheet.";
         String err = errorOf(res);
-        if (err != null) return "Sheet bollo: " + err;
+        if (err != null) return "The sheet said: " + err;
         Map<String, Object> root = Json.obj(Json.read(res));
         String json = Store.str(root, "json");
-        if (json.isEmpty()) return "\"" + device + "\" er kono backup sheet-e nei.";
+        if (json.isEmpty()) return "The sheet has no backup for \"" + device + "\".";
         Object incoming = Json.read(json);
-        if (!(incoming instanceof Map)) return "Backup ta thik na.";
+        if (!(incoming instanceof Map)) return "The backup is not valid.";
         store.mergeCloudInto(Store.cast(incoming));
         if (!store.commit()) {
-            return "Restore ta save korte parlam na"
+            return "Could not save the restore"
                     + (store.lastSaveError == null ? "." : ": " + store.lastSaveError);
         }
-        return "Restore hoyeche.";
+        return "Restored.";
     }
 
     /** A quick reachability test, with the same honesty about failure. */

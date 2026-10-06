@@ -1,11 +1,15 @@
 /* ============================================================================
-   Voice Entry  -  "ajke ei product ta in hoise, naam eita X, quantity 50,
-   price porche 120" bole dile ei module nijei bujhe stock/memo te boshiye dey.
+   Voice Entry  -  say "ajke ei product ta in hoise, naam eita X, quantity 50,
+   price porche 120" and this module understands it and files it into stock/memo.
 
-   Do part ache:
-     1. parseVoiceCommand()  - text theke structured action banay (pure, testable)
-     2. applyVoiceActions()  - oi action gulo stock / memo te apply kore
-   Mic + TTS ta browser-er SpeechRecognition / speechSynthesis use kore.
+   Two parts:
+     1. parseVoiceCommand()  - turns text into structured actions (pure, testable)
+     2. applyVoiceActions()  - applies those actions to stock / memo
+   Mic + TTS use the browser's SpeechRecognition / speechSynthesis.
+
+   The spoken-word vocabulary (V_IN_WORDS, V_FILLER, ...) is deliberately left in
+   Bangla and romanized Banglish: it is the input the parser has to recognise, not
+   interface text.
    ========================================================================== */
 
 /* ---------- Bangla number handling ---------- */
@@ -343,23 +347,23 @@ function voiceMicBlocked() {
   const env = voiceEnv();
   if (env.iOS && env.standalone) {
     return {
-      title: 'iPhone-e mic cholbe na ei installed app theke',
-      body: 'Ei ta Apple-er limitation — permission-er problem na. Home screen e install kora app-e ' +
-        'Apple speech recognition bondho rakhe. Safari browser khule same link ta kholun ' +
-        '(Share > Open in Safari), tahole mic kaj korbe.'
+      title: 'The mic will not work from this installed app on iPhone',
+      body: 'This is an Apple limitation — not a permission problem. Apple turns off speech ' +
+        'recognition in apps installed to the home screen. Open the same link in the Safari ' +
+        'browser (Share > Open in Safari) and the mic will work.'
     };
   }
   if (!voiceSupported()) {
     return {
-      title: 'Ei browser-e voice support nei',
-      body: 'Chrome (Android/PC) ba Safari (iPhone) use korun. Ei browser e sona jabe na.'
+      title: 'This browser has no voice support',
+      body: 'Use Chrome (Android/PC) or Safari (iPhone). Listening will not work in this browser.'
     };
   }
   if (!env.secure) {
     return {
-      title: 'Mic er jonno https:// dorkar',
-      body: 'Ei page ta secure connection (https://) theke khulechen na, tai browser mic ta ' +
-        'bondho rekheche — onumoti cheyeo na. https:// link ba localhost theke kholun.'
+      title: 'The mic needs https://',
+      body: 'This page was not opened over a secure connection (https://), so the browser has ' +
+        'kept the mic off — it will not even ask for permission. Open it from an https:// link or localhost.'
     };
   }
   return null;
@@ -399,8 +403,8 @@ function voiceToggle() {
   if (blocked) {
     voiceShow('<div class="vp-head"><b>Voice</b><button class="btn-light btn-sm" onclick="voiceHide()">x</button></div>' +
       '<div class="vp-body"><div class="vp-block"><b>' + blocked.title + '</b>' + blocked.body + '</div>' +
-      '<div class="vp-hint">Mic chara-o sob kichu korte parben — niche type kore likhe din, ' +
-      'stock o memo duitai same bhabe kaj korbe.</div></div>');
+      '<div class="vp-hint">You can do everything without the mic — type below; ' +
+      'stock and memos both work the same way.</div></div>');
     voiceTypeFocus();
     return;
   }
@@ -419,10 +423,10 @@ function voiceStart() {
   voiceGotAnything = false;
   voiceListening = true;
   voiceUpdateButton();
-  voiceStatus('Shunchi... bole jaan. (' + voiceLang() + ')');
-  voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; shunchi ' + esc(voiceLang()) + '</span>' +
+  voiceStatus('Listening... go ahead. (' + voiceLang() + ')');
+  voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; listening ' + esc(voiceLang()) + '</span>' +
     '<button class="btn-light btn-sm" onclick="voiceStop()">Stop</button></div>' +
-    '<div class="vp-body"><div class="vp-hint">Boliye din: "naam eita Kids 3pcs Set, quantity 50, price porche 120"</div></div>');
+    '<div class="vp-body"><div class="vp-hint">Say: "Kids 3pcs Set received, quantity 50, cost 120"</div></div>');
 
   voiceRec.onresult = e => {
     voiceRestarts = 0;
@@ -432,10 +436,10 @@ function voiceStart() {
       if (e.results[i].isFinal) finalText += e.results[i][0].transcript + ' ';
     }
     const interim = [...e.results].map(r => r[0].transcript).join(' ');
-    voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; shunchi</span>' +
+    voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; listening</span>' +
       '<button class="btn-light btn-sm" onclick="voiceStop()">Stop</button></div>' +
       '<div class="vp-body"><div class="vp-heard">' + esc(interim) + '</div>' +
-      '<div class="vp-hint">Boliye din: "naam eita Kids 3pcs Set, quantity 50, price porche 120"</div></div>');
+      '<div class="vp-hint">Say: "Kids 3pcs Set received, quantity 50, cost 120"</div></div>');
     if (finalText.trim()) voiceHandle(finalText.trim());
   };
 
@@ -447,29 +451,29 @@ function voiceStart() {
       voiceWant = false; voiceListening = false; voiceUpdateButton();
       const env = voiceEnv();
       const how = env.iOS
-        ? 'Safari-r address bar er "AA" (othoba Settings > Safari > Microphone) theke ' +
-          'Microphone > Allow korun, tarpor page ta reload korun.'
-        : 'Address bar er lock icon > Permissions > Microphone > Allow korun, ' +
-          'tarpor page ta reload korun.';
+        ? 'In Safari\'s address bar tap "AA" (or Settings > Safari > Microphone), set ' +
+          'Microphone > Allow, then reload the page.'
+        : 'Use the lock icon in the address bar > Permissions > Microphone > Allow, ' +
+          'then reload the page.';
       voiceShow('<div class="vp-head"><b>Voice</b><button class="btn-light btn-sm" onclick="voiceHide()">x</button></div>' +
-        '<div class="vp-body"><div class="vp-block"><b>Browser mic er onumoti dey nai</b>' + how + '</div>' +
-        '<div class="vp-hint">Onumoti chara-o niche type kore likhe din — kaj same bhabe hobe.</div></div>');
+        '<div class="vp-body"><div class="vp-block"><b>The browser did not grant mic permission</b>' + how + '</div>' +
+        '<div class="vp-hint">You can also type below — it works the same way.</div></div>');
       voiceTypeFocus();
       return;
     }
     if (err === 'audio-capture') {
       voiceWant = false; voiceListening = false; voiceUpdateButton();
-      voiceStatus('Mic pawa gelo na. Device-er mic thik ache kina dekhun.');
+      voiceStatus('No microphone found. Check that the device\'s mic is working.');
       return;
     }
-    if (err === 'network') { voiceStatus('Internet nei — voice recognition er net dorkar.'); return; }
+    if (err === 'network') { voiceStatus('No internet — voice recognition needs a connection.'); return; }
     voiceStatus('Error: ' + err);
   };
 
   voiceRec.onend = () => {
     voiceListening = false; voiceUpdateButton();
     if (!voiceWant) {
-      if (!voiceLastActions.length) voiceStatus('Theme giyeche. Abar mic chepe bolun.');
+      if (!voiceLastActions.length) voiceStatus('Stopped. Press the mic again and speak.');
       return;
     }
     // Chrome and Safari end a session on their own after a pause; keep listening
@@ -479,20 +483,21 @@ function voiceStart() {
       // language has no model here. Try another instead of looping forever.
       if (voiceAdvanceLang()) {
         voiceRestarts = 0;
-        voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; shunchi</span>' +
+        voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-live">&#9679; listening</span>' +
           '<button class="btn-light btn-sm" onclick="voiceStop()">Stop</button></div>' +
-          '<div class="vp-body"><div class="vp-hint">' + voiceLang() +
-          ' e kichu pelam na, ekhon <b>' + esc(voiceLangNext()) + '</b> diye shunchi. Abar bolun.</div></div>');
+          '<div class="vp-body"><div class="vp-hint">Nothing came back in ' + voiceLang() +
+          ', so now listening in <b>' + esc(voiceLangNext()) + '</b>. Speak again.</div></div>');
         try { voiceRec.lang = voiceLang(); voiceRec.start(); voiceListening = true; voiceUpdateButton(); } catch (e) { voiceWant = false; }
         return;
       }
       voiceWant = false;
       voiceShow('<div class="vp-head"><b>Voice</b><button class="btn-light btn-sm" onclick="voiceHide()">x</button></div>' +
-        '<div class="vp-body"><div class="vp-block"><b>Mic shunchi kintu kichu bujhche na</b>' +
-        'Ei browser-er speech engine kono Bangla model dey na — tai bolleo kichu ashe na, ' +
-        'ar kono error-o dekhay na. Ei ta browser-er limitation, mic ba permission-er dosh na.<br><br>' +
-        'Kaj chalate niche <b>type kore likhe din</b> — stock o memo duitai same bhabe hobe. ' +
-        'Othoba Chrome (Android/PC) ba Safari (iPhone) e kholun.</div></div>');
+        '<div class="vp-body"><div class="vp-block"><b>The mic is listening but understands nothing</b>' +
+        'This browser\'s speech engine has no Bangla model, so nothing comes back even when you ' +
+        'speak, and it shows no error either. That is a browser limitation, not a fault of the mic ' +
+        'or the permission.<br><br>' +
+        'To get the job done, <b>type it below</b> — stock and memos both work the same way. ' +
+        'Or open it in Chrome (Android/PC) or Safari (iPhone).</div></div>');
       voiceTypeFocus();
       return;
     }
@@ -500,7 +505,7 @@ function voiceStart() {
     try { voiceRec.start(); voiceListening = true; voiceUpdateButton(); } catch (e) { voiceWant = false; }
   };
 
-  try { voiceRec.start(); } catch (e) { voiceStatus('Start korte parlam na: ' + e.message); }
+  try { voiceRec.start(); } catch (e) { voiceStatus('Could not start: ' + e.message); }
 }
 
 function voiceStop() {
@@ -519,7 +524,7 @@ function voiceUpdateButton() {
 function voiceHandle(text) {
   const parsed = parseVoiceCommand(text, { defaultKind: voiceDefaultKind() });
   if (!parsed.actions.length) {
-    voiceStatus('Bujhte parlam na. Abar bolun.');
+    voiceStatus('Could not understand that. Please say it again.');
     return;
   }
   const done = applyVoiceActions(parsed.actions);
@@ -529,14 +534,14 @@ function voiceHandle(text) {
     const nm = p ? p.name : (a.name || '?');
     if (a.kind === 'in') {
       return '<div class="vp-row"><b>' + esc(nm) + '</b>' +
-        (a.created ? ' <span class="vp-new">notun product</span>' : '') +
+        (a.created ? ' <span class="vp-new">new product</span>' : '') +
         ' &middot; received <b>' + num(a.qty) + '</b>' +
         (num(a.cost) ? ' &middot; cost ' + money(a.cost) : '') +
         '</div>';
     }
     return '<div class="vp-row"><b>' + esc(nm) + '</b>' +
-      (a.created ? ' <span class="vp-new">notun product</span>' : '') +
-      ' &middot; memo te <b>' + num(a.qty) + '</b> pcs &middot; rate ' + money(a.rate) +
+      (a.created ? ' <span class="vp-new">new product</span>' : '') +
+      ' &middot; on memo <b>' + num(a.qty) + '</b> pcs &middot; rate ' + money(a.rate) +
       ' &middot; line total <b>' + money(num(a.qty) * num(a.rate)) + '</b></div>';
   }).join('');
 
@@ -545,16 +550,16 @@ function voiceHandle(text) {
     const nm = p ? p.name : (a.name || '');
     if (a.kind === 'in') {
       const s = findStock(a.productId);
-      return nm + ' ekhon stock e ' + (s ? num(s.available) : 0) + ' ache';
+      return nm + ' now has ' + (s ? num(s.available) : 0) + ' in stock';
     }
     const line = num(a.qty) * num(a.rate);
-    return nm + ' memo te boshalam, line total ' + money(line);
+    return nm + ' added to the memo, line total ' + money(line);
   }).join('. ');
 
-  voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-ok">&#10003; hoye geche</span>' +
+  voiceShow('<div class="vp-head"><b>Voice</b><span class="vp-ok">&#10003; done</span>' +
     '<button class="btn-light btn-sm" onclick="voiceStop()">Stop</button></div>' +
     '<div class="vp-body"><div class="vp-heard">"' + esc(text) + '"</div>' + lines +
-    '<div class="vp-hint">Sob kichu save hoye geche. Bhul hole page theke edit kore nin.</div></div>');
+    '<div class="vp-hint">Everything was saved. If something is wrong, edit it from the page.</div></div>');
   voiceSpeak(speech);
   voiceLastActions = parsed.actions;
 }

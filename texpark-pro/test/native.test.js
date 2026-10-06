@@ -802,16 +802,16 @@ test('native: a sync only counts as a success when the sheet accepted the upload
   assert.strictEqual(r.null, false, 'no reply at all is not a success');
   assert.strictEqual(r.garbage, false, 'an unparseable body is not a success');
   assert.match(r.refusedReport, /Backup too large/, 'the sheet\'s own reason is shown');
-  assert.match(r.offlineReport, /internet ba URL/i, 'a missing reply blames the network, not the sheet');
+  assert.match(r.offlineReport, /check the internet and the URL/i, 'a missing reply blames the network, not the sheet');
   // The bug the owner hit: a merge reported as a clean sync while his own edit
   // never left the phone, so the web app kept showing the old numbers.
-  assert.match(r.mergePushFailed, /uthlo na/, 'a failed upload is reported even when a merge worked');
-  assert.match(r.mergePushFailed, /^Ei device-er data sheet-e uthlo na/,
+  assert.match(r.mergePushFailed, /did not reach the sheet/, 'a failed upload is reported even when a merge worked');
+  assert.match(r.mergePushFailed, /^This device's data did not reach the sheet/,
     'a failed upload leads the report, so it cannot be read as a clean sync');
-  assert.match(r.mergeAllGood, /3 ta snapshot merge hoyeche/);
-  assert.match(r.mergeNothingNew, /kono notun backup nei/);
-  assert.match(r.mergeSaveFailed, /save korte parlam na: disk full/, 'a failed save surfaces the reason');
-  assert.match(r.mergePushFailedAndSaveFailed, /uthlo na[\s\S]*save korte parlam na/,
+  assert.match(r.mergeAllGood, /3 snapshot\(s\) merged/);
+  assert.match(r.mergeNothingNew, /No new backup in the sheet/);
+  assert.match(r.mergeSaveFailed, /Could not save the merge: disk full/, 'a failed save surfaces the reason');
+  assert.match(r.mergePushFailedAndSaveFailed, /did not reach the sheet[\s\S]*Could not save the merge/,
     'both failures are reported, not just the last one');
   assert.strictEqual(r.pollFirst, true, 'the first poll always runs');
   assert.strictEqual(r.pollTooSoon, false, 'a second screen open does not poll again');
@@ -916,8 +916,8 @@ test('native: the memo says the same thing on the phone as on the PC', () => {
   // A memo number has slashes in it; a saved file must not.
   assert.strictEqual(r.fileName, 'memo-TXP-SM-2027-01-01-PC001.pdf');
   assert.strictEqual(r.contactLines, '[Phone: 01621-008204, Email: a@b.c, Address: Uttara, Dhaka]');
-  assert.match(r.terms, /ferot neya hoy na/, 'the memo carries its terms');
-  assert.match(r.thanks, /Dhonnobad/, 'and its thank-you line');
+  assert.match(r.terms, /Goods are not taken back after sale/, 'the memo carries its terms');
+  assert.match(r.thanks, /Thank you/, 'and its thank-you line');
 });
 
 test('native: the web and the phone print the same memo words', () => {

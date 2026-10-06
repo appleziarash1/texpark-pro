@@ -70,7 +70,59 @@ function boot() {
   // would look like every record was created and stamp the lot with one timestamp.
   lastCommitted = frozenIndex_(db);
   syncLoad();
-  buildLogin();
+  if (restoreSession()) {
+    enterApp();
+    // Opening the app while already signed in is the same moment as logging in:
+    // push what is pending, then pull the other devices' work down.
+    syncFlush();
+    cloudAutoSync('open');
+  } else {
+    buildLogin();
+  }
+}
+
+/* ===================== session ===================== */
+/* The session used to live only in memory, so any reload dropped the owner back
+   to the login screen. That happened on its own, too: the service worker reloads
+   the page whenever its bytes change. Persist the signed-in user and restore it
+   here, so a reload keeps you signed in until you press Sign out. */
+const SESSION_KEY = 'texpark_pro_session';
+
+function saveSession(user) {
+  session = { userId: user.id, username: user.username, name: user.name, role: user.role };
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      userId: user.id, username: user.username, name: user.name, role: user.role, pass: user.pass
+    }));
+  } catch (e) {}
+}
+
+function clearSession() {
+  session = null;
+  try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+}
+
+/* Bring back a persisted session, but only while the user still exists, is still
+   active, and has not changed their password since the session was written. The
+   stored password hash is a cheap version stamp: changing the password signs out
+   every device that was signed in with the old one. */
+function restoreSession() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { saved = null; }
+  if (!saved || !saved.userId) return null;
+  const user = (db.users || []).find(x => x.id === saved.userId && x.active !== false);
+  if (!user || saved.pass !== user.pass) { clearSession(); return null; }
+  session = { userId: user.id, username: user.username, name: user.name, role: user.role };
+  return session;
+}
+
+/* Show the signed-in shell. Shared by a fresh login and a restored session, so a
+   reload lands in exactly the same place a login does. */
+function enterApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appRoot').style.display = '';
+  buildNav();
+  nav('dashboard');
 }
 
 /* ===================== login ===================== */
@@ -88,21 +140,18 @@ function doLogin() {
   const p = document.getElementById('loginPass').value;
   const user = (db.users || []).find(x => x.username.toLowerCase() === u && x.active !== false);
   if (!user || user.pass !== hash(p)) {
-    document.getElementById('loginErr').textContent = 'Username ba password bhul.';
+    document.getElementById('loginErr').textContent = 'Wrong username or password.';
     return;
   }
-  session = { userId: user.id, username: user.username, name: user.name, role: user.role };
-  document.getElementById('loginScreen').style.display = 'none';
-  document.getElementById('appRoot').style.display = '';
-  buildNav();
-  nav('dashboard');
+  saveSession(user);
+  enterApp();
   syncFlush();
   // Login is the moment the owner starts looking at the books, so bring the other
   // machines' work down now rather than waiting for the next manual step.
   cloudAutoSync('login');
 }
 
-function doLogout() { session = null; buildLogin(); }
+function doLogout() { clearSession(); buildLogin(); }
 
 /* ===================== navigation ===================== */
 function buildNav() {
@@ -121,7 +170,7 @@ function buildNav() {
 }
 
 function nav(page) {
-  if (!can(page)) { alert('Ei page-er onumoti nei.'); return; }
+  if (!can(page)) { alert('You do not have permission for this page.'); return; }
   currentPage = page;
   document.querySelectorAll('.side button').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
@@ -179,22 +228,22 @@ function renderSyncWarning() {
 
   box.style.display = '';
   box.innerHTML =
-    '<div class="sw-head">⚠ Ei device-e sync bondho — onno device-er data ekhane ashbe na</div>' +
+    '<div class="sw-head">⚠ Sync is off on this device — other devices\' data will not appear here</div>' +
     '<div class="sw-body">' +
-      'Ei device ta ekhono Google Sheet-er sathe joda lage ni. Tai je memo/stock apni ' +
-      'onno device-e (PC/phone) likhben, seta ekhane dekhabe na — ar ekhane likha data-o ' +
-      'onno jaygay jabe na. ' +
+      'This device is not yet paired with the Google Sheet. So any memo/stock you write ' +
+      'on another device (PC/phone) will not show here — and data written here will not ' +
+      'reach the others either. ' +
       (others === 0
-        ? 'Ekhon ei device-e kono apnar nijer data nei — shudhu app-er demo product gulo ache.'
-        : 'Ei device-e <b>' + others + '</b> ta apnar nijer record ache, kintu seta sheet-e utheni.') +
+        ? 'Right now this device has none of your own data — only the app\'s demo products.'
+        : 'This device has <b>' + others + '</b> of your own records, but they have not reached the sheet.') +
       '<br><br>' +
-      '<b>Thik korar upay:</b> <b>Settings → Google Sheets Sync</b>-e giye Apps Script-er ' +
-      '<code>/exec</code> URL ta bosan. Ekbar bosale por theke sob device nijei milte thakbe. ' +
-      'Phone-e bosate shomossha hole niche "Pairing link" theke ek tap-e niye nin.' +
+      '<b>How to fix it:</b> open <b>Settings → Google Sheets Sync</b> and paste the Apps Script ' +
+      '<code>/exec</code> URL. Once it is set, every device keeps in step by itself. ' +
+      'If setting it on the phone is awkward, use "Pairing link" below to do it in one tap.' +
     '</div>' +
     '<div class="row">' +
-      '<button class="btn-pink btn-sm" onclick="nav(\'settings\');setTimeout(function(){var e=document.getElementById(\'stSyncUrl\');if(e)e.focus();},150)">Settings-e URL bosan</button>' +
-      '<button class="btn-light btn-sm" onclick="togglePairing()">Pairing link / QR banan</button>' +
+      '<button class="btn-pink btn-sm" onclick="nav(\'settings\');setTimeout(function(){var e=document.getElementById(\'stSyncUrl\');if(e)e.focus();},150)">Set the URL in Settings</button>' +
+      '<button class="btn-light btn-sm" onclick="togglePairing()">Create pairing link / QR</button>' +
     '</div>' +
     '<div class="sw-pair" id="pairOut" style="display:none"></div>';
 }
@@ -209,15 +258,15 @@ function togglePairing() {
   const url = syncUrl();
   const base = location.origin + location.pathname;
   if (!url) {
-    out.innerHTML = 'Age ei device-e sync URL bosan (Settings → Google Sheets Sync). ' +
-      'Tarpor ekhane ekta link paben jeta phone-e khullei phone ta nijei joda lage.';
+    out.innerHTML = 'First set the sync URL on this device (Settings → Google Sheets Sync). ' +
+      'Then you will get a link here that pairs the phone by itself when opened.';
     out.style.display = '';
     return;
   }
   const link = base + '?sync=' + encodeURIComponent(url);
-  out.innerHTML = 'Ei link ta phone-e pathan (SMS/WhatsApp) — phone-e khullei phone ta nijei joda lage:' +
+  out.innerHTML = 'Send this link to the phone (SMS/WhatsApp) — opening it pairs the phone by itself:' +
     '<input readonly value="' + esc(link) + '" onclick="this.select()">' +
-    '<div style="margin-top:7px"><button class="btn-light btn-sm" onclick="copyPairLink(this)">Link copy korun</button></div>';
+    '<div style="margin-top:7px"><button class="btn-light btn-sm" onclick="copyPairLink(this)">Copy link</button></div>';
   out.style.display = '';
 }
 
@@ -225,8 +274,8 @@ function copyPairLink(btn) {
   const inp = btn.parentNode.parentNode.querySelector('input');
   if (!inp) return;
   inp.select();
-  try { document.execCommand('copy'); btn.textContent = 'Copy hoye geche ✓'; }
-  catch (e) { btn.textContent = 'Nijei select kore copy korun'; }
+  try { document.execCommand('copy'); btn.textContent = 'Copied ✓'; }
+  catch (e) { btn.textContent = 'Select and copy manually'; }
 }
 
 /* A phone that opens ?sync=<url> adopts the URL and drops it from the address bar,
@@ -255,19 +304,19 @@ function costWarnHTML() {
   const s = staleCostSummary();
   if (!s.count) return '';
   const over = s.diff < 0;
-  return '<div class="sw-head">⚠ ' + s.count + ' ta memo-r profit bhul ache</div>' +
+  return '<div class="sw-head">⚠ ' + s.count + ' memo(s) show the wrong profit</div>' +
     '<div class="sw-body">' +
-      'Ei memo gulo jokhon lekha hoyechilo tokhon product-e buying price (cost) chilo na, ' +
-      'tai memo-te cost <b>0</b> boshe geche. Ekhon product-e dam ache, kintu purono memo ' +
-      'seta jane na — tai profit <b>' + money(s.wasProfit) + '</b> dekhacche, ashole ' +
-      '<b>' + money(s.nowProfit) + '</b> hobe' +
-      (over ? ' (<b>' + money(Math.abs(s.diff)) + ' beshi</b> dekhacche)' : '') + '.' +
+      'When these memos were written the product had no buying price (cost), ' +
+      'so the memo recorded cost <b>0</b>. The product now has a price, but the old memo ' +
+      'does not know it — so the profit reads <b>' + money(s.wasProfit) + '</b> when it ' +
+      'should be <b>' + money(s.nowProfit) + '</b>' +
+      (over ? ' (<b>' + money(Math.abs(s.diff)) + ' too high</b>)' : '') + '.' +
       '<br><br>' +
-      '<b>Bikri, qty, due ar stock kichui bodlabe na</b> — shudhu profit ar cost thik hobe. ' +
-      'Apni dekhe onumoti dile tarpor likhbe.' +
+      '<b>Sales, qty, due and stock are all untouched</b> — only profit and cost are fixed. ' +
+      'Nothing is written until you review it and approve.' +
     '</div>' +
     '<div class="row">' +
-      '<button class="btn-pink btn-sm" onclick="goFixMemoCost()">Profit thik korun</button>' +
+      '<button class="btn-pink btn-sm" onclick="goFixMemoCost()">Fix the profit</button>' +
     '</div>';
 }
 
@@ -515,17 +564,17 @@ function calcMemo() {
   /* Memo save ALWAYS works. This is just a heads-up that the stock book for these
      products has not been filled in yet - not a reason to block the sale. */
   if (short.length) {
-    box.innerHTML = '<div class="note warn"><b>Ei product gulor stock ekhono tola hoy ni:</b>' +
-      '<div class="shortlist"><table><thead><tr><th>Product</th><th class="right">Memo te uthche</th>' +
-      '<th class="right">Stock-e ache</th><th class="right">Stock-e tola baki</th></tr></thead><tbody>' +
+    box.innerHTML = '<div class="note warn"><b>Stock for these products has not been entered yet:</b>' +
+      '<div class="shortlist"><table><thead><tr><th>Product</th><th class="right">On the memo</th>' +
+      '<th class="right">In stock</th><th class="right">Short</th></tr></thead><tbody>' +
       short.map(p => '<tr><td>' + esc(p.name) + '</td><td class="right">' + p.requested +
         '</td><td class="right">' + p.available + '</td><td class="right"><b>' + p.short +
         '</b></td></tr>').join('') + '</tbody></table></div>' +
-      '<div class="hint">Memo save hobe — ar ei product gulo Stock page-e nijei bose jabe. ' +
-      'Pore <b>Stock</b> page-e giye "Received / Opening" tole din. Memo kokhono atkabe na.</div></div>';
+      '<div class="hint">The memo still saves — and these products appear on the Stock page by themselves. ' +
+      'Enter the "Received / Opening" qty on the <b>Stock</b> page later. A memo is never blocked.</div></div>';
     if (saveBtn) saveBtn.disabled = false;
   } else {
-    box.innerHTML = valid.length ? '<div class="note good">Stock mil ache - memo save korte paren.</div>' : '';
+    box.innerHTML = valid.length ? '<div class="note good">Stock is available — you can save the memo.</div>' : '';
     if (saveBtn) saveBtn.disabled = false;
   }
 
@@ -585,17 +634,17 @@ function memoCustomerCheck() {
     const ms = (db.memos || []).filter(m => m.customerName === c.name);
     const due = customerDue(c).due;
     box.className = 'note good';
-    box.innerHTML = '&#10003; Ei customer age theke save ache (' + esc(c.name) + ')' +
+    box.innerHTML = '&#10003; This customer is already saved (' + esc(c.name) + ')' +
       (c.phone ? ' - ' + esc(c.phone) : '') +
-      ' | Memo: ' + ms.length +
-      (num(due) !== 0 ? ' | Baki: ' + money(due) : '');
+      ' | Memos: ' + ms.length +
+      (num(due) !== 0 ? ' | Due: ' + money(due) : '');
     return;
   }
   const inMemo = (db.memos || []).some(m => nameKey_(m.customerName) === nameKey_(name));
   box.className = 'note warn';
   box.innerHTML = inMemo
-    ? 'Ei name-e memo ache kintu customer list-e nei - save korle list-e bose jabe.'
-    : 'Notun customer - save korle customer list-e bose jabe.';
+    ? 'A memo exists under this name but the customer is not in the list — saving adds them.'
+    : 'New customer — saving adds them to the customer list.';
 }
 
 function pickMemoCustomer(cid) {
@@ -609,12 +658,12 @@ function pickMemoCustomer(cid) {
 function saveMemo() {
   const valid = memoDraft.items.filter(x => x.productId && num(x.qty) > 0);
   const name = document.getElementById('customerName').value.trim();
-  if (!name) return alert('Customer name din.');
-  if (!valid.length) return alert('Antoto ekta product o quantity din.');
+  if (!name) return alert('Enter a customer name.');
+  if (!valid.length) return alert('Add at least one product with a quantity.');
 
-  /* Memo is the source of truth. Stock na thakleo memo save hobe - ar jei product
-     memo-te uthche seta stock book-e nijei bose jabe (0 received diye), jate pore
-     apni received qty tulte paren. Memo kokhono atkabe na. */
+  /* The memo is the source of truth. It saves even with no stock - and any product
+     on it lands in the stock book by itself (with 0 received), so the received qty
+     can be entered later. A memo is never blocked. */
   valid.forEach(it => ensureStockCard(it.productId));
 
   const fin = memoMath(valid, memoCharges());
@@ -648,10 +697,10 @@ function saveMemo() {
   if (prev) {
     const out = deliveredQtyOf(prev.id) + returnedQtyOf(prev.id);
     if (out > num(memo.totalQty)) {
-      if (!confirm('Ei memo-te ' + out + ' qty already delivery/return hoye geche, ' +
-        'kintu notun total ' + num(memo.totalQty) + '.\n' +
-        'Memo save korle delivery/return hiseb mile na - Delivery page theke thik korte hobe.\n' +
-        'Save korben?')) return;
+      if (!confirm('This memo already has ' + out + ' qty delivered/returned, ' +
+        'but the new total is ' + num(memo.totalQty) + '.\n' +
+        'Saving will leave the delivery/return figures mismatched - fix them from the Delivery page.\n' +
+        'Save anyway?')) return;
     }
   }
   if (prev) { reverseSaleFromStock(prev); Object.assign(prev, memo); }
@@ -687,8 +736,8 @@ function saveMemo() {
     cogs: memo.cogs, profit: memo.profit, status: prev ? 'Updated' : 'Saved'
   }, 'Memo ' + memo.memoNo);
 
-  alert('Memo ' + memo.memoNo + ' save hoyeche.\n' +
-    'Ei product gulor stock card banano hoyeche. Received/Opening qty Stock page theke tole nin.');
+  alert('Memo ' + memo.memoNo + ' saved.\n' +
+    'Stock cards were created for these products. Enter the received/opening qty from the Stock page.');
   newMemo();
 }
 
@@ -721,7 +770,7 @@ function renderHistory() {
 function editMemo(mid) {
   const m = db.memos.find(x => x.id === mid);
   if (!m) return;
-  if (!can('memo')) return alert('Onumoti nei.');
+  if (!can('memo')) return alert('You do not have permission.');
   editingMemoId = mid;
   memoDraft = { items: m.items.map(i => ({ productId: i.productId, qty: i.qty, rate: i.rate, cost: i.cost, vat: i.vat })) };
   nav('memo');
@@ -737,7 +786,7 @@ function editMemo(mid) {
   document.getElementById('memoNote').value = m.note || '';
   const b = document.getElementById('memoEditingBanner');
   b.style.display = ''; 
-  b.textContent = 'Editing ' + m.memoNo + ' - save korle age purono stock phiriye tarpor notun kore biyog hobe.';
+  b.textContent = 'Editing ' + m.memoNo + ' - saving returns the old stock, then deducts the new figures.';
   renderMemoLines();
   calcMemo();
 }
@@ -745,7 +794,7 @@ function editMemo(mid) {
 function deleteMemo(mid) {
   const m = db.memos.find(x => x.id === mid);
   if (!m) return;
-  if (!confirm('Memo ' + m.memoNo + ' delete korben? Stock abar phiriye deya hobe.')) return;
+  if (!confirm('Delete memo ' + m.memoNo + '? The stock will be returned.')) return;
   reverseSaleFromStock(m);
   db.deliveries = db.deliveries.filter(d => d.memoId !== m.id);
   (db.returns || []).filter(r => r.memoId === m.id).forEach(reverseReturnFromStock);
@@ -754,7 +803,7 @@ function deleteMemo(mid) {
   if (editingMemoId === mid) newMemo();
   if (!commit()) return;
   syncPush('memo_delete', { memoNo: m.memoNo }, 'Delete ' + m.memoNo);
-  alert('Memo delete hoyeche, stock abar firiye deya hoyeche.');
+  alert('Memo deleted and the stock returned.');
 }
 
 function viewMemo(mid) {
@@ -946,7 +995,7 @@ function memoSheet(m) {
     ? rows.map(r => '<tr><td class="memo-sl">' + r.sl + '</td><td>' + esc(r.name) + '</td>' +
         '<td class="right">' + money(r.rate) + '</td><td class="right">' + num(r.qty) +
         '</td><td class="right"><b>' + money(r.amount) + '</b></td></tr>').join('')
-    : '<tr><td class="memo-empty" colspan="5">Kono product nei</td></tr>';
+    : '<tr><td class="memo-empty" colspan="5">No products</td></tr>';
   const contacts = memoCompanyLines(c).map(l => '<div>' + esc(l) + '</div>').join('');
   return '<div class="memo-sheet">' +
     '<div class="memo-top">' +
@@ -978,8 +1027,8 @@ function memoSheet(m) {
     '<div class="memo-foot"><div class="memo-left">' +
       '<div class="memo-words"><b>Amount in Words</b>' + esc(numberWords(num(m.grandTotal))) + ' Taka Only.</div>' +
       (m.note ? '<div class="memo-note"><b>Note</b>' + esc(m.note) + '</div>' : '') +
-      '<div class="memo-terms"><b>Sharto:</b> Panyo bikri-r por ferot neya hoy na (damaged chara). ' +
-        'Delivery charge memo-te add kora hoyeche. Due amount memo-r tarikh theke 15 diner moddhe porishodh korben.</div>' +
+      '<div class="memo-terms"><b>Terms:</b> Goods are not taken back after sale (unless damaged). ' +
+        'The delivery charge has been added to this memo. Please settle the due amount within 15 days of the memo date.</div>' +
       '</div>' +
       '<div class="memo-tot"><table>' +
         '<tr><td>Total Qty</td><td class="right">' + num(m.totalQty) + '</td></tr>' +
@@ -992,7 +1041,7 @@ function memoSheet(m) {
         '<tr class="memo-due"><td>Due</td><td class="right">' + money(m.due) + '</td></tr>' +
       '</table></div></div>' +
     '<div class="memo-sign"><div>Customer Signature</div><div>Authorized Signature</div></div>' +
-    '<div class="memo-thanks">Dhonnobad! Panyo-r gunogota niye kono obhijog thakle 3 diner moddhe janan.</div>' +
+    '<div class="memo-thanks">Thank you! Please report any issue with the goods within 3 days.</div>' +
     '</div>';
 }
 
@@ -1047,7 +1096,7 @@ function renderDelivery() {
           '<td>' + esc(x.note || '') + '</td>' +
           '<td><button class="btn-danger btn-sm" onclick="deleteReturn(\'' + x.id + '\')">Delete</button></td></tr>';
       }).join('') + '</tbody></table></div>'
-    : '<div class="empty">Kono return nei</div>';
+    : '<div class="empty">No returns</div>';
 }
 
 function openDelivery(mid) {
@@ -1071,9 +1120,9 @@ function saveDelivery() {
   const mid = document.getElementById('dlMemo').value;
   const q = num(document.getElementById('dlQty').value);
   const m = db.memos.find(x => x.id === mid);
-  if (!m) return alert('Memo select korun.');
-  if (q <= 0) return alert('Delivery qty din.');
-  if (q > pendingQtyOf(m)) return alert('Delivery qty pending-er beshi hote pare na. Baki: ' + pendingQtyOf(m));
+  if (!m) return alert('Select a memo.');
+  if (q <= 0) return alert('Enter a delivery qty.');
+  if (q > pendingQtyOf(m)) return alert('Delivery qty cannot exceed what is pending. Pending: ' + pendingQtyOf(m));
   const already = deliveredQtyOf(mid);
   db.deliveries.push({
     id: id(), memoId: mid, qty: q, date: today(),
@@ -1098,7 +1147,7 @@ function saveDelivery() {
     status: pend <= 0 ? 'Delivered' : 'Partial', note: m.deliveryNote
   }, 'Delivery ' + m.memoNo);
   closeDelivery();
-  alert('Delivery update hoyeche.');
+  alert('Delivery updated.');
 }
 
 /* ===================== parcel return ===================== */
@@ -1112,7 +1161,7 @@ function openReturn(mid) {
   document.getElementById('rtMemo').value = m.id;
   document.getElementById('rtInfo').innerHTML = esc(m.memoNo) + ' - ' + esc(m.customerName) +
     ' | Sold ' + m.totalQty + ' | Delivered ' + deliveredQtyOf(mid) +
-    ' | Age return ' + returnedQtyOf(mid) + ' | Return korte parben: <b>' + pend + '</b>';
+    ' | Already returned ' + returnedQtyOf(mid) + ' | Available to return: <b>' + pend + '</b>';
   document.getElementById('rtDate').value = today();
   document.getElementById('rtCondition').value = 'good';
   document.getElementById('rtNote').value = '';
@@ -1151,8 +1200,8 @@ function returnTotals() {
   if (qtyEl && document.activeElement !== qtyEl) qtyEl.value = sum;
   const cond = document.getElementById('rtCondition').value;
   document.getElementById('rtHint').innerHTML = cond === 'damaged'
-    ? 'Damaged: stock e available hisebe uthbe na, loss hisebe lekha hobe.'
-    : 'Good: product abar stock e available hisebe uthe jabe.';
+    ? 'Damaged: not added back to available stock, recorded as a loss.'
+    : 'Good: the product goes back into available stock.';
 }
 function returnQtyChanged() {
   const m = db.memos.find(x => x.id === document.getElementById('rtMemo').value);
@@ -1171,15 +1220,15 @@ function returnQtyChanged() {
 function saveReturn() {
   const mid = document.getElementById('rtMemo').value;
   const m = db.memos.find(x => x.id === mid);
-  if (!m) return alert('Memo select korun.');
+  if (!m) return alert('Select a memo.');
   const items = m.items.map((it, i) => ({
     productId: it.productId, productName: it.productName,
     qty: num((document.getElementById('rtLine' + i) || {}).value)
   })).filter(x => x.productId && x.qty > 0);
   const total = items.reduce((a, x) => a + x.qty, 0);
-  if (!total) return alert('Return qty din.');
+  if (!total) return alert('Enter a return qty.');
   if (total > pendingQtyOf(m)) {
-    return alert('Return qty pending-er beshi hote pare na. Baki: ' + pendingQtyOf(m));
+    return alert('Return qty cannot exceed what is pending. Pending: ' + pendingQtyOf(m));
   }
   const ret = {
     id: id(), memoId: mid, memoNo: m.memoNo, date: document.getElementById('rtDate').value || today(),
@@ -1200,20 +1249,20 @@ function saveReturn() {
     products: items.map(x => x.productName + ' x' + x.qty).join(', ')
   }, 'Return ' + m.memoNo);
   closeReturn();
-  alert('Return save hoyeche.' + (ret.condition === 'good'
-    ? '\nStock e available hisebe uthe geche.'
-    : '\nDamaged - stock e available hisebe uthe ni (loss hisebe lekha hoyeche).'));
+  alert('Return saved.' + (ret.condition === 'good'
+    ? '\nThe product is back in available stock.'
+    : '\nDamaged - not added to available stock (recorded as a loss).'));
 }
 
 function deleteReturn(rid) {
   const r = (db.returns || []).find(x => x.id === rid);
   if (!r) return;
-  if (!confirm('Ei return delete korben? Stock abar age-r moto hoye jabe.')) return;
+  if (!confirm('Delete this return? The stock will go back to how it was.')) return;
   reverseReturnFromStock(r);
   db.returns = db.returns.filter(x => x.id !== rid);
   if (!commit()) return;
   syncPush('return_delete', { returnId: rid, memoNumber: r.memoNo }, 'Return delete ' + (r.memoNo || ''));
-  alert('Return delete hoyeche.');
+  alert('Return deleted.');
 }
 
 /* ===================== customers ===================== */
@@ -1244,7 +1293,7 @@ function renderCustomers() {
 
 function addCustomer() {
   const n = document.getElementById('cName').value.trim();
-  if (!n) return alert('Name din.');
+  if (!n) return alert('Enter a name.');
   db.customers.push({ id: id(), name: n, phone: document.getElementById('cPhone').value.trim(), address: document.getElementById('cAddress').value.trim() });
   ['cName', 'cPhone', 'cAddress'].forEach(i => document.getElementById(i).value = '');
   commit();
@@ -1253,9 +1302,9 @@ function addCustomer() {
 function deleteCustomer(cid) {
   const c = db.customers.find(x => x.id === cid);
   if (!c) return;
-  if (db.memos.some(m => m.customerName === c.name)) return alert('Ei customer-er memo ache, delete kora jabe na.');
-  if (db.payments.some(p => p.customerId === cid)) return alert('Ei customer-er payment record ache, delete kora jabe na.');
-  if (!confirm('Customer delete korben?')) return;
+  if (db.memos.some(m => m.customerName === c.name)) return alert('This customer has memos, so cannot be deleted.');
+  if (db.payments.some(p => p.customerId === cid)) return alert('This customer has payment records, so cannot be deleted.');
+  if (!confirm('Delete this customer?')) return;
   db.customers = db.customers.filter(x => x.id !== cid);
   commit();
 }
@@ -1275,7 +1324,7 @@ function closePayment() { document.getElementById('payModal').classList.remove('
 function savePayment() {
   const cid = document.getElementById('payCustomer').value;
   const amt = num(document.getElementById('payAmount').value);
-  if (amt <= 0) return alert('Amount din.');
+  if (amt <= 0) return alert('Enter an amount.');
   db.payments.push({
     id: id(), customerId: cid, date: document.getElementById('payDate').value || today(),
     amount: amt, method: document.getElementById('payMethod').value,
@@ -1284,7 +1333,7 @@ function savePayment() {
   if (!commit()) return;
   syncPush('payment', { customerId: cid, amount: amt, date: today(), method: document.getElementById('payMethod').value }, 'Payment');
   closePayment();
-  alert('Payment receive hoyeche.');
+  alert('Payment received.');
 }
 
 /* ===================== customer ledger ===================== */
@@ -1330,8 +1379,8 @@ function viewLedger(cid) {
     '<div class="muted" style="margin-bottom:10px">' + esc(c.phone || '') + ' | ' + esc(c.address || '') + '</div>' +
     '<div class="grid3" style="margin-bottom:12px">' +
       statBox('Net Due', money(run), '') +
-      statBox('0-30 din', money(buck.current), '') +
-      statBox('60+ din', money(buck.d60 + buck.d90 + buck.over90), '') +
+      statBox('0-30 days', money(buck.current), '') +
+      statBox('60+ days', money(buck.d60 + buck.d90 + buck.over90), '') +
     '</div>' +
     '<div class="tablewrap"><table><thead><tr><th>Date</th><th>Particulars</th><th class="right">Debit</th>' +
     '<th class="right">Credit</th><th class="right">Balance</th></tr></thead><tbody>' +
@@ -1387,7 +1436,7 @@ function calcPurchase() {
 function savePurchase() {
   const sid = document.getElementById('puSupplier').value;
   const valid = purchaseDraft.items.filter(x => x.productId && num(x.qty) > 0);
-  if (!valid.length) return alert('Antoto ekta product din.');
+  if (!valid.length) return alert('Add at least one product.');
   const sup = db.suppliers.find(s => s.id === sid);
   const sub = valid.reduce((a, x) => a + round2(num(x.qty) * num(x.cost)), 0);
   const paid = Math.min(num(document.getElementById('puPaid').value), sub);
@@ -1412,7 +1461,7 @@ function savePurchase() {
     productId: it.productId, productName: it.productName, qty: it.qty, cost: it.cost, amount: it.amount,
     balance: num((db.stock.find(s => s.productId === it.productId) || {}).available), reference: purchase.purchaseNo
   }, 'Purchase ' + purchase.purchaseNo));
-  alert('Purchase save hoyeche, stock bcreche.');
+  alert('Purchase saved, stock increased.');
   purchaseDraft = { items: [] };
   document.getElementById('puPaid').value = 0;
   document.getElementById('puNote').value = '';
@@ -1452,7 +1501,7 @@ function payPurchase(pid) {
 function deletePurchase(pid) {
   const p = db.purchases.find(x => x.id === pid);
   if (!p) return;
-  if (!confirm('Purchase ' + p.purchaseNo + ' delete korben? Stock theke biyog hobe.')) return;
+  if (!confirm('Delete purchase ' + p.purchaseNo + '? The stock will be reduced.')) return;
   p.items.forEach(it => {
     const s = db.stock.find(x => x.productId === it.productId);
     if (!s) return;
@@ -1485,7 +1534,7 @@ function renderSuppliers() {
 
 function addSupplier() {
   const n = document.getElementById('sName').value.trim();
-  if (!n) return alert('Supplier name din.');
+  if (!n) return alert('Enter a supplier name.');
   db.suppliers.push({
     id: id(), name: n, contact: document.getElementById('sContact').value.trim(),
     phone: document.getElementById('sPhone').value.trim(),
@@ -1496,7 +1545,7 @@ function addSupplier() {
 }
 
 function deleteSupplier(sid) {
-  if (db.purchases.some(p => p.supplierId === sid)) return alert('Ei supplier-er purchase history ache, delete kora jabe na.');
+  if (db.purchases.some(p => p.supplierId === sid)) return alert('This supplier has purchase history, so cannot be deleted.');
   if (!confirm('Delete supplier?')) return;
   db.suppliers = db.suppliers.filter(x => x.id !== sid);
   commit();
@@ -1538,7 +1587,7 @@ function fillStockProductSelect() {
 
 function addProduct() {
   const n = document.getElementById('pName').value.trim();
-  if (!n) return alert('Product name din.');
+  if (!n) return alert('Enter a product name.');
   db.products.push({
     id: id(), name: n, sku: document.getElementById('pSku').value.trim(),
     category: document.getElementById('pCategory').value.trim() || 'General',
@@ -1595,9 +1644,9 @@ function saveProductEdit() {
 function deleteProduct(pid) {
   const used = db.memos.some(m => m.items.some(i => i.productId === pid));
   const s = db.stock.find(x => x.productId === pid);
-  if (used || num(s?.sold) > 0) return alert('Ei product-er sales history ache, delete kora jabe na. Edit korun.');
-  if (db.purchases.some(p => p.items.some(i => i.productId === pid))) return alert('Ei product-er purchase history ache, delete kora jabe na.');
-  if (!confirm('Product delete korben?')) return;
+  if (used || num(s?.sold) > 0) return alert('This product has sales history, so cannot be deleted. Edit it instead.');
+  if (db.purchases.some(p => p.items.some(i => i.productId === pid))) return alert('This product has purchase history, so cannot be deleted.');
+  if (!confirm('Delete this product?')) return;
   db.products = db.products.filter(x => x.id !== pid);
   db.stock = db.stock.filter(x => x.productId !== pid);
   commit();
@@ -1610,7 +1659,7 @@ function renderStock() {
   const arr = db.products.filter(p => p.name.toLowerCase().includes(q));
   document.getElementById('stockTable').innerHTML = arr.length
     ? '<div class="tablewrap"><table><thead><tr><th>Product</th><th class="right">Opening</th><th class="right">Purchased</th>' +
-      '<th class="right">Sold</th><th class="right">Available</th><th class="right">Tola baki</th><th class="right">Unit Cost</th>' +
+      '<th class="right">Sold</th><th class="right">Available</th><th class="right">Short</th><th class="right">Unit Cost</th>' +
       '<th class="right">Stock Value</th><th>Status</th><th></th></tr></thead><tbody>' +
       arr.map(p => {
         const s = db.stock.find(x => x.productId === p.id) || {};
@@ -1635,8 +1684,8 @@ function addStockPurchase() {
   const pid = document.getElementById('stockProduct').value;
   const q = num(document.getElementById('stockAddQty').value);
   const c = num(document.getElementById('stockCost').value);
-  if (!pid) return alert('Product select korun.');
-  if (q <= 0) return alert('Quantity din (0 theke beshi).');
+  if (!pid) return alert('Select a product.');
+  if (q <= 0) return alert('Enter a quantity (greater than 0).');
   const p = productById(pid);
   const s = stockOf(pid);
   s.opening = num(s.opening) + q;
@@ -1646,7 +1695,7 @@ function addStockPurchase() {
   document.getElementById('stockAddQty').value = '';
   document.getElementById('stockCost').value = '';
   if (!commit()) return;
-  alert('Stock jog hoyeche.\n' + (p ? p.name : 'Product') + ' - available ekhon: ' + s.available);
+  alert('Stock added.\n' + (p ? p.name : 'Product') + ' - available now: ' + s.available);
 }
 
 let adjustProductId = null;
@@ -1665,13 +1714,13 @@ function saveAdjust() {
   const pid = adjustProductId;
   const delta = num(document.getElementById('adQty').value);
   const reason = document.getElementById('adReason').value.trim();
-  if (delta === 0) return alert('Adjustment qty din (positive add, negative kom).');
+  if (delta === 0) return alert('Enter an adjustment qty (positive to add, negative to reduce).');
   const s = stockOf(pid);
   /* Checked against the raw figure, not the clamped one: a card whose sales
      already ran ahead of its receipts sits at available 0 with a shortfall, and
      it must still accept a downward adjustment. */
   if (stockRaw(s) + delta < 0) {
-    return alert('Adjustment korle stock tolar poriman theke kome jabe. Available: ' + num(s.available));
+    return alert('This adjustment would push stock below what was received. Available: ' + num(s.available));
   }
   if (delta > 0) s.opening = num(s.opening) + delta;
   else s.sold = num(s.sold) + Math.abs(delta);
@@ -1679,7 +1728,7 @@ function saveAdjust() {
   logStock(pid, 'Adjustment', delta, 'Manual', reason || 'Stock adjustment');
   commit();
   closeAdjust();
-  alert('Stock adjustment hoyeche.');
+  alert('Stock adjusted.');
 }
 
 let editingStockProductId = null;
@@ -1710,7 +1759,7 @@ function saveStockEdit() {
   const memoSold = db.memos.reduce((a, m) =>
     a + m.items.filter(i => i.productId === pid).reduce((b, i) => b + num(i.qty), 0), 0);
   if (sold < memoSold) {
-    return alert('Sold qty memo-r asol bikri (' + memoSold + ') theke kome hote pare na.');
+    return alert('Sold qty cannot go below what the memos actually sold (' + memoSold + ').');
   }
   const available = stockRaw({ opening, purchased, sold });
   /* A card whose sales ran ahead of its receipts is a normal state - the memo
@@ -1726,8 +1775,8 @@ function saveStockEdit() {
   commit();
   closeStockEdit();
   alert(available < 0
-    ? 'Stock update hoyeche.\nSold er cheye tola kom - ei ' + Math.abs(available) + ' ta "Tola baki" te dekhabe.'
-    : 'Stock update hoyeche.');
+    ? 'Stock updated.\nReceived is less than sold - these ' + Math.abs(available) + ' will show in "Short".'
+    : 'Stock updated.');
 }
 
 /* ===================== stock ledger (audit trail) ===================== */
@@ -1794,7 +1843,7 @@ function renderProfit() {
         '<td class="right"><b class="' + (r.profit >= 0 ? 'green' : 'red') + '">' + money(r.profit) + '</b></td>' +
         '<td class="right">' + (r.sales ? round2((r.profit / r.sales) * 100) : 0) + '%</td></tr>').join('') +
       '</tbody></table></div>'
-    : '<div class="empty">Ei timeframe-e kono sale nei</div>';
+    : '<div class="empty">No sales in this period</div>';
 
   renderCostWarn();
 }
@@ -1859,7 +1908,7 @@ function monthlyPLHTML() {
 /* ===================== expenses ===================== */
 function addExpense() {
   const amt = num(document.getElementById('exAmount').value);
-  if (amt <= 0) return alert('Amount din.');
+  if (amt <= 0) return alert('Enter an amount.');
   db.expenses.push({
     id: id(),
     date: document.getElementById('exDate').value || today(),
@@ -1888,7 +1937,7 @@ function renderExpenses() {
 }
 
 function deleteExpense(eid) {
-  if (!confirm('Expense delete korben?')) return;
+  if (!confirm('Delete this expense?')) return;
   db.expenses = db.expenses.filter(x => x.id !== eid);
   commit();
 }
@@ -1956,9 +2005,9 @@ function addUser() {
   const nm = document.getElementById('uName').value.trim();
   const pw = document.getElementById('uPass').value;
   const rl = document.getElementById('uRole').value;
-  if (!un || !nm || !pw) return alert('Username, name o password din.');
-  if (db.users.some(u => u.username === un)) return alert('Ei username agei ache.');
-  if (pw.length < 4) return alert('Password antoto 4 character din.');
+  if (!un || !nm || !pw) return alert('Enter username, name and password.');
+  if (db.users.some(u => u.username === un)) return alert('That username already exists.');
+  if (pw.length < 4) return alert('Password must be at least 4 characters.');
   db.users.push({ id: id(), username: un, name: nm, pass: hash(pw), role: rl, active: true, createdAt: new Date().toISOString() });
   ['uUsername', 'uName', 'uPass'].forEach(i => document.getElementById(i).value = '');
   commit();
@@ -1967,7 +2016,7 @@ function addUser() {
 function toggleUser(uid) {
   const u = db.users.find(x => x.id === uid);
   if (!u) return;
-  if (u.username === 'admin' && u.active !== false) return alert('admin disable kora jabe na.');
+  if (u.username === 'admin' && u.active !== false) return alert('The admin account cannot be disabled.');
   u.active = u.active === false;
   commit();
 }
@@ -1975,19 +2024,19 @@ function toggleUser(uid) {
 function resetPass(uid) {
   const u = db.users.find(x => x.id === uid);
   if (!u) return;
-  const v = prompt('Notun password for ' + u.username + ':', '');
+  const v = prompt('New password for ' + u.username + ':', '');
   if (!v) return;
-  if (v.length < 4) return alert('Antoto 4 character din.');
+  if (v.length < 4) return alert('Enter at least 4 characters.');
   u.pass = hash(v);
   commit();
-  alert('Password reset hoyeche.');
+  alert('Password reset.');
 }
 
 function delUser(uid) {
   const u = db.users.find(x => x.id === uid);
   if (!u) return;
-  if (u.id === session.userId) return alert('Nijer account delete kora jabe na.');
-  if (!confirm('User ' + u.username + ' delete korben?')) return;
+  if (u.id === session.userId) return alert('You cannot delete your own account.');
+  if (!confirm('Delete user ' + u.username + '?')) return;
   db.users = db.users.filter(x => x.id !== uid);
   commit();
 }
@@ -1997,13 +2046,17 @@ function changeMyPass() {
   const b = document.getElementById('myNewPass').value;
   const me = db.users.find(x => x.id === session.userId);
   if (!me) return;
-  if (me.pass !== hash(a)) return alert('Purono password bhul.');
-  if (b.length < 4) return alert('Notun password antoto 4 character din.');
+  if (me.pass !== hash(a)) return alert('Current password is wrong.');
+  if (b.length < 4) return alert('New password must be at least 4 characters.');
   me.pass = hash(b);
   document.getElementById('myOldPass').value = '';
   document.getElementById('myNewPass').value = '';
   commit();
-  alert('Password change hoyeche.');
+  // The stored session carries the password hash as its version stamp, so it has
+  // to be rewritten here. Otherwise the very next reload would see the old hash,
+  // decide the session is stale, and sign the owner out.
+  saveSession(me);
+  alert('Password changed.');
 }
 
 /* ===================== settings ===================== */
@@ -2050,17 +2103,17 @@ function checkForUpdate() {
            new build actually is instead of being told he is up to date. */
         const staleOrigin = releasedJs && releasedJs !== serverJs &&
           versionNewer(releasedJs, serverJs);
-        say('<div class="vp-block"><b>Ei device e: ' + APP_VERSION + '</b>' +
-            'Ei address e ache: <b>' + serverJs + '</b>' +
+        say('<div class="vp-block"><b>On this device: ' + APP_VERSION + '</b>' +
+            'At this address: <b>' + serverJs + '</b>' +
             (staleOrigin
-              ? '<br><b style="color:var(--red)">Ei address purono!</b> Notun version ' +
-                '<b>' + releasedJs + '</b> ache ekhane: ' +
+              ? '<br><b style="color:var(--red)">This address is out of date!</b> A newer version ' +
+                '<b>' + releasedJs + '</b> is at: ' +
                 '<a href="' + RELEASE_URL + '/" target="_blank">' + RELEASE_URL + '</a>' +
-                '<br>Sei link theke khulun, tarpor browser-e "Add to Home screen" korun.'
+                '<br>Open that link, then use "Add to Home screen" in the browser.'
               : serverJs === APP_VERSION
-                ? '<br>Duitai same — apni latest version e achen.'
-                : '<br>Notun version ache! Reload korun.') +
-            '<br>Phone layout fix server e: ' + (hasPhoneFix ? 'ache' : 'nei') + '</div>');
+                ? '<br>Both match — you are on the latest version.'
+                : '<br>A newer version is available! Reload the page.') +
+            '<br>Phone layout fix on the server: ' + (hasPhoneFix ? 'yes' : 'no') + '</div>');
       });
   };
 
@@ -2088,7 +2141,7 @@ function saveCompany() {
   db.settings.companyUpdatedAt = now;
   db.settings.settingsUpdatedAt = now;
   commit();
-  alert('Company setting save hoyeche.');
+  alert('Company settings saved.');
 }
 
 function saveSyncUrl() {
@@ -2097,7 +2150,7 @@ function saveSyncUrl() {
   // A URL just typed in should take effect at once - the owner is at the settings
   // screen precisely because they want the other machine's data to show up.
   if (db.settings.syncUrl) cloudAutoSync('url saved');
-  alert('Sync URL save hoyeche.');
+  alert('Sync URL saved.');
 }
 
 function saveAutoPull() {
@@ -2105,8 +2158,8 @@ function saveAutoPull() {
   db.settings.autoPull = !!on;
   commit();
   if (on) cloudAutoSync('turned on');
-  alert(on ? 'Auto-pull on — ekhon theke kholar shomoy sheet theke niye ashbe.'
-           : 'Auto-pull off — ekhon shudhu apni chap dilei sheet theke ashe.');
+  alert(on ? 'Auto-pull on — from now on it pulls from the sheet on open.'
+           : 'Auto-pull off — now it only pulls from the sheet when you press the button.');
 }
 
 function toggleShortStockWarn(on) {
@@ -2118,7 +2171,7 @@ function toggleShortStockWarn(on) {
 async function testSync() {
   const out = document.getElementById('syncTestOut');
   const url = (db.settings.syncUrl || '').trim();
-  if (!url) { out.innerHTML = '<span class="red">Sync URL nei. Age URL save korun.</span>'; return; }
+  if (!url) { out.innerHTML = '<span class="red">No sync URL. Save a URL first.</span>'; return; }
   out.textContent = 'Testing...';
   try {
     /* Probe GET first. The old deployment answers every GET with a plain
@@ -2140,23 +2193,23 @@ async function testSync() {
     let parsed = null;
     try { parsed = JSON.parse(txt); } catch (e) {}
     if (parsed && parsed.success !== false) {
-      out.innerHTML = '<span class="green">✓ Sync kaj korche. Sheet-e response esheche: ' + esc(parsed.message || 'ok') + '</span>';
+      out.innerHTML = '<span class="green">✓ Sync is working. The sheet replied: ' + esc(parsed.message || 'ok') + '</span>';
     } else if (stale) {
-      out.innerHTML = '<span class="red">✗ Ei URL-e purono Code.gs cholche — sync kaj korbe na.</span>' +
-        '<div class="hint">Ei deployment purono: POST (data pathano) support kore na, ar ' +
-        'GET ?action=pull-o bujhe na. Tai memo phone theke PC-e jabe na, abar phone-e ' +
-        'PC-er data ashbe na — apni bhabchen sync hocche, hocche na.<br><br>' +
-        '<b>Thik korar upay:</b> Apps Script kholun → <b>Code.gs</b>-er pura code muche ' +
-        'repo-r <b>Code.gs</b> bosan → <b>Deploy → Manage deployments → Edit (pencil) → ' +
-        'Version: New version → Deploy</b>. URL ta same thakbe, kintu notun code cholbe. ' +
-        'Tarpor abar Test korun.</div>';
+      out.innerHTML = '<span class="red">✗ This URL is running an old Code.gs — sync will not work.</span>' +
+        '<div class="hint">This deployment is old: it does not support POST (sending data) and ' +
+        'does not understand GET ?action=pull. So memos will not reach the PC from the phone, and ' +
+        'the phone will not receive the PC\'s data — you may think sync is working when it is not.<br><br>' +
+        '<b>How to fix it:</b> open Apps Script → clear the whole <b>Code.gs</b> and paste the ' +
+        'repo\'s <b>Code.gs</b> → <b>Deploy → Manage deployments → Edit (pencil) → ' +
+        'Version: New version → Deploy</b>. The URL stays the same, but the new code runs. ' +
+        'Then test again.</div>';
     } else {
-      out.innerHTML = '<span class="orange">Response esheche kintu success na: ' + esc(txt.slice(0, 160)) + '</span>' +
-        '<div class="hint">Code.gs update kore notun version deploy korechen kina check korun.</div>';
+      out.innerHTML = '<span class="orange">A reply came back but not success: ' + esc(txt.slice(0, 160)) + '</span>' +
+        '<div class="hint">Check that you updated Code.gs and deployed a new version.</div>';
     }
   } catch (e) {
-    out.innerHTML = '<span class="red">Sync test fail: ' + esc(e.message || 'network error') + '</span>' +
-      '<div class="hint">URL, internet o Apps Script deployment permission check korun.</div>';
+    out.innerHTML = '<span class="red">Sync test failed: ' + esc(e.message || 'network error') + '</span>' +
+      '<div class="hint">Check the URL, the internet, and the Apps Script deployment permissions.</div>';
   }
 }
 
@@ -2183,7 +2236,7 @@ function renderBackup() {
         '<td><span class="pill ' + (j.state === 'failed' ? 'danger' : 'warn') + '">' + esc(j.state) + '</span></td>' +
         '<td class="right">' + j.tries + '</td><td class="muted">' + esc(j.error || '') + '</td></tr>').join('') +
       '</tbody></table></div>'
-    : '<div class="empty">Queue khali - shob sync hoye geche</div>';
+    : '<div class="empty">Queue empty — everything is synced</div>';
 
   const snaps = listSnapshots();
   document.getElementById('snapshotTable').innerHTML = snaps.length
@@ -2191,7 +2244,7 @@ function renderBackup() {
       snaps.map((s, i) => '<tr><td>' + esc(new Date(s.at).toLocaleString()) + '</td>' +
         '<td class="right"><button class="btn-light btn-sm" onclick="restoreSnapshot(' + i + ')">Restore this</button></td></tr>').join('') +
       '</tbody></table></div>'
-    : '<div class="empty">Kono snapshot nei (prottek save-e auto snapshot hoy)</div>';
+    : '<div class="empty">No snapshots yet (one is taken automatically on every save)</div>';
 }
 
 
@@ -2203,7 +2256,7 @@ function previewMemoCostRepair() {
   const btn = document.getElementById('repairApplyBtn');
   const plan = planMemoCostRepair();
   if (!plan.length) {
-    out.innerHTML = '<div class="note good">Sob memo-r profit already thik ache — kichu bodlano lagbe na.</div>';
+    out.innerHTML = '<div class="note good">Every memo\'s profit is already correct — nothing to change.</div>';
     if (btn) btn.style.display = 'none';
     return;
   }
@@ -2211,21 +2264,21 @@ function previewMemoCostRepair() {
   const nowTotal = round2(plan.reduce((a, r) => a + r.nowProfit, 0));
   const diff = round2(nowTotal - wasTotal);
   out.innerHTML =
-    '<div class="note warn"><b>' + plan.length + ' ta memo</b> bhul buying price niye lekha hoyeche.</div>' +
+    '<div class="note warn"><b>' + plan.length + ' memo(s)</b> were saved with the wrong buying price.</div>' +
     '<div class="tablewrap" style="margin-top:9px"><table><thead><tr>' +
       '<th>Memo</th><th>Date</th><th>Customer</th>' +
-      '<th class="right">Purono profit</th><th class="right">Thik profit</th>' +
+      '<th class="right">Old profit</th><th class="right">Correct profit</th>' +
     '</tr></thead><tbody>' +
     plan.map(r => '<tr><td>' + esc(r.memoNo) + '</td><td>' + esc(r.date) + '</td>' +
       '<td>' + esc(r.customerName) + '</td>' +
       '<td class="right"><span style="color:var(--red)">' + money(r.wasProfit) + '</span></td>' +
       '<td class="right"><b class="green">' + money(r.nowProfit) + '</b></td></tr>').join('') +
-    '</tbody><tfoot><tr><th colspan="3">Mot</th>' +
+    '</tbody><tfoot><tr><th colspan="3">Total</th>' +
       '<th class="right">' + money(wasTotal) + '</th>' +
       '<th class="right">' + money(nowTotal) + '</th></tr></tfoot></table></div>' +
     '<div class="note ' + (diff >= 0 ? 'good' : 'warn') + '" style="margin-top:10px">' +
-      'Sob miliye profit <b>' + (diff >= 0 ? '+' : '') + money(diff) + '</b> hobe. ' +
-      'Bikri, qty, due ar stock <b>kichui bodlabe na</b>.</div>';
+      'Profit in total becomes <b>' + (diff >= 0 ? '+' : '') + money(diff) + '</b>. ' +
+      'Sales, qty, due and stock are <b>all untouched</b>.</div>';
   if (btn) btn.style.display = '';
 }
 
@@ -2234,15 +2287,15 @@ function applyMemoCostRepairUI() {
   const btn = document.getElementById('repairApplyBtn');
   const plan = planMemoCostRepair();
   if (!plan.length) { previewMemoCostRepair(); return; }
-  if (!confirm(plan.length + ' ta memo-r cost/profit thik korben?\n\n' +
-      'Purono profit: ' + money(round2(plan.reduce((a, r) => a + r.wasProfit, 0))) + '\n' +
-      'Notun profit:  ' + money(round2(plan.reduce((a, r) => a + r.nowProfit, 0))) + '\n\n' +
-      'Bikri, qty, due ar stock kichui bodlabe na.')) return;
+  if (!confirm('Fix the cost/profit of ' + plan.length + ' memo(s)?\n\n' +
+      'Old profit: ' + money(round2(plan.reduce((a, r) => a + r.wasProfit, 0))) + '\n' +
+      'New profit: ' + money(round2(plan.reduce((a, r) => a + r.nowProfit, 0))) + '\n\n' +
+      'Sales, qty, due and stock are all untouched.')) return;
   const n = applyMemoCostRepair();
   if (!commit()) return;
   if (btn) btn.style.display = 'none';
-  out.innerHTML = '<div class="note good"><b>' + n + ' ta memo-r</b> profit thik kora hoyeche. ' +
-    'Profit page ar Dashboard-e ekhon notun hishab dekhbe.</div>';
+  out.innerHTML = '<div class="note good"><b>' + n + ' memo(s)\'</b> profit corrected. ' +
+    'The Profit page and Dashboard now show the new figures.</div>';
 }
 
 function backupJSON() {
@@ -2255,14 +2308,14 @@ function backupJSON() {
 /* List what the sheet holds, so an operator can pick which machine to restore. */
 async function cloudDeviceList() {
   const out = document.getElementById('cloudOut');
-  out.textContent = 'Sheet theke ana hocche...';
+  out.textContent = 'Fetching from the sheet...';
   try {
     const devs = await cloudListDevices();
-    if (!devs.length) { out.innerHTML = '<span class="muted">Sheet-e ekhono kono backup nei.</span>'; return; }
+    if (!devs.length) { out.innerHTML = '<span class="muted">The sheet has no backups yet.</span>'; return; }
     out.innerHTML = '<div class="tablewrap"><table><thead><tr><th>Device</th><th>Date</th><th class="right">Size</th><th></th></tr></thead><tbody>' +
       devs.map(d => '<tr><td><b>' + esc(d.device) + '</b></td><td>' + esc(d.date) + '</td>' +
         '<td class="right">' + Math.round((d.bytes || 0) / 1024) + ' KB</td>' +
-        '<td class="right"><button class="btn-light btn-sm" onclick="cloudRestore(\'' + esc(d.device) + '\')">Ei ta fire aan</button></td></tr>').join('') +
+        '<td class="right"><button class="btn-light btn-sm" onclick="cloudRestore(\'' + esc(d.device) + '\')">Restore this</button></td></tr>').join('') +
       '</tbody></table></div>';
   } catch (e) {
     out.innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
@@ -2277,14 +2330,14 @@ function restoreJSON(e) {
     try {
       const incoming = JSON.parse(r.result);
       if (!incoming || typeof incoming !== 'object') throw new Error('bad file');
-      if (!confirm('Ei backup restore korben? Ekhonkar data replace hobe.')) return;
+      if (!confirm('Restore this backup? The current data will be replaced.')) return;
       db = migrate(incoming);
       if (!db.users || !db.users.length) db.users = defaultUsers();
       commit();
-      alert('Backup restore hoyeche. Page reload hobe.');
+      alert('Backup restored. The page will reload.');
       location.reload();
     } catch (err) {
-      alert('Backup file ta thik na: ' + err.message);
+      alert('The backup file is not valid: ' + err.message);
     }
   };
   r.readAsText(f);
@@ -2293,8 +2346,8 @@ function restoreJSON(e) {
 /* Import old v1 data (read-only read from the old key, never writes to it). */
 function importOldData() {
   const raw = localStorage.getItem(OLD_KEY);
-  if (!raw) return alert('Purono app-er data (texpark_biz_v1) ei PC-te nei.');
-  if (!confirm('Purono app-er product, customer, stock o memo import korben? Ekhonkar data merge hobe.')) return;
+  if (!raw) return alert('The old app data (texpark_biz_v1) is not on this PC.');
+  if (!confirm('Import the old app\'s products, customers, stock and memos? The current data will be merged.')) return;
   try {
     const o = JSON.parse(raw);
     let prod = 0, cust = 0, memo = 0, stock = 0;
@@ -2343,7 +2396,7 @@ function importOldData() {
         items, totalQty: num(m.totalQty),
         subtotal: num(m.subtotal), discount: num(m.discount), deliveryCharge: num(m.deliveryCharge),
         vat: 0, grandTotal: num(m.grandTotal), advance: num(m.advance), due: num(m.due),
-        cogs: 0, profit: 0, note: 'Imported from v1 (profit unknown - cost nei)', savedAt: new Date().toISOString()
+        cogs: 0, profit: 0, note: 'Imported from v1 (profit unknown - no cost)', savedAt: new Date().toISOString()
       };
       db.memos.push(memo);
       items.forEach(it => {
@@ -2452,7 +2505,7 @@ function memoPreviewDraft() {
 
 function printPreviewCurrent() {
   const preview = memoPreviewDraft();
-  if (!preview) return alert('Age product din, tarpor print korun.');
+  if (!preview) return alert('Add a product first, then print.');
   printMemoSheet(preview);
 }
 
@@ -2460,7 +2513,7 @@ function printPreviewCurrent() {
    buttons sit next to it. Nothing is saved to the book by looking. */
 function previewCurrentMemo() {
   const preview = memoPreviewDraft();
-  if (!preview) return alert('Age product din, tarpor preview korun.');
+  if (!preview) return alert('Add a product first, then preview.');
   document.getElementById('viewBody').innerHTML = memoSheet(preview);
   const no = document.getElementById('viewMemoNo');
   if (no) no.textContent = (preview.memoNo || '(unsaved)') + '  |  ' + preview.customerName;
@@ -2469,7 +2522,7 @@ function previewCurrentMemo() {
 
 function savePreviewMemo(kind) {
   const preview = memoPreviewDraft();
-  if (!preview) return alert('Age product din, tarpor save korun.');
+  if (!preview) return alert('Add a product first, then save.');
   kind === 'pdf' ? saveMemoPDF(preview) : saveMemoPNG(preview);
 }
 

@@ -46,8 +46,8 @@ public class ScreensData {
         LinearLayout body = Ui.col(s.act);
 
         TextView rule = Ui.label(s.act,
-            "Memo-i ashol. Stock na thakleo memo save hobe \u2014 product gulo Stock page-e "
-            + "nijei bose jabe.");
+            "The memo is the source of truth. It saves even with no stock \u2014 the products "
+            + "land in the Stock page by themselves.");
         body.addView(rule);
 
         LinearLayout head = Ui.card(s.act, "Memo");
@@ -86,10 +86,10 @@ public class ScreensData {
             custRecs.add(c);
         }
         if (!custNames.isEmpty()) {
-            Button pickCust = Ui.ghost(s.act, "Saved customer bachun (" + custNames.size() + ")");
+            Button pickCust = Ui.ghost(s.act, "Choose a saved customer (" + custNames.size() + ")");
             pickCust.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
-                    s.choose("Customer bachun", custNames, new Screens.OnText() {
+                    s.choose("Choose a customer", custNames, new Screens.OnText() {
                         public void on(String idx) {
                             Map<String, Object> c = custRecs.get((int) Store.num(idx));
                             name.setText(Store.str(c, "name"));
@@ -121,7 +121,7 @@ public class ScreensData {
 
             LinearLayout top = Ui.row(s.act);
             Map<String, Object> prod = line.productId.isEmpty() ? null : store.productById(line.productId);
-            Button pick = Ui.button(s.act, prod == null ? "Product bachun" : Store.str(prod, "name"),
+            Button pick = Ui.button(s.act, prod == null ? "Choose a product" : Store.str(prod, "name"),
                     0xFFE3E9F1);
             pick.setTextColor(Ui.NAVY);
             LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
@@ -233,7 +233,7 @@ public class ScreensData {
         // Draw the totals once for the current draft.
         updateTotals(s, d);
 
-        tot.addView(Ui.label(s.act, "Note (memo-te print hobe)"));
+        tot.addView(Ui.label(s.act, "Note (printed on the memo)"));
         final EditText note = Ui.field(s.act, "Note", d.note, InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         Ui.mirror(note, new Ui.Setter() { public void set(String v) { d.note = v; } });
@@ -306,7 +306,7 @@ public class ScreensData {
         for (Map<String, Object> p : shortList) {
             TextView warn = new TextView(s.act);
             warn.setText("\u26A0 " + p.get("name") + ": " + Ui.qty(p.get("short"))
-                    + " tola ekhono Stock page-e tola hoy ni (memo save atkabe na)");
+                    + " received yet on the Stock page (the memo still saves)");
             warn.setTextColor(Ui.AMBER);
             warn.setTextSize(11.5f);
             warn.setPadding(0, Ui.dp(s.act, 6), 0, 0);
@@ -333,9 +333,9 @@ public class ScreensData {
                     + "  \u2022 rate " + Ui.money(p.get("rate")));
             ids.add(Store.str(p, "id"));
         }
-        if (labels.isEmpty()) { s.toast("Age Products page-e ekta product din."); return; }
+        if (labels.isEmpty()) { s.toast("Add a product on the Products page first."); return; }
         new AlertDialog.Builder(s.act)
-            .setTitle("Product bachun")
+            .setTitle("Choose a product")
             .setItems(labels.toArray(new String[0]), new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface dlg, int which) {
                     Screens.MemoDraft.Line l = s.draft.lines.get(lineIdx);
@@ -362,7 +362,7 @@ public class ScreensData {
         Store store = s.store;
         Screens.MemoDraft d = s.draft;
         List<Object> items = d.items(store);
-        if (items.isEmpty()) { s.toast("Age product din, tarpor save korun."); return; }
+        if (items.isEmpty()) { s.toast("Add a product, then save."); return; }
 
         /* The draft is handed to Store as a plain map, so the rule that a memo is
            never blocked by stock lives in one place and is tested on a JVM. */
@@ -380,11 +380,11 @@ public class ScreensData {
 
         Map<String, Object> saved = store.saveMemo(draft, items);
         if (saved == null) {
-            // Say why. "Abar chesta korun" alone hides a disk that is full or a
-            // folder the app cannot write to, and the owner would keep retrying a
-            // save that can never succeed.
+            // Say why. "Try again" alone hides a disk that is full or a folder the
+            // app cannot write to, and the owner would keep retrying a save that can
+            // never succeed.
             String why = store.lastSaveError;
-            s.toast("Memo save korte parlam na. Abar chesta korun."
+            s.toast("Could not save the memo. Try again."
                     + (why == null ? "" : "\n(" + why + ")"));
             return;
         }
@@ -393,10 +393,10 @@ public class ScreensData {
         // the truth about what left the shop; the stock card is the shop's own
         // count of the shelf, and it can be filled in later.
         List<Map<String, Object>> shortList = store.checkStockForItems(items, 0);
-        String msg = "Memo " + Store.str(saved, "memoNo") + " save hoyeche.";
+        String msg = "Memo " + Store.str(saved, "memoNo") + " saved.";
         if (!shortList.isEmpty()) {
-            msg += "\n" + shortList.size() + " product-er stock ekhono tola hoy ni \u2014 "
-                 + "Stock page-e dekhbe.";
+            msg += "\n" + shortList.size() + " product(s) not yet received into stock \u2014 "
+                 + "see the Stock page.";
         }
         if (!silent) s.toast(msg);
 
@@ -443,7 +443,7 @@ public class ScreensData {
                                      "Due " + Ui.money(m.get("due"))},
                         new float[]{2.2f, 3f, 2f}, Ui.MUTED, false));
                     LinearLayout acts = Ui.row(s.act);
-                    Button view = Ui.ghost(s.act, "Dekhun");
+                    Button view = Ui.ghost(s.act, "View");
                     view.setOnClickListener(new View.OnClickListener() {
                         public void onClick(View v) { viewMemo(s, Store.str(m, "id")); }
                     });
@@ -455,11 +455,11 @@ public class ScreensData {
                     del.setTextColor(Ui.RED);
                     del.setOnClickListener(new View.OnClickListener() {
                         public void onClick(View v) {
-                            s.confirm("Ei memo ta muchhe felben? Stock abar firiye deya hobe.",
+                            s.confirm("Delete this memo? The stock will be returned.",
                                 new Runnable() {
                                     public void run() {
                                         store.deleteMemo(m);
-                                        s.afterSave("Memo delete hoyeche, stock abar firiye deya hoyeche.");
+                                        s.afterSave("Memo deleted, stock returned.");
                                     }
                                 });
                         }
@@ -471,7 +471,7 @@ public class ScreensData {
                     row.addView(Ui.divider(s.act));
                     list.addView(row);
                 }
-                if (n == 0) list.addView(Ui.label(s.act, "Kono memo nei."));
+                if (n == 0) list.addView(Ui.label(s.act, "No memos."));
             }
         };
         q.setOnFocusChangeListener(new View.OnFocusChangeListener() {
@@ -516,7 +516,7 @@ public class ScreensData {
         new AlertDialog.Builder(s.act)
             .setTitle("Memo " + Store.str(m, "memoNo"))
             .setView(sc)
-            .setPositiveButton("Bondho", null)
+            .setPositiveButton("Close", null)
             .setNeutralButton("Share", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface d, int w) {
                     shareMemoBitmap(s, sheet, width, Store.str(m, "memoNo"));
@@ -547,9 +547,9 @@ public class ScreensData {
             send.putExtra(android.content.Intent.EXTRA_STREAM, uri);
             send.putExtra(android.content.Intent.EXTRA_SUBJECT, "Memo " + memoNo);
             send.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            s.act.startActivity(android.content.Intent.createChooser(send, "Memo pathan"));
+            s.act.startActivity(android.content.Intent.createChooser(send, "Send memo"));
         } catch (Exception e) {
-            s.toast("Memo share korte parlam na: " + e.getMessage());
+            s.toast("Could not share the memo: " + e.getMessage());
         }
     }
 
@@ -567,9 +567,9 @@ public class ScreensData {
             java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
             doc.writeTo(fos);
             fos.close();
-            s.toast("PDF save hoyeche: " + out.getAbsolutePath());
+            s.toast("PDF saved: " + out.getAbsolutePath());
         } catch (Exception e) {
-            s.toast("PDF save korte parlam na: " + e.getMessage());
+            s.toast("Could not save the PDF: " + e.getMessage());
         } finally {
             if (doc != null) doc.close();
         }
@@ -592,8 +592,8 @@ public class ScreensData {
         if (m == null) return;
         LinearLayout body = Ui.col(s.act);
         body.addView(Ui.label(s.act, "Memo " + Store.str(m, "memoNo")
-                + " \u2014 customer, charge ar note bodlano jay. Item bodlate memo ta "
-                + "delete kore abar likhun (stock thik thakbe)."));
+                + " \u2014 the customer, charge and note can be changed. To change an item, "
+                + "delete the memo and write it again (stock stays correct)."));
         final EditText name = Ui.field(s.act, "Customer Name", Store.str(m, "customerName"),
                 InputType.TYPE_CLASS_TEXT);
         final EditText phone = Ui.field(s.act, "Phone", Store.str(m, "customerPhone"),
@@ -629,7 +629,7 @@ public class ScreensData {
                         Map<String, Object> card = s.store.findStock(Store.str(it, "productId"));
                         it.put("cost", card == null ? Double.valueOf(0) : card.get("cost"));
                     }
-                    s.afterSave("Memo update hoyeche.");
+                    s.afterSave("Memo updated.");
                 }
             })
             .setNegativeButton("Cancel", null)
@@ -671,7 +671,7 @@ public class ScreensData {
         save.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 String nm = name.getText().toString().trim();
-                if (nm.isEmpty()) { s.toast("Product-er nam din."); return; }
+                if (nm.isEmpty()) { s.toast("Enter the product name."); return; }
                 Map<String, Object> p = new LinkedHashMap<String, Object>();
                 p.put("id", Store.id());
                 p.put("name", nm);
@@ -685,7 +685,7 @@ public class ScreensData {
                 p.put("vat", Double.valueOf(Store.num(vat.getText().toString())));
                 p.put("reorderLevel", Double.valueOf(Store.num(reorder.getText().toString())));
                 store.list("products").add(p);
-                s.afterSave("Product save hoyeche.");
+                s.afterSave("Product saved.");
             }
         });
         form.addView(save);
@@ -749,16 +749,16 @@ public class ScreensData {
                        price typed here was ignored by every later memo until the card
                        was rewritten too - profit kept using the old cost. */
                     s.store.setProductCost(p, Store.num(cost.getText().toString()));
-                    s.afterSave("Product update hoyeche.");
+                    s.afterSave("Product updated.");
                 }
             })
             .setNeutralButton("Delete", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface d, int w) {
-                    s.confirm("Product ta muchhe felben? Purono memo-te nam thakbe na.",
+                    s.confirm("Delete this product? The name will stay on old memos.",
                         new Runnable() {
                             public void run() {
                                 s.store.list("products").remove(p);
-                                s.afterSave("Product delete hoyeche.");
+                                s.afterSave("Product deleted.");
                             }
                         });
                 }
@@ -773,8 +773,8 @@ public class ScreensData {
         final Store store = s.store;
         LinearLayout body = Ui.col(s.act);
         body.addView(Ui.label(s.act,
-            "Available = Received/Opening + Purchased \u2212 Sold, ar 0-er niche name na. "
-            + "Memo theke product nijei ekhane bose jay."));
+            "Available = Received/Opening + Purchased \u2212 Sold, and never goes below 0. "
+            + "Products from memos land here by themselves."));
 
         LinearLayout add = Ui.card(s.act, "+ Received / Opening Stock");
         final List<String> ids = new ArrayList<String>();
@@ -784,12 +784,12 @@ public class ScreensData {
             names.add(Store.str(o, "name"));
         }
         final int[] chosen = { ids.isEmpty() ? -1 : 0 };
-        final Button picker = Ui.ghost(s.act, names.isEmpty() ? "Product nei" : names.get(0));
+        final Button picker = Ui.ghost(s.act, names.isEmpty() ? "No products" : names.get(0));
         final EditText qty = Ui.number(s.act, "Qty to Add", "");
         final EditText cost = Ui.number(s.act, "Unit Cost (\u09F3)", "");
         picker.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                s.choose("Product bachun", names, new Screens.OnText() {
+                s.choose("Choose a product", names, new Screens.OnText() {
                     public void on(String idx) {
                         chosen[0] = (int) Store.num(idx);
                         picker.setText(names.get(chosen[0]));
@@ -810,9 +810,9 @@ public class ScreensData {
         Button saveAdd = Ui.primary(s.act, "Add Stock");
         saveAdd.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (chosen[0] < 0) { s.toast("Age product din."); return; }
+                if (chosen[0] < 0) { s.toast("Add a product first."); return; }
                 double q = Store.num(qty.getText().toString());
-                if (q <= 0) { s.toast("Qty din."); return; }
+                if (q <= 0) { s.toast("Enter a qty."); return; }
                 String pid = ids.get(chosen[0]);
                 Map<String, Object> card = store.stockOf(pid);
                 card.put("opening", Double.valueOf(Store.num(card.get("opening")) + q));
@@ -820,7 +820,7 @@ public class ScreensData {
                 if (c > 0) card.put("cost", Double.valueOf(c));
                 card.put("available", Double.valueOf(Store.stockAvailable(card)));
                 store.logStock(pid, "Opening", q, "Received", "Received / opening stock");
-                s.afterSave("Stock jog hoyeche.");
+                s.afterSave("Stock added.");
             }
         });
         add.addView(saveAdd);
@@ -860,7 +860,7 @@ public class ScreensData {
         Map<String, Object> card = store.findStock(pid);
         String info = "Available: " + Ui.qty(card == null ? 0 : card.get("available"))
                 + (card != null && Store.stockShort(card) > 0
-                    ? "  (tola baki " + Ui.qty(Store.stockShort(card)) + ")" : "");
+                    ? "  (" + Ui.qty(Store.stockShort(card)) + " still to receive)" : "");
         new AlertDialog.Builder(s.act)
             .setTitle(Store.str(p, "name"))
             .setMessage(info)
@@ -870,7 +870,7 @@ public class ScreensData {
             .setNeutralButton("Edit card", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface d, int w) { editStockCard(s, pid); }
             })
-            .setNegativeButton("Bondho", null)
+            .setNegativeButton("Close", null)
             .show();
     }
 
@@ -880,7 +880,7 @@ public class ScreensData {
         LinearLayout body = Ui.col(s.act);
         final EditText qty = Ui.number(s.act, "Adjustment Qty (+/-)", "");
         final EditText reason = Ui.field(s.act, "Reason", "", InputType.TYPE_CLASS_TEXT);
-        body.addView(Ui.label(s.act, "Positive number = stock barbe. Negative = kombe."));
+        body.addView(Ui.label(s.act, "A positive number raises stock. A negative one lowers it."));
         body.addView(qty);
         body.addView(reason);
         new AlertDialog.Builder(s.act)
@@ -889,10 +889,10 @@ public class ScreensData {
             .setPositiveButton("Apply", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface d, int w) {
                     double delta = Store.num(qty.getText().toString());
-                    if (delta == 0) { s.toast("Adjustment qty din."); return; }
+                    if (delta == 0) { s.toast("Enter an adjustment qty."); return; }
                     Map<String, Object> card = s.store.stockOf(pid);
                     if (Store.stockRaw(card) + delta < 0) {
-                        s.toast("Adjustment korle stock tolar poriman theke kome jabe."
+                        s.toast("This adjustment would take stock below the real count."
                                 + " Available: " + Ui.qty(card.get("available")));
                         return;
                     }
@@ -905,7 +905,7 @@ public class ScreensData {
                     s.store.logStock(pid, "Adjustment", delta, "Manual",
                             reason.getText().toString().trim().isEmpty()
                                 ? "Stock adjustment" : reason.getText().toString().trim());
-                    s.afterSave("Stock adjustment hoyeche.");
+                    s.afterSave("Stock adjusted.");
                 }
             })
             .setNegativeButton("Cancel", null)
@@ -928,8 +928,8 @@ public class ScreensData {
                 if (Store.str(io, "productId").equals(pid)) memoSold += Store.num(Store.rec(io).get("qty"));
             }
         }
-        body.addView(Ui.label(s.act, "Sold qty memo-r asol bikri (" + Ui.qty(memoSold)
-                + ") theke kome hote pare na."));
+        body.addView(Ui.label(s.act, "Sold qty cannot go below the real sales on memos ("
+                + Ui.qty(memoSold) + ")."));
         body.addView(opening);
         body.addView(purchased);
         body.addView(sold);
@@ -952,8 +952,8 @@ public class ScreensData {
                         }
                     }
                     if (so < memoSold2) {
-                        s.toast("Sold qty memo-r asol bikri (" + Ui.qty(memoSold2)
-                                + ") theke kome hote pare na.");
+                        s.toast("Sold qty cannot go below the real sales on memos ("
+                                + Ui.qty(memoSold2) + ").");
                         return;
                     }
                     Map<String, Object> t = new LinkedHashMap<String, Object>();
@@ -970,9 +970,9 @@ public class ScreensData {
                             "Manual", "Stock card edited");
                     double raw = Store.stockRaw(t);
                     s.afterSave(raw < 0
-                        ? "Stock update hoyeche. Sold er cheye tola kom \u2014 ei "
-                          + Ui.qty(Math.abs(raw)) + " ta Tola baki te dekhabe."
-                        : "Stock update hoyeche.");
+                        ? "Stock updated. Received is less than sold \u2014 this "
+                          + Ui.qty(Math.abs(raw)) + " will show as still to receive."
+                        : "Stock updated.");
                 }
             })
             .setNegativeButton("Cancel", null)
@@ -1000,7 +1000,7 @@ public class ScreensData {
                              Ui.qty(l.get("balance"))},
                 new float[]{2.4f, 3.6f, 2.4f, 1.4f, 1.4f}, Ui.TEXT, false));
         }
-        if (shown == 0) list.addView(Ui.label(s.act, "Kono movement nei."));
+        if (shown == 0) list.addView(Ui.label(s.act, "No movements."));
         body.addView(list);
         return Ui.scroller(s.act, body);
     }

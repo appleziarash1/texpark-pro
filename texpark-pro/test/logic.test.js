@@ -200,8 +200,8 @@ ok(/bn-BD/.test(voiceSrc) && /en-IN/.test(voiceSrc), 'it starts with Bangla and 
 ok(/voiceGotAnything/.test(voiceSrc), 'the code tracks whether the engine ever returned anything');
 ok(/voiceAdvanceLang/.test(voiceSrc), 'a language that returns nothing is swapped out');
 ok(/voiceLang\(\)/.test(voiceSrc), 'the active language is shown while listening');
-ok(/kono Bangla model dey na|Bangla model/.test(voiceSrc), 'when all languages fail it explains why, in Bangla');
-ok(/type kore likhe din/.test(voiceSrc), 'and points at typing instead of dead-ending');
+ok(/no Bangla model/.test(voiceSrc), 'when all languages fail it explains why');
+ok(/type it below/.test(voiceSrc), 'and points at typing instead of dead-ending');
 
 /* The PC and the phone each keep their own counter, so the same memo number
    would be minted on both, and Code.gs upserts on that number - one memo would

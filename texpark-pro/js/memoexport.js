@@ -75,7 +75,7 @@ function downloadBlob(blob, filename) {
 function memoCanvas(m, scale) {
   return new Promise((resolve, reject) => {
     if (typeof Image !== 'function' || typeof document.createElement !== 'function') {
-      reject(new Error('ei device-e chobi banano jay na'));
+      reject(new Error('images cannot be created on this device'));
       return;
     }
     const w = MEMO_PAGE.w, h = memoSheetHeight(m);
@@ -92,7 +92,7 @@ function memoCanvas(m, scale) {
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
       resolve(cv);
     };
-    img.onerror = () => reject(new Error('memo ta chobi korte parlam na'));
+    img.onerror = () => reject(new Error('could not render the memo as an image'));
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   });
 }
@@ -100,7 +100,7 @@ function memoCanvas(m, scale) {
 function canvasToBlob(cv, type, quality) {
   return new Promise((resolve, reject) => {
     if (typeof cv.toBlob === 'function') {
-      cv.toBlob(b => (b ? resolve(b) : reject(new Error('file banano gelo na'))), type, quality);
+      cv.toBlob(b => (b ? resolve(b) : reject(new Error('could not create the file'))), type, quality);
       return;
     }
     // Older WebViews have no toBlob; the data URL form always exists.
@@ -186,7 +186,7 @@ function pdfFromJPEG(jpeg, imgW, imgH) {
 /* The JPEG bytes a PDF needs, taken from the same canvas the PNG is drawn on. */
 function memoJPEGBytes(cv) {
   return new Promise((resolve, reject) => {
-    if (typeof cv.toDataURL !== 'function') { reject(new Error('canvas toDataURL nei')); return; }
+    if (typeof cv.toDataURL !== 'function') { reject(new Error('canvas toDataURL is not available')); return; }
     const url = cv.toDataURL('image/jpeg', 0.92);
     const bin = atob(url.split(',')[1]);
     const bytes = new Uint8Array(bin.length);
@@ -199,8 +199,8 @@ function saveMemoPNG(m) {
   if (!m) return;
   memoCanvas(m, 2)
     .then(cv => canvasToBlob(cv, 'image/png'))
-    .then(b => { downloadBlob(b, memoFileBase(m) + '.png'); toast('Memo PNG save hoyeche: ' + memoFileBase(m) + '.png'); })
-    .catch(e => alert('PNG save korte parlam na: ' + e.message));
+    .then(b => { downloadBlob(b, memoFileBase(m) + '.png'); toast('Memo saved as PNG: ' + memoFileBase(m) + '.png'); })
+    .catch(e => alert('Could not save the PNG: ' + e.message));
 }
 
 function saveMemoPDF(m) {
@@ -211,9 +211,9 @@ function saveMemoPDF(m) {
     .then(j => {
       const pdf = pdfFromJPEG(j.bytes, j.w, j.h);
       downloadBlob(new Blob([pdf], { type: 'application/pdf' }), memoFileBase(m) + '.pdf');
-      toast('Memo PDF save hoyeche: ' + memoFileBase(m) + '.pdf');
+      toast('Memo saved as PDF: ' + memoFileBase(m) + '.pdf');
     })
-    .catch(e => alert('PDF save korte parlam na: ' + e.message));
+    .catch(e => alert('Could not save the PDF: ' + e.message));
 }
 
 /* What "Print" already did: put the sheet in the print area and hand it to the

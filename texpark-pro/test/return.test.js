@@ -100,11 +100,11 @@ ok(!!savedCustomer, 'the customer was added to the customer list on save');
 newMemo();
 el('customerName').value = 'md  karim uddin';   // different case and spacing
 memoCustomerCheck();
-ok(el('memoCustHint').innerHTML.includes('age theke save ache'),
+ok(el('memoCustHint').innerHTML.includes('already saved'),
   'typing the name in a different case/spacing is recognised as already saved');
 eq(el('customerPhone').value, '01711111111', 'the saved phone is filled in');
 eq(el('customerAddress').value, 'Mirpur, Dhaka', 'the saved address is filled in');
-ok(el('memoCustHint').innerHTML.includes('Memo: 1'), 'the hint says how many memos this customer has');
+ok(el('memoCustHint').innerHTML.includes('Memos: 1'), 'the hint says how many memos this customer has');
 
 /* The datalist carries every known name, saved list plus memo names. */
 newMemo();
@@ -115,7 +115,7 @@ console.log('\n--- a brand new name is flagged, not silently added ---');
 newMemo();
 el('customerName').value = 'Notun Chele';
 memoCustomerCheck();
-ok(el('memoCustHint').innerHTML.includes('Notun customer'),
+ok(el('memoCustHint').innerHTML.includes('New customer'),
   'an unknown name is announced as a new customer');
 
 console.log('\n--- a parcel comes back: stock goes up again ---');
@@ -203,7 +203,7 @@ returnQtyChanged();
 el('rtCondition').value = 'good';
 triggers.alert.length = 0;
 saveReturn();
-ok(triggers.alert.some(a => a.includes('beshi hote pare na')),
+ok(triggers.alert.some(a => a.includes('cannot exceed')),
   'returning more than pending is refused, not silently accepted');
 eq(db.returns.length, 0, 'nothing was written for the refused return');
 

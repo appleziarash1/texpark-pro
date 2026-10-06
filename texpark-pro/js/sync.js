@@ -110,7 +110,7 @@ function syncStatusRender() {
    cloudRestore() reads the newest one back. */
 
 function cloudBackupNow(quiet) {
-  if (!syncUrl()) { if (!quiet) alert('Age Settings-e Google Sheet sync URL bosan.'); return false; }
+  if (!syncUrl()) { if (!quiet) alert('First set the Google Sheet sync URL in Settings.'); return false; }
   try {
     syncPush('backup', {
       device: deviceTag(),
@@ -118,21 +118,21 @@ function cloudBackupNow(quiet) {
       version: (typeof APP_VERSION === 'string' ? APP_VERSION : ''),
       json: JSON.stringify(db)
     }, 'Cloud backup (' + deviceTag() + ')');
-    if (!quiet) alert('Cloud backup pathano holo (' + deviceTag() + '). Sync badge dekhe confirm korun.');
+    if (!quiet) alert('Cloud backup sent (' + deviceTag() + '). Check the sync badge to confirm.');
     return true;
   } catch (e) {
-    if (!quiet) alert('Backup pathate parlam na: ' + e.message);
+    if (!quiet) alert('Could not send the backup: ' + e.message);
     return false;
   }
 }
 
 async function cloudListDevices() {
   const url = syncUrl();
-  if (!url) { alert('Age Settings-e Google Sheet sync URL bosan.'); return []; }
+  if (!url) { alert('First set the Google Sheet sync URL in Settings.'); return []; }
   const res = await fetch(url + '?action=pull', { method: 'GET' });
   const txt = await res.text();
   let j = {};
-  try { j = JSON.parse(txt); } catch (e) { throw new Error('Sheet theke thik response ashe ni'); }
+  try { j = JSON.parse(txt); } catch (e) { throw new Error('The sheet did not return a valid response'); }
   if (j.success === false) throw new Error(j.message || 'pull failed');
   return j.devices || [];
 }
@@ -141,15 +141,15 @@ async function cloudListDevices() {
    local data, so it always asks first and keeps a local snapshot behind. */
 async function cloudRestore(device) {
   const url = syncUrl();
-  if (!url) return alert('Age Settings-e Google Sheet sync URL bosan.');
+  if (!url) return alert('First set the Google Sheet sync URL in Settings.');
   const dev = device || deviceTag();
   const res = await fetch(url + '?action=pull&device=' + encodeURIComponent(dev), { method: 'GET' });
   const txt = await res.text();
   let j = {};
-  try { j = JSON.parse(txt); } catch (e) { throw new Error('Sheet theke thik response ashe ni'); }
+  try { j = JSON.parse(txt); } catch (e) { throw new Error('The sheet did not return a valid response'); }
   if (!j.success) throw new Error(j.message || 'pull failed');
-  if (!j.json) return alert('"' + dev + '" er kono backup sheet-e nei.');
-  if (!confirm('"' + dev + '" er ' + (j.date || '') + ' er backup niye ekhonkar data replace korben?')) return;
+  if (!j.json) return alert('The sheet has no backup for "' + dev + '".');
+  if (!confirm('Restore "' + dev + '" backup from ' + (j.date || '') + ' and replace the current data?')) return;
   restoreFromJSONText(j.json);
 }
 
@@ -161,10 +161,10 @@ function restoreFromJSONText(text, opts) {
     db = migrate(incoming);
     if (!db.users || !db.users.length) db.users = defaultUsers();
     if (!commit()) return;
-    if (!opts || !opts.silent) alert('Cloud theke restore hoyeche. Page reload hobe.');
+    if (!opts || !opts.silent) alert('Restored from the cloud. The page will reload.');
     location.reload();
   } catch (e) {
-    alert('Backup ta thik na: ' + e.message);
+    alert('The backup is not valid: ' + e.message);
   }
 }
 
@@ -281,7 +281,7 @@ async function pullAndMerge() {
   const res = await fetch(url + '?action=pullall', { method: 'GET' });
   const text = await res.text();
   let j = {};
-  try { j = JSON.parse(text); } catch (e) { throw new Error('Sheet theke thik response ashe ni'); }
+  try { j = JSON.parse(text); } catch (e) { throw new Error('The sheet did not return a valid response'); }
   if (!j.success) throw new Error(j.message || 'pull failed');
   if (!j.json) return { merged: false, reason: 'cloud empty' };
 

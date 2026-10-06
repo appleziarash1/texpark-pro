@@ -86,97 +86,97 @@ footer code{background:#fff;border:1px solid var(--line);padding:1px 6px;border-
 <div class="wrap">
 
 <div style="background:linear-gradient(135deg,#12366b,#1e4f9c);color:#fff;border-radius:16px;padding:22px;margin:0 0 22px">
-  <div style="font-size:20px;font-weight:800;margin-bottom:6px">Texpark Pro ready &mdash; download korun</div>
-  <p style="margin:0 0 14px;font-size:14.5px;opacity:.93">App ta toiri. Niche thika shorashori download korun &mdash;
-  Android app (APK) ar hosting file, duitai.</p>
-  <a href="download.html" style="display:inline-block;background:#f22b70;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;margin:0 10px 10px 0">&#10515;&nbsp; Download page khulun</a>
+  <div style="font-size:20px;font-weight:800;margin-bottom:6px">Texpark Pro is ready &mdash; download it</div>
+  <p style="margin:0 0 14px;font-size:14.5px;opacity:.93">The app is built. Download directly below &mdash;
+  both the Android app (APK) and the hosting file.</p>
+  <a href="download.html" style="display:inline-block;background:#f22b70;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;margin:0 10px 10px 0">&#10515;&nbsp; Open the download page</a>
   <a href="../TexparkPro.apk" download style="display:inline-block;background:#159957;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;margin:0 10px 10px 0">&#128241;&nbsp; Android app (APK)</a>
   <a href="../texpark-hosting.zip" download style="display:inline-block;background:#fff;color:#12366b;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;margin:0 0 10px 0">&#10515;&nbsp; Hosting file (ZIP)</a>
 </div>
 
-<h1>Apnar existing app-er upor base kore &mdash; 6 ta upgrade option</h1>
-<p class="sub">Ami apnar pathano app ta puro audit korechi (<code>index.html</code>, <code>Code.gs</code>, Electron setup). Ei catalog-er shob kichu <b>apnar asol app-er sathe miliye</b> lekha &mdash; generic idea na. Niche prothome dekhun <b>ki ache</b> ar <b>ki nei</b>, tarpor apnar moto upgrade ta bechhe nin.</p>
+<h1>Built on top of your existing app &mdash; 6 upgrade options</h1>
+<p class="sub">I fully audited the app you sent (<code>index.html</code>, <code>Code.gs</code>, the Electron setup). Everything in this catalog is written <b>against your actual app</b> &mdash; not generic ideas. Below, first see <b>what it has</b> and <b>what is missing</b>, then pick the upgrade that suits you.</p>
 
-<h2 class="sec">Step 1 &mdash; Apnar app-e ekhon ki ache (audit result)</h2>
-<p class="hint">Ei kaj gula apnar app-e <b>already kaj korche</b> &mdash; ei gula ami nosto korbo na, upor borong aro solid korbo.</p>
+<h2 class="sec">Step 1 &mdash; What your app has now (audit result)</h2>
+<p class="hint">These already <b>work in your app</b> &mdash; I will not remove them, only make them more solid.</p>
 
 <div class="audit">
   <div class="acard ok">
     <div class="cap">&#10003; Already working</div>
-    <h3>Apnar app-er shokti</h3>
+    <h3>Your app's strengths</h3>
     <ul class="tick">
-      <li><b>Sales Memo</b> &mdash; rate + qty, amount auto <small>Discount, Delivery Charge, Advance, Due shoho</small></li>
-      <li><b>Memo History</b> &mdash; View / Edit / Delete <small>Delete korle sold stock abar phiriye dey</small></li>
-      <li><b>Professional memo sheet</b> + PNG/PDF download + Bangla taka kotha-e (numberWords)
-        <small>navy header, lal accent line, Due Date / Payment / Delivery strip</small></li>
+      <li><b>Sales Memo</b> &mdash; rate + qty, amount auto <small>with Discount, Delivery Charge, Advance, Due</small></li>
+      <li><b>Memo History</b> &mdash; View / Edit / Delete <small>deleting a memo returns the sold stock</small></li>
+      <li><b>Professional memo sheet</b> + PNG/PDF download + amount in words (numberWords)
+        <small>navy header, red accent line, Due Date / Payment / Delivery strip</small></li>
       <li><b>Stock Management</b> &mdash; Opening / Purchased / Sold / Available, Edit + Adjustment modal</li>
       <li><b>Delivery Tracking</b> &mdash; Partial / Delivered, qty, note</li>
       <li><b>Customers &amp; Products</b> &mdash; search, edit, delete</li>
-      <li><b>Google Sheets Sync</b> &mdash; 7 ta sheet, memo summary upsert <small>Code.gs diye</small></li>
+      <li><b>Google Sheets Sync</b> &mdash; 7 sheets, memo summary upsert <small>via Code.gs</small></li>
       <li><b>Excel/CSV Import</b> + template, CSV/JSON export, Backup &amp; Restore</li>
       <li><b>Electron PC app</b> &mdash; .exe build script, desktop shortcut</li>
     </ul>
   </div>
 
   <div class="acard miss">
-    <div class="cap">&#10005; Ekhono nei &mdash; apnar bola kichu ei gula missing</div>
-    <h3>Ja add korle app puro hoy</h3>
+    <div class="cap">&#10005; Not yet &mdash; these are missing</div>
+    <h3>What to add to complete the app</h3>
     <ul class="tick">
-      <li><b>Profit / লাভ</b> &mdash; app-e <code>profit</code> shobdo ekbaro nai <small>Apni cheyechilen, kintu ekhono nei. Cost price track hoy na.</small></li>
-      <li><b>Supplier / Purchase Party</b> &mdash; supplier bolte kichu nei <small>Purchase entry te supplier, due, return nei.</small></li>
-      <li><b>Kharcha (Expense)</b> &mdash; rent, salary, utility <small>Net profit ber korar kono system nei.</small></li>
-      <li><b>Party Ledger + Due Ageing</b> &mdash; ke koto din dhore baki</li>
-      <li><b>Low-Stock Reorder Alert</b> &mdash; reorder level set korar option nei</li>
-      <li><b>Login / Role / Audit Log</b> &mdash; je keu app khulei sob dekhte pare</li>
-      <li><b>Chart / Graph</b> &mdash; sales-profit trend chobi-te nei</li>
-      <li><b>Auto Backup</b> &mdash; ekhon hatiye backup korte hoy</li>
-      <li><b>VAT / Mushak, Barcode</b> &mdash; nei</li>
+      <li><b>Profit</b> &mdash; the word <code>profit</code> does not appear once in the app <small>You asked for it, but it is not there yet. Cost price is not tracked.</small></li>
+      <li><b>Supplier / Purchase Party</b> &mdash; there is no supplier concept <small>Purchase entry has no supplier, due or return.</small></li>
+      <li><b>Expenses</b> &mdash; rent, salary, utilities <small>There is no system for working out net profit.</small></li>
+      <li><b>Party Ledger + Due Ageing</b> &mdash; who has been due for how long</li>
+      <li><b>Low-Stock Reorder Alert</b> &mdash; no option to set a reorder level</li>
+      <li><b>Login / Role / Audit Log</b> &mdash; anyone who opens the app sees everything</li>
+      <li><b>Chart / Graph</b> &mdash; no visual sales-profit trend</li>
+      <li><b>Auto Backup</b> &mdash; backups must be done by hand</li>
+      <li><b>VAT / Mushak, Barcode</b> &mdash; missing</li>
     </ul>
   </div>
 </div>
 
 <div class="alert">
-  <h4>&#9888; Ekta real somossa pelam &mdash; ei ta age thik kora dorkar</h4>
-  <p style="margin:0 0 9px">Apnar app-e sync-er khetre ekta <b>silent data-loss risk</b> ache:</p>
+  <h4>&#9888; I found one real problem &mdash; this needs fixing first</h4>
+  <p style="margin:0 0 9px">Your app has a <b>silent data-loss risk</b> in its sync:</p>
   <ul style="margin:0 0 9px;padding-left:20px;font-size:13.5px">
-    <li><code>pushSync()</code> <code>mode:'no-cors'</code> diye pathay &mdash; mane browser <b>response porte pare na</b>. Tai <code>"&#10003; Sync request sent"</code> lekha ta asol-e save hoyeche kina jane na. Google bhor kore fail korleo app "&#10003;" dekhabe.</li>
-    <li>Apnar <code>Code.gs</code>-er nijer comment-ei ei durbalta lekha ache: <i>"...even if the separate memo request is interrupted by Electron closing/clearing the memo immediately after save."</i> &mdash; mane ei somossa apnara age onubhob korechen, ar ekta workaround diyechen.</li>
-    <li>Kono <b>retry / offline queue</b> nei &mdash; internet na thakle oi memo Sheet-e kokhono jabe na, kintu app bole "sent".</li>
+    <li><code>pushSync()</code> sends with <code>mode:'no-cors'</code> &mdash; meaning the browser <b>cannot read the response</b>. So <code>"&#10003; Sync request sent"</code> does not know whether it actually saved. Even if Google fails completely, the app shows "&#10003;".</li>
+    <li>Your own <code>Code.gs</code> comment admits this weakness: <i>"...even if the separate memo request is interrupted by Electron closing/clearing the memo immediately after save."</i> &mdash; so you hit this problem before and applied a workaround.</li>
+    <li>There is no <b>retry / offline queue</b> &mdash; if the internet is down that memo never reaches the Sheet, but the app still says "sent".</li>
   </ul>
-  <p style="margin:0"><b>Amar poramorsho:</b> upgrade-e shudhu feature add na, ei sync ta <b>asol-e verify kora</b> + retry queue + "Failed &rarr; Pending &rarr; Synced" status dibo. Tahole apni nishchinte bhorosa korte parben.</p>
+  <p style="margin:0"><b>My advice:</b> the upgrade does not just add features &mdash; it makes this sync <b>truly verify</b>, adds a retry queue, and shows a "Failed &rarr; Pending &rarr; Synced" status. Then you can trust it.</p>
 </div>
 
 <div class="alert" style="background:#eefaf3;border-color:#bfe8d2;border-left-color:var(--green)">
-  <h4 style="color:var(--green)">&#10003; Apnar pochhonder app ta banano shesh &mdash; ekhon dekhe nin</h4>
-  <p style="margin:0 0 12px">Niche catalog ta chintar jonno chilo. Ekhon <b>Option A &mdash; Texpark Pro</b> puroupori banano hoyeche:
-  company details, stock, profit, sales, purchase, delivery memo, accounts &mdash; sob ek shathe, PC + phone-e chalbe.
-  Ar sync-er tin ta notun kaj-o ekhon bhitor-e ache:</p>
+  <h4 style="color:var(--green)">&#10003; The app you chose is built &mdash; take a look now</h4>
+  <p style="margin:0 0 12px">The catalog below was for choosing. Now <b>Option A &mdash; Texpark Pro</b> is fully built:
+  company details, stock, profit, sales, purchase, delivery memos, accounts &mdash; all together, running on PC + phone.
+  And the three new sync features are in it:</p>
   <ul style="margin:0 0 12px;padding-left:20px;font-size:13.5px">
-    <li><b>Nijei sync</b> &mdash; app khola thakle prottek 30 second-e notun data tene ney. PC-te likhle phone-e nijei chole ashe, app bondho korte hoy na.</li>
-    <li><b>Company / settings / user sync</b> &mdash; company-r nam, phone, address, BIN, VAT, memo prefix, ar staff-er login &mdash; ek jaygay set korlei sob machine-e chole jay.</li>
-    <li><b>Prottek device-er nijer setting alada</b> &mdash; sync URL, device tag, auto-pull onno device-e jay na, tai memo number clash kore na.</li>
+    <li><b>Syncs by itself</b> &mdash; while the app is open it pulls new data every 30 seconds. Write on the PC and it reaches the phone by itself; no need to close the app.</li>
+    <li><b>Company / settings / user sync</b> &mdash; company name, phone, address, BIN, VAT, memo prefix and staff logins &mdash; set once and they reach every machine.</li>
+    <li><b>Each device keeps its own settings</b> &mdash; sync URL, device tag and auto-pull are not copied to another device, so memo numbers never clash.</li>
   </ul>
   <p style="margin:0">
-    <a href="catalog-pro-v1.html" style="display:inline-block;background:var(--pink);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:9px;margin-right:10px">&#9654; App ta dekhe nin (catalog)</a>
-    <a href="../texpark-pro.html" target="_blank" style="display:inline-block;background:var(--navy);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:9px">App ta kholun (login: admin / admin123)</a>
+    <a href="catalog-pro-v1.html" style="display:inline-block;background:var(--pink);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:9px;margin-right:10px">&#9654; Take a look at the app (catalog)</a>
+    <a href="../texpark-pro.html" target="_blank" style="display:inline-block;background:var(--navy);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:9px">Open the app</a>
   </p>
 </div>
 
 <div class="alert" style="background:#eefaf3;border-color:#bfe8d2;border-left-color:var(--green)">
-  <h4 style="color:var(--green)">&#10003; Notun: memo print/export ta ekhon professional</h4>
-  <p style="margin:0 0 10px">Memo ta ekhon ekta <b>asol sales document</b> &mdash; company-r nam soho navy
-  header, Bill To / From box, striped item table, takar kotha, grand total ar due alada highlight,
-  ar niche duita signature line. Screen, A4 print ar download &mdash; tintai ek-i design.</p>
+  <h4 style="color:var(--green)">&#10003; New: the memo print/export is now professional</h4>
+  <p style="margin:0 0 10px">The memo is now a <b>real sales document</b> &mdash; a navy header with the company
+  name, Bill To / From boxes, a striped item table, amount in words, the grand total and due highlighted
+  separately, and two signature lines below. Screen, A4 print and download &mdash; all the same design.</p>
   <ul style="margin:0 0 10px;padding-left:20px;font-size:13.5px">
-    <li><b>PNG</b> download &mdash; WhatsApp-e sathe sathe pathan (customer-ke deoar moto)</li>
-    <li><b>PDF</b> download &mdash; A4 page, print ba email korun</li>
-    <li><b>Native Android app-e-o same memo sheet</b> &mdash; Share (PNG) ar Save PDF button soho</li>
+    <li><b>PNG</b> download &mdash; send on WhatsApp right away (good enough to hand to the customer)</li>
+    <li><b>PDF</b> download &mdash; A4 page, print or email it</li>
+    <li><b>The same memo sheet on the native Android app</b> &mdash; with Share (PNG) and Save PDF buttons</li>
   </ul>
-  <p style="margin:0"><a href="catalog-pro-v1.html" style="display:inline-block;background:var(--navy);color:#fff;text-decoration:none;font-weight:700;padding:10px 18px;border-radius:9px">&#9654; Memo-r design ta dekhe nin</a></p>
+  <p style="margin:0"><a href="catalog-pro-v1.html" style="display:inline-block;background:var(--navy);color:#fff;text-decoration:none;font-weight:700;padding:10px 18px;border-radius:9px">&#9654; Take a look at the memo design</a></p>
 </div>
 
-<h2 class="sec">Step 2 &mdash; 6 ta Upgrade Option (card-e click kore bechhun)</h2>
-<p class="hint">Shob option apnar <b>existing data (texpark_biz_v1)</b> rekhe-cholbe &mdash; purono memo, stock, customer hariye jabe na.</p>
+<h2 class="sec">Step 2 &mdash; 6 upgrade options (click a card to choose)</h2>
+<p class="hint">Every option keeps your <b>existing data (texpark_biz_v1)</b> &mdash; old memos, stock and customers are not lost.</p>
 
 <div class="grid">
 
@@ -188,31 +188,31 @@ footer code{background:#fff;border:1px solid var(--line);padding:1px 6px;border-
         <div class="bars"><i style="height:40%"></i><i style="height:65%"></i><i style="height:52%"></i><i class="hi" style="height:88%"></i><i style="height:70%"></i><i style="height:95%"></i></div>
         <div class="ln g" style="width:78%"></div><div class="ln" style="width:52%"></div></div></div>
     <div class="body">
-      <p class="desc">Apnar ei app tar upor ei <b>shobcheye practical</b> upgrade. Apnar bola profit-dorkar ta purno hoy, ar sync somossa thik hoy.</p>
+      <p class="desc">The <b>most practical</b> upgrade on top of your app. It fulfils your need for profit and fixes the sync problem.</p>
       <ul class="f">
-        <li class="add">Profit/Loss dashboard &mdash; product-wise, memo-wise, month-wise</li>
-        <li class="add">Product-e Cost Price + Expense entry (rent/salary/utility)</li>
+        <li class="add">Profit/Loss dashboard &mdash; by product, by memo, by month</li>
+        <li class="add">Cost Price on products + Expense entry (rent/salary/utilities)</li>
         <li class="add">Supplier management + purchase due</li>
         <li class="add">Reorder level + low-stock alert</li>
         <li class="add">Login + role (Admin / Manager / Salesman)</li>
         <li class="add">Sales-profit chart, auto daily backup</li>
         <li class="add">Sync fix &mdash; verify + retry queue + real status</li>
-        <li class="add">Nijei sync &mdash; 30 second por por, app khola thakle</li>
-        <li class="add">Company details, settings ar user &mdash; PC + phone dutotei sync</li>
-        <li class="add">Prottek device-er nijer setting alada (sync URL / tag / auto-pull)</li>
+        <li class="add">Syncs by itself &mdash; every 30 seconds while the app is open</li>
+        <li class="add">Company details, settings and users &mdash; synced on both PC + phone</li>
+        <li class="add">Each device keeps its own settings (sync URL / tag / auto-pull)</li>
       </ul>
-      <div class="meta"><span>&#9201; <b>5&ndash;7 din</b></span><span>&#128187; Existing .exe</span><span>&#128451; Same data key</span></div>
+      <div class="meta"><span>&#9201; <b>5&ndash;7 days</b></span><span>&#128187; Existing .exe</span><span>&#128451; Same data key</span></div>
     </div>
   </div>
 
   <div class="card" data-opt="B. Accounts & Ledger Suite">
-    <div class="head"><h3>B &mdash; Accounts &amp; Ledger Suite</h3><span class="tag t-navy">Hishab purna</span></div>
+    <div class="head"><h3>B &mdash; Accounts &amp; Ledger Suite</h3><span class="tag t-navy">Full accounting</span></div>
     <div class="shot"><div class="bar"><i class="dot" style="background:#ff5f57"></i><i class="dot" style="background:#febc2e"></i><i class="dot" style="background:#28c840"></i></div>
       <div class="mini"><div class="rw">
-        <div class="kpi"><s>Gross</s><b>&#2547;74K</b></div><div class="kpi"><s>Kharcha</s><b style="color:#d51f5b">&#2547;21K</b></div><div class="kpi"><s>Net</s><b style="color:#159957">&#2547;53K</b></div></div>
+        <div class="kpi"><s>Gross</s><b>&#2547;74K</b></div><div class="kpi"><s>Expenses</s><b style="color:#d51f5b">&#2547;21K</b></div><div class="kpi"><s>Net</s><b style="color:#159957">&#2547;53K</b></div></div>
         <div class="ln g" style="width:85%"></div><div class="ln" style="width:62%"></div><div class="ln" style="width:40%"></div><div class="ln g" style="width:70%"></div></div></div>
     <div class="body">
-      <p class="desc">Profit-er <b>asol hishab</b> &mdash; COGS, kharcha, party ledger, VAT. Jodi bank/VAT/Mushak hishab dorkar hoy, ei ta.</p>
+      <p class="desc">The <b>real accounting</b> for profit &mdash; COGS, expenses, party ledger, VAT. If you need bank/VAT/Mushak accounting, this is it.</p>
       <ul class="f">
         <li class="add">Real COGS &mdash; FIFO/avg cost, per-item margin</li>
         <li class="add">Expense heads + monthly P&amp;L statement</li>
@@ -222,27 +222,27 @@ footer code{background:#fff;border:1px solid var(--line);padding:1px 6px;border-
         <li class="add">Purchase return, damage/loss entry</li>
         <li class="add">Reconcile with Google Sheet data</li>
       </ul>
-      <div class="meta"><span>&#9201; <b>8&ndash;12 din</b></span><span>&#128187; Existing .exe</span><span>&#128451; Same data key</span></div>
+      <div class="meta"><span>&#9201; <b>8&ndash;12 days</b></span><span>&#128187; Existing .exe</span><span>&#128451; Same data key</span></div>
     </div>
   </div>
 
   <div class="card" data-opt="C. POS Counter Mode">
-    <div class="head"><h3>C &mdash; POS Counter Mode</h3><span class="tag t-warn">Druto bill</span></div>
+    <div class="head"><h3>C &mdash; POS Counter Mode</h3><span class="tag t-warn">Fast billing</span></div>
     <div class="shot"><div class="bar"><i class="dot" style="background:#ff5f57"></i><i class="dot" style="background:#febc2e"></i><i class="dot" style="background:#28c840"></i></div>
       <div class="mini"><div class="rw">
         <div class="kpi"><s>Bill #</s><b>1042</b></div><div class="kpi"><s>Cart</s><b>6 item</b></div><div class="kpi"><s>Total</s><b style="color:#159957">&#2547;2,840</b></div></div>
         <div class="ln" style="width:70%"></div><div class="ln g" style="width:45%"></div></div></div>
     <div class="body">
-      <p class="desc">Dokan-e counter theke <b>druto bill</b> korte chaile. Apnar memo system-er sathe POS mode add hobe.</p>
+      <p class="desc">For <b>fast billing</b> from a shop counter. A POS mode is added alongside your memo system.</p>
       <ul class="f">
         <li class="add">Barcode scanner + keyboard-only billing</li>
         <li class="add">Quick-key product grid, touch support</li>
         <li class="add">58mm/80mm receipt printer + cash drawer</li>
         <li class="add">Retail/wholesale price auto switch</li>
         <li class="add">Daily cash closing + shift report</li>
-        <li>Memo + stock system same rabe</li>
+        <li>Your memo + stock system stays the same</li>
       </ul>
-      <div class="meta"><span>&#9201; <b>4&ndash;6 din</b></span><span>&#128424; USB printer</span><span>&#128451; Same data key</span></div>
+      <div class="meta"><span>&#9201; <b>4&ndash;6 days</b></span><span>&#128424; USB printer</span><span>&#128451; Same data key</span></div>
     </div>
   </div>
 
@@ -253,16 +253,16 @@ footer code{background:#fff;border:1px solid var(--line);padding:1px 6px;border-
         <div class="kpi"><s>Sync</s><b style="color:#159957">&#9679; Live</b></div><div class="kpi"><s>Users</s><b>7</b></div><div class="kpi"><s>Branches</s><b>2</b></div></div>
         <div class="ln g" style="width:88%"></div><div class="ln" style="width:64%"></div><div class="ln" style="width:48%"></div></div></div>
     <div class="body">
-      <p class="desc">Google Sheet-e manual sync-bondi. Real server database &mdash; apni jekhane theke hok dekhben, delivery man mobile-e.</p>
+      <p class="desc">No more manual syncing to a Google Sheet. A real server database &mdash; view it from anywhere, with the delivery man on mobile.</p>
       <ul class="f">
         <li class="add">Real backend DB &mdash; sync 100% reliable, queue + retry</li>
         <li class="add">Delivery man mobile view &mdash; memo, delivery confirm</li>
         <li class="add">Multi-branch, anywhere access</li>
-        <li class="add">Auto cloud backup, kono data loss nei</li>
-        <li>Apnar shob existing feature same</li>
-        <li class="no">Internet dorkar + monthly hosting cost</li>
+        <li class="add">Auto cloud backup, no data loss</li>
+        <li>All your existing features stay the same</li>
+        <li class="no">Needs internet + monthly hosting cost</li>
       </ul>
-      <div class="meta"><span>&#9201; <b>10&ndash;15 din</b></span><span>&#127760; Browser + Mobile</span><span>&#128451; Server DB</span></div>
+      <div class="meta"><span>&#9201; <b>10&ndash;15 days</b></span><span>&#127760; Browser + Mobile</span><span>&#128451; Server DB</span></div>
     </div>
   </div>
 
@@ -273,103 +273,103 @@ footer code{background:#fff;border:1px solid var(--line);padding:1px 6px;border-
         <div class="kpi"><s>Bugs</s><b style="color:#159957">0</b></div><div class="kpi"><s>Sync</s><b>Verified</b></div><div class="kpi"><s>Installer</s><b>&#10003;</b></div></div>
         <div class="ln g" style="width:90%"></div></div></div>
     <div class="body">
-      <p class="desc">Notun feature na &mdash; shudhu <b>existing app-ta solid kora</b>. Jodi app-ta ekhon majhe majhe sync/print somossa dey, age ei ta.</p>
+      <p class="desc">No new features &mdash; just <b>making the existing app solid</b>. If the app now and then has sync/print trouble, start with this.</p>
       <ul class="f">
-        <li class="add">Sync verify + retry queue (silent fail bondi)</li>
+        <li class="add">Sync verify + retry queue (no more silent failures)</li>
         <li class="add">Proper .exe installer + auto-update</li>
         <li class="add">Print layout, rounding, numberWords fix</li>
         <li class="add">Sheet duplicate-row cleanup tool</li>
-        <li class="add">Error log page &mdash; ki fail korlo dekha jabe</li>
-        <li class="no">Notun business feature nei</li>
+        <li class="add">Error log page &mdash; see what failed</li>
+        <li class="no">No new business features</li>
       </ul>
-      <div class="meta"><span>&#9201; <b>2&ndash;3 din</b></span><span>&#128187; Existing .exe</span><span>&#128451; Same data key</span></div>
+      <div class="meta"><span>&#9201; <b>2&ndash;3 days</b></span><span>&#128187; Existing .exe</span><span>&#128451; Same data key</span></div>
     </div>
   </div>
 
   <div class="card" data-opt="F. Custom Mix">
-    <div class="head"><h3>F &mdash; Custom Mix</h3><span class="tag t-rec">Apnar moto</span></div>
+    <div class="head"><h3>F &mdash; Custom Mix</h3><span class="tag t-rec">Your way</span></div>
     <div class="shot"><div class="bar"><i class="dot" style="background:#ff5f57"></i><i class="dot" style="background:#febc2e"></i><i class="dot" style="background:#28c840"></i></div>
       <div class="mini"><div class="rw">
         <div class="kpi"><s>Module</s><b>&#10003;</b></div><div class="kpi"><s>Module</s><b>&#10003;</b></div><div class="kpi"><s>Module</s><b>?</b></div></div>
         <div class="ln" style="width:60%"></div><div class="ln" style="width:80%"></div></div></div>
     <div class="body">
-      <p class="desc">Upore r kono ta 100% match na hole &mdash; apni bolben kon feature chai ar kon ta chai na, ami shei moto banabo.</p>
+      <p class="desc">If none above matches 100% &mdash; tell me which features you want and which you do not, and I will build it that way.</p>
       <ul class="f">
-        <li class="add">Feature checkbox &mdash; apni select korben</li>
-        <li class="add">Apnar purono memo/report format onujayi design</li>
-        <li class="add">Suparish onujayi kaj gulo age korbo</li>
+        <li class="add">Feature checklist &mdash; you choose</li>
+        <li class="add">Designed to match your old memo/report format</li>
+        <li class="add">I do the recommended work first</li>
       </ul>
-      <div class="meta"><span>&#9201; <b>Requirement onujayi</b></span><span>&#128172; Alochona dorkar</span></div>
+      <div class="meta"><span>&#9201; <b>Depends on requirements</b></span><span>&#128172; Needs discussion</span></div>
     </div>
   </div>
 
 </div>
 
-<h2 class="sec">Step 3 &mdash; Apnar app vs Option-er tulona</h2>
-<p class="hint">Ei table ta apnar <b>asol app-er audit</b> theke banano &mdash; kono guess na.</p>
+<h2 class="sec">Step 3 &mdash; Your app vs the options</h2>
+<p class="hint">This table is built from an <b>audit of your real app</b> &mdash; no guessing.</p>
 <div class="tblwrap">
 <table>
-<tr><th>Feature</th><th>Ekhon (v1.0.1)</th><th>A Pro &#9733;</th><th>B Accounts</th><th>C POS</th><th>D Cloud</th><th>E Lite</th></tr>
+<tr><th>Feature</th><th>Now (v1.0.1)</th><th>A Pro &#9733;</th><th>B Accounts</th><th>C POS</th><th>D Cloud</th><th>E Lite</th></tr>
 <tr><td>Sales memo (rate+qty, discount, advance, due)</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
 <tr><td>Memo history edit/delete + stock reverse</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
-<tr><td>A4 print / PDF + Bangla taka kotha</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
+<tr><td>A4 print / PDF + amount in words</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
 <tr><td>Stock + delivery tracking</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
-<tr><td><b>Profit / Loss hishab</b></td><td class="n">&#10005; Nei</td><td class="y">&#10003; Product+memo</td><td class="y">&#10003; COGS full</td><td class="y">&#10003; basic</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
-<tr><td><b>Expense (kharcha) entry</b></td><td class="n">&#10005; Nei</td><td class="y">&#10003;</td><td class="y">&#10003; heads</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
-<tr><td><b>Supplier / purchase due</b></td><td class="n">&#10005; Nei</td><td class="y">&#10003;</td><td class="y">&#10003; ledger</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
+<tr><td><b>Profit / Loss</b></td><td class="n">&#10005; No</td><td class="y">&#10003; Product+memo</td><td class="y">&#10003; COGS full</td><td class="y">&#10003; basic</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
+<tr><td><b>Expense entry</b></td><td class="n">&#10005; No</td><td class="y">&#10003;</td><td class="y">&#10003; heads</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
+<tr><td><b>Supplier / purchase due</b></td><td class="n">&#10005; No</td><td class="y">&#10003;</td><td class="y">&#10003; ledger</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
 <tr><td>Party ledger + due ageing</td><td class="n">&#10005;</td><td class="y">&#10003; basic</td><td class="y">&#10003; 30/60/90</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
 <tr><td>Low-stock reorder alert</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
-<tr><td>Login / role / audit log</td><td class="n">&#10005; Nei</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003; limited</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
+<tr><td>Login / role / audit log</td><td class="n">&#10005; No</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003; limited</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
 <tr><td>Chart / graph</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
 <tr><td>Barcode / receipt printer</td><td class="n">&#10005;</td><td class="n">&ndash;</td><td class="n">&ndash;</td><td class="y">&#10003; core</td><td class="n">&ndash;</td><td class="n">&#10005;</td></tr>
 <tr><td>VAT / Mushak</td><td class="n">&#10005;</td><td class="n">basic</td><td class="y">&#10003; full</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
 <tr><td>Auto backup</td><td class="n">&#10005; manual</td><td class="y">&#10003; daily</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003; cloud</td><td class="n">&#10005;</td></tr>
 <tr><td><b>Sync verify + retry queue</b></td><td class="n">&#10005; silent fail</td><td class="y">&#10003; fixed</td><td class="y">&#10003; fixed</td><td class="y">&#10003; fixed</td><td class="y">&#10003; server</td><td class="y">&#10003; fixed</td></tr>
-<tr><td><b>Auto sync (30 sec por por)</b></td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003; live</td><td class="y">&#10003;</td></tr>
+<tr><td><b>Auto sync (every 30 sec)</b></td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003; live</td><td class="y">&#10003;</td></tr>
 <tr><td><b>Company / settings / user sync</b></td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
 <tr><td>Mobile access</td><td class="n">&#10005;</td><td class="n">&#10005;</td><td class="n">&#10005;</td><td class="n">&#10005;</td><td class="y">&#10003;</td><td class="n">&#10005;</td></tr>
-<tr><td>Offline kaj kore</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="n">&#10005;</td><td class="y">&#10003;</td></tr>
-<tr><td>Purono data rekhe cholbe</td><td>&mdash;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
+<tr><td>Works offline</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="n">&#10005;</td><td class="y">&#10003;</td></tr>
+<tr><td>Keeps old data</td><td>&mdash;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td></tr>
 </table>
 </div>
 
-<h2 class="sec">Step 4 &mdash; Kar jonno kon ta</h2>
+<h2 class="sec">Step 4 &mdash; Which is for whom</h2>
 <div class="tblwrap">
 <table>
-<tr><th style="width:230px">Apni jodi&hellip;</th><th>Eta nin</th></tr>
-<tr><td>Profit dekhte chai, app ta ekhon jemon ache tar upor ei</td><td><b>A &mdash; Texpark Pro &#9733;</b> (shobcheye balanced)</td></tr>
-<tr><td>Puro hishab &mdash; COGS, kharcha, ledger, VAT dorkar</td><td><b>B &mdash; Accounts &amp; Ledger</b></td></tr>
-<tr><td>Dokan-e counter theke druto bill korte chai</td><td><b>C &mdash; POS Counter</b></td></tr>
-<tr><td>Mobile-e theke dekhte chai, delivery man-e confirm korbe</td><td><b>D &mdash; Cloud Web</b></td></tr>
-<tr><td>App-ta ekhon thik ache, shudhu sync/print thik koro</td><td><b>E &mdash; Stabilized Lite</b></td></tr>
-<tr><td>Nijer moto mix chai</td><td><b>F &mdash; Custom Mix</b></td></tr>
+<tr><th style="width:230px">If you&hellip;</th><th>Take this</th></tr>
+<tr><td>Want profit, on top of the app as it is now</td><td><b>A &mdash; Texpark Pro &#9733;</b> (most balanced)</td></tr>
+<tr><td>Full accounting &mdash; COGS, expenses, ledger, VAT</td><td><b>B &mdash; Accounts &amp; Ledger</b></td></tr>
+<tr><td>Want fast billing from a shop counter</td><td><b>C &mdash; POS Counter</b></td></tr>
+<tr><td>Want to view from mobile, with the delivery man confirming</td><td><b>D &mdash; Cloud Web</b></td></tr>
+<tr><td>The app is fine now, just fix sync/print</td><td><b>E &mdash; Stabilized Lite</b></td></tr>
+<tr><td>Want your own mix</td><td><b>F &mdash; Custom Mix</b></td></tr>
 </table>
 </div>
 
-<h2 class="sec">Amar poramorsho (honest suggestion)</h2>
+<h2 class="sec">My recommendation (honest suggestion)</h2>
 <div class="alert" style="background:#f2fbf6;border-color:#bde5cf;border-left-color:var(--green)">
-  <p style="margin:0 0 10px"><b>Ekhon apni jodi "profit" chaan &mdash; tahole apnar dorkar ta <span style="color:var(--green)">Option A &mdash; Texpark Pro</span>.</b> Karon:</p>
+  <p style="margin:0 0 10px"><b>If you want "profit" &mdash; then what you need is <span style="color:var(--green)">Option A &mdash; Texpark Pro</span>.</b> Because:</p>
   <ol style="margin:0 0 10px;padding-left:20px;font-size:14px">
-    <li>Apnar ekhonkar app-e <code>profit</code> shobdo-i nai &mdash; mane cost track hochche na. Ei ta shobcheye boro gap.</li>
-    <li>A option apnar <b>existing 9 ta feature</b> ektaw nosto kore na, shudhu add kore.</li>
-    <li>Sync-er silent-fail somossa taw thik hoy &mdash; ei ta apnar asol business risk.</li>
+    <li>The word <code>profit</code> does not exist in your current app &mdash; meaning cost is not tracked. That is the biggest gap.</li>
+    <li>Option A does not remove any of your <b>existing 9 features</b>; it only adds.</li>
+    <li>It also fixes the silent sync failure &mdash; that is your real business risk.</li>
   </ol>
-  <p style="margin:0"><b>Kintu jodi mone hoy app-ta age thik kora dorkar</b> &mdash; tahole <b>E &mdash; Stabilized Lite (2&ndash;3 din)</b> diye shuru korben, tarpor A te jaben. Ei dui step-er path ta shobcheye safe.</p>
+  <p style="margin:0"><b>But if you feel the app needs fixing first</b> &mdash; start with <b>E &mdash; Stabilized Lite (2&ndash;3 days)</b>, then move to A. That two-step path is the safest.</p>
 </div>
 
-<h2 class="sec">Step 5 &mdash; Ebar ki korben</h2>
+<h2 class="sec">Step 5 &mdash; What to do now</h2>
 <div class="acard">
   <ol style="font-size:14.5px;padding-left:22px;margin:0">
-    <li><b>Card-e click korun</b> &mdash; niche apnar choice dekhabe.</li>
-    <li><b>Chat-e number ta bolun</b> &mdash; jemon "A chai" ba "E diye shuru, tarpor A".</li>
-    <li><b>Ami confirm korbo</b> &mdash; kon kaj age korbo shep ta bolbo, ar apnar existing data-safe path ta bujhiye dibo.</li>
-    <li><b>Build &rarr; apnar PC-te test</b> &mdash; apnar purono data rekhe chalbe, apni dekhe feedback diben.</li>
-    <li><b>Polish &rarr; final .exe</b> &mdash; tarpor installer + desktop shortcut.</li>
+    <li><b>Click a card</b> &mdash; your choice appears below.</li>
+    <li><b>Say the number in chat</b> &mdash; e.g. "I want A" or "start with E, then A".</li>
+    <li><b>I will confirm</b> &mdash; I will say what I do first and explain the data-safe path for your existing data.</li>
+    <li><b>Build &rarr; test on your PC</b> &mdash; it runs with your old data; you review it and give feedback.</li>
+    <li><b>Polish &rarr; final .exe</b> &mdash; then the installer + desktop shortcut.</li>
   </ol>
 </div>
 
 <div class="pick" id="pick">
-  <div><b id="pickTxt">Kono option bechha hoy ni</b><small id="pickHint">Uporer card-e click korle ekhane apnar choice dekhabe.</small></div>
+  <div><b id="pickTxt">No option selected</b><small id="pickHint">Click a card above and your choice appears here.</small></div>
   <button id="cp" type="button">Copy selection</button>
 </div>
 
@@ -382,8 +382,8 @@ var cards=document.querySelectorAll('.card'),pick=document.getElementById('pick'
     pickTxt=document.getElementById('pickTxt'),pickHint=document.getElementById('pickHint'),cur=null;
 cards.forEach(function(c){c.addEventListener('click',function(){
   cards.forEach(function(x){x.classList.remove('selected')});c.classList.add('selected');
-  cur=c.dataset.opt;pickTxt.textContent='Apni bechhechen: '+cur;
-  pickHint.textContent='Ei nam ta chat-e pathiye din (jemon "A chai").';
+  cur=c.dataset.opt;pickTxt.textContent='You chose: '+cur;
+  pickHint.textContent='Send this name in chat (e.g. "I want A").';
   pick.classList.add('show');pick.scrollIntoView({behavior:'smooth',block:'center'});
 })});
 document.getElementById('cp').addEventListener('click',function(){

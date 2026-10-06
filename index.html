@@ -25,10 +25,6 @@
     <input id="loginPass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <div id="loginErr" style="color:var(--red);font-size:12.5px;margin-top:8px;min-height:18px"></div>
     <button class="btn-primary" style="width:100%;margin-top:8px;padding:11px" onclick="doLogin()">Sign in</button>
-    <div class="note" style="margin-top:16px;font-size:12px">
-      <b>First time login:</b> username <code>admin</code>, password <code>admin123</code>.
-      Login korar por <b>Settings → Change my password</b> theke password bodle nin.
-    </div>
   </div>
 </div>
 
@@ -38,7 +34,7 @@
     <button id="navToggle" class="nav-toggle" onclick="toggleNav()" aria-label="Menu">&#9776;</button>
     <div class="brand">TEXPARK <span>Pro</span> <span style="font-weight:600;font-size:13px;color:var(--muted)" id="topTitle"></span></div>
     <div class="topright">
-      <button id="voiceBtn" class="voice-btn" onclick="voiceToggle()" title="Voice diye entry korun">&#127908; Voice</button>
+      <button id="voiceBtn" class="voice-btn" onclick="voiceToggle()" title="Enter by voice">&#127908; Voice</button>
       <span id="syncBadge" class="sync-badge sync-blue" onclick="syncRetryAll()">Sync off</span>
       <div class="who"><b id="whoName"></b><span id="whoRole" class="rolechip"></span></div>
       <button class="btn-light btn-sm" onclick="doLogout()">Sign out</button>
@@ -47,13 +43,13 @@
 
   <!-- floating voice panel -->
   <div id="voicePanel" class="voice-panel">
-    <div id="voiceStatus" class="vp-status">Mic chepe bolun, othoba niche type korun.</div>
+    <div id="voiceStatus" class="vp-status">Press the mic and speak, or type below.</div>
     <div id="voiceBody"></div>
     <div class="vp-type">
-      <input id="voiceTypeInput" placeholder='যেমন: নাম এটা Kids 3pcs Set পরিমাণ 50 দাম পড়ছে 120'
+      <input id="voiceTypeInput" placeholder='e.g. Kids 3pcs Set received, quantity 50, cost 120'
              onkeydown="if(event.key==='Enter')voiceTypeSubmit()">
-      <button class="btn-primary btn-sm" onclick="voiceTypeSubmit()">Boshau</button>
-      <button class="btn-light btn-sm" onclick="voiceHide()">Bondho</button>
+      <button class="btn-primary btn-sm" onclick="voiceTypeSubmit()">Apply</button>
+      <button class="btn-light btn-sm" onclick="voiceHide()">Close</button>
     </div>
   </div>
 
@@ -65,7 +61,7 @@
       <!-- ===== DASHBOARD ===== -->
       <section id="page-dashboard" class="page active">
         <h1>Dashboard</h1>
-        <div class="muted">Sales, profit, stock ar baki taka — sob ek nojore</div>
+        <div class="muted">Sales, profit, stock and dues — everything at a glance</div>
         <!-- Shown only while this device cannot reach the other devices. The owner's
              PC held four memos and the phone showed a fresh, empty shop; nothing on
              screen said why. -->
@@ -74,14 +70,14 @@
              Shown on the page he opens first, next to the number it explains. -->
         <div id="costWarn" class="sync-warn" style="display:none"></div>
         <div class="grid" style="margin-top:14px">
-          <div class="card stat"><div class="label">Today Sales</div><div class="value" id="kTodaySales">৳0</div><div class="sub">Aaj-er bikri</div></div>
-          <div class="card stat"><div class="label">Today Profit</div><div class="value green" id="kTodayProfit">৳0</div><div class="sub">Aaj-er labh</div></div>
-          <div class="card stat"><div class="label">This Month Sales</div><div class="value" id="kMonthSales">৳0</div><div class="sub">Cholti mash</div></div>
-          <div class="card stat"><div class="label">This Month Profit</div><div class="value green" id="kMonthProfit">৳0</div><div class="sub">Cholti mash</div></div>
-          <div class="card stat"><div class="label">Receivable (pabo)</div><div class="value pink" id="kReceivable">৳0</div><div class="sub">Customer theke baki</div></div>
-          <div class="card stat"><div class="label">Payable (dibo)</div><div class="value orange" id="kPayable">৳0</div><div class="sub">Supplier ke baki</div></div>
-          <div class="card stat"><div class="label">Stock Value</div><div class="value" id="kStockValue">৳0</div><div class="sub">Cost onujayi</div></div>
-          <div class="card stat"><div class="label">Net Profit (all)</div><div class="value green" id="kNetProfit">৳0</div><div class="sub">Kharcha baad diye</div></div>
+          <div class="card stat"><div class="label">Today Sales</div><div class="value" id="kTodaySales">৳0</div><div class="sub">Today’s sales</div></div>
+          <div class="card stat"><div class="label">Today Profit</div><div class="value green" id="kTodayProfit">৳0</div><div class="sub">Today’s profit</div></div>
+          <div class="card stat"><div class="label">This Month Sales</div><div class="value" id="kMonthSales">৳0</div><div class="sub">This month</div></div>
+          <div class="card stat"><div class="label">This Month Profit</div><div class="value green" id="kMonthProfit">৳0</div><div class="sub">This month</div></div>
+          <div class="card stat"><div class="label">Receivable</div><div class="value pink" id="kReceivable">৳0</div><div class="sub">Due from customers</div></div>
+          <div class="card stat"><div class="label">Payable</div><div class="value orange" id="kPayable">৳0</div><div class="sub">Due to suppliers</div></div>
+          <div class="card stat"><div class="label">Stock Value</div><div class="value" id="kStockValue">৳0</div><div class="sub">At cost</div></div>
+          <div class="card stat"><div class="label">Net Profit (all)</div><div class="value green" id="kNetProfit">৳0</div><div class="sub">After expenses</div></div>
         </div>
 
         <div class="card" style="margin-top:13px">
@@ -107,7 +103,7 @@
       <!-- ===== MEMO ===== -->
       <section id="page-memo" class="page">
         <h1>New Sales Memo</h1>
-        <div class="muted">Memo-i ashol. Stock na thakleo memo save hobe — product gulo Stock page-e nijei bose jabe.</div>
+        <div class="muted">The memo is the record that counts. It saves even with no stock — the products appear on the Stock page by themselves.</div>
         <div id="memoEditingBanner" class="note warn" style="display:none"></div>
 
         <div class="card" style="margin-top:13px">
@@ -117,7 +113,7 @@
             <div><label>Select saved customer</label><select id="memoCustList" onchange="pickMemoCustomer(this.value)"></select></div>
             <div><label>Customer Name *</label>
               <input id="customerName" list="customerNames" autocomplete="off"
-                     placeholder="Likhun - age save thakle nijei dhore felbe"
+                     placeholder="Type a name — an existing customer is matched automatically"
                      oninput="memoCustomerCheck()">
               <datalist id="customerNames"></datalist>
             </div>
@@ -129,7 +125,7 @@
           <div class="row" style="margin-top:12px">
             <button class="btn-primary" onclick="addMemoLine()">+ Add Product Row</button>
             <button class="btn-light" onclick="newMemo()">New / Clear</button>
-            <span class="muted" style="font-size:12.5px">Rate ar Cost dutoi dekhano hoy — margin sathe sathe bujhte parben.</span>
+            <span class="muted" style="font-size:12.5px">Both rate and cost are shown, so you can see the margin as you type.</span>
           </div>
 
           <div class="tablewrap">
@@ -148,17 +144,17 @@
             <div>
               <label>Discount (৳)</label>
               <input id="memoDiscount" type="number" min="0" step="1" value="0" oninput="calcMemo()">
-              <div class="hint">Subtotal theke kombe</div>
+              <div class="hint">Comes off the subtotal</div>
             </div>
             <div>
               <label>Delivery Charge (৳)</label>
               <input id="memoDeliveryCharge" type="number" min="0" step="1" value="0" oninput="calcMemo()">
-              <div class="hint">Total-e add hobe</div>
+              <div class="hint">Added to the total</div>
             </div>
             <div>
               <label>Advance (৳)</label>
               <input id="memoAdvance" type="number" min="0" step="1" value="0" oninput="calcMemo()">
-              <div class="hint">Due theke kombe</div>
+              <div class="hint">Comes off the due</div>
             </div>
           </div>
 
@@ -175,7 +171,7 @@
             <div class="profit"><span>Profit</span><b id="memoProfit">৳0</b></div>
           </div>
 
-          <div style="margin-top:12px"><label>Note (memo-te print hobe)</label><textarea id="memoNote"></textarea></div>
+          <div style="margin-top:12px"><label>Note (printed on the memo)</label><textarea id="memoNote"></textarea></div>
 
           <div class="row" style="margin-top:14px">
             <button class="btn-pink" id="memoSaveBtn" onclick="saveMemo()">Save Memo</button>
@@ -185,8 +181,8 @@
             <button class="btn-light" onclick="savePreviewMemo('pdf')">Save PDF</button>
           </div>
           <div class="muted" style="font-size:12.5px;margin-top:8px">
-            Save Image / Save PDF memo-r chobi ba PDF file hisebe rekhe dey (print na koreo pathate parben).
-            Ctrl+P diyeo print korte parben.
+            Save Image / Save PDF stores the memo as a picture or a PDF file, so you can send it
+            without printing. You can also print with Ctrl+P.
           </div>
         </div>
       </section>
@@ -194,7 +190,7 @@
       <!-- ===== HISTORY ===== -->
       <section id="page-history" class="page">
         <h1>Memo History</h1>
-        <div class="muted">Purono memo dekha, edit kora, print kora o delete kora</div>
+        <div class="muted">View, edit, print or delete old memos</div>
         <div class="card" style="margin-top:13px">
           <div class="row">
             <input id="hSearch" oninput="renderHistory()" placeholder="Search memo / customer / phone...">
@@ -207,19 +203,19 @@
       <!-- ===== DELIVERY ===== -->
       <section id="page-delivery" class="page">
         <h1>Delivery Tracking</h1>
-        <div class="muted">Kon memo-r koto delivered, koto baki — driver o receiver shoho</div>
+        <div class="muted">How much of each memo is delivered and how much is pending — with driver and receiver</div>
         <div class="card" style="margin-top:13px">
           <div class="row">
             <select id="deliveryMemoSel" style="max-width:420px" onchange="openDelivery(this.value)"></select>
-            <span class="muted" style="font-size:12.5px">Memo select korle update form khulbe.</span>
+            <span class="muted" style="font-size:12.5px">Pick a memo to open the update form.</span>
           </div>
           <div id="deliveryTable"></div>
         </div>
 
         <div class="card">
           <h2>Parcel Return</h2>
-          <div class="muted">Return hoye asha parcel. Good condition hole product abar stock e uthe jabe;
-            damaged hole stock e available hisebe uthbe na.</div>
+          <div class="muted">Parcels that came back. In good condition the product returns to stock;
+            damaged goods are not added back as available.</div>
           <div id="returnTable" style="margin-top:10px"></div>
         </div>
       </section>
@@ -227,7 +223,7 @@
       <!-- ===== CUSTOMERS ===== -->
       <section id="page-customers" class="page">
         <h1>Customers</h1>
-        <div class="muted">Customer list, total business, baki o taka receive</div>
+        <div class="muted">Customer list, total business, dues and payments received</div>
         <div class="card" style="margin-top:13px">
           <div class="formgrid">
             <div><label>Name</label><input id="cName"></div>
@@ -245,7 +241,7 @@
       <!-- ===== CUSTOMER LEDGER ===== -->
       <section id="page-ledger" class="page">
         <h1>Customer Ledger</h1>
-        <div class="muted">Ke koto taka baki — due ageing shoho</div>
+        <div class="muted">Who owes how much — with due ageing</div>
         <div class="card" style="margin-top:13px">
           <div class="row"><input id="lSearch" oninput="renderCustomerLedger()" placeholder="Search customer..."></div>
           <div id="ledgerTable"></div>
@@ -255,7 +251,7 @@
       <!-- ===== PURCHASE ===== -->
       <section id="page-purchase" class="page">
         <h1>Purchases</h1>
-        <div class="muted">Supplier theke maal entry — stock barbe, cost update hobe, due thakbe</div>
+        <div class="muted">Enter goods from a supplier — stock rises, cost updates, due is tracked</div>
         <div class="card" style="margin-top:13px">
           <div class="formgrid">
             <div><label>Purchase No.</label><input id="purchaseNo" readonly></div>
@@ -287,7 +283,7 @@
       <!-- ===== SUPPLIERS ===== -->
       <section id="page-supplier" class="page">
         <h1>Suppliers</h1>
-        <div class="muted">Supplier list o tader poro payable</div>
+        <div class="muted">Supplier list and how much is payable to each</div>
         <div class="card" style="margin-top:13px">
           <div class="formgrid4">
             <div><label>Supplier Name</label><input id="sName"></div>
@@ -306,7 +302,7 @@
       <!-- ===== PRODUCTS ===== -->
       <section id="page-products" class="page">
         <h1>Products</h1>
-        <div class="muted">Cost price, sell rate, margin o reorder level soho</div>
+        <div class="muted">Cost price, sell rate, margin and reorder level</div>
         <div class="card" style="margin-top:13px">
           <div class="formgrid4">
             <div><label>Product Name *</label><input id="pName"></div>
@@ -329,9 +325,9 @@
       <!-- ===== STOCK ===== -->
       <section id="page-stock" class="page">
         <h1>Stock</h1>
-        <div class="muted">Available = Received/Opening + Purchased − Sold, ar 0-er niche নামে na. Sold tolar cheye beshi hole beyta <b>Tola baki</b> te thake — pore tola matro sathe sathe Available-e jog hoy. Memo theke product nijei ekhane bose jay.</div>
+        <div class="muted">Available = Received/Opening + Purchased − Sold, and never drops below 0. When sold is more than received, the difference sits in <b>Short</b> — and as soon as the received qty is entered it adds to Available. Products from memos appear here by themselves.</div>
         <div class="card" style="margin-top:13px">
-          <div class="note">Memo save korle product nijei ei list-e chole ashe. Ekhane <b>Received / Opening</b> qty tulun, othoba <b>Adjust</b> diye damage/correction din.</div>
+          <div class="note">Saving a memo adds its product to this list. Enter the <b>Received / Opening</b> qty here, or use <b>Adjust</b> for damage or a correction.</div>
           <div class="formgrid">
             <div><label>Product</label><select id="stockProduct"></select></div>
             <div><label>Received / Opening Qty to Add</label><input id="stockAddQty" type="number" min="1"></div>
@@ -348,7 +344,7 @@
       <!-- ===== STOCK LEDGER ===== -->
       <section id="page-stocklog" class="page">
         <h1>Stock Ledger</h1>
-        <div class="muted">Prottek stock movement-er hishab — ke kokhon ki korlo</div>
+        <div class="muted">Every stock movement — what changed and when</div>
         <div class="card" style="margin-top:13px">
           <div class="row">
             <input id="slSearch" oninput="renderStockLog()" placeholder="Search product / type / reference...">
@@ -361,7 +357,7 @@
       <!-- ===== PROFIT ===== -->
       <section id="page-profit" class="page">
         <h1>Profit / Item</h1>
-        <div class="muted">Kon product theke koto labh — cost baad diye</div>
+        <div class="muted">Profit per product — after cost</div>
         <div id="costWarnProfit" class="sync-warn" style="display:none"></div>
         <div class="card" style="margin-top:13px">
           <div class="formgrid">
@@ -381,7 +377,7 @@
       <!-- ===== P&L ===== -->
       <section id="page-pl" class="page">
         <h1>Profit &amp; Loss</h1>
-        <div class="muted">Gross profit, kharcha baad diye net profit</div>
+        <div class="muted">Gross profit, and net profit after expenses</div>
         <div class="card" style="margin-top:13px">
           <div class="formgrid">
             <div><label>From</label><input id="plFrom" type="date" onchange="renderPL()"></div>
@@ -403,7 +399,7 @@
       <!-- ===== EXPENSES ===== -->
       <section id="page-expense" class="page">
         <h1>Expenses</h1>
-        <div class="muted">Rent, salary, utility — net profit ber korte dorkar</div>
+        <div class="muted">Rent, salary, utilities — needed to work out net profit</div>
         <div class="card" style="margin-top:13px">
           <div class="formgrid4">
             <div><label>Date</label><input id="exDate" type="date"></div>
@@ -427,7 +423,7 @@
       <!-- ===== LEDGER / AGEING ===== -->
       <section id="page-ledgerreport" class="page">
         <h1>Ledger / Ageing</h1>
-        <div class="muted">Pabo o dibo — kotodin dhore baki shetar hishab</div>
+        <div class="muted">Receivable and payable — how long each due has been outstanding</div>
         <div class="card" style="margin-top:13px">
           <div class="grid" id="lrStats"></div>
         </div>
@@ -438,7 +434,7 @@
       <!-- ===== USERS ===== -->
       <section id="page-users" class="page">
         <h1>Users &amp; Roles</h1>
-        <div class="muted">Ke ki dekhte parbe — Admin / Manager / Salesman / Accountant</div>
+        <div class="muted">Who can see what — Admin / Manager / Salesman / Accountant</div>
         <div class="card" style="margin-top:13px">
           <div class="formgrid4">
             <div><label>Username</label><input id="uUsername"></div>
@@ -446,10 +442,10 @@
             <div><label>Password</label><input id="uPass" type="password"></div>
             <div><label>Role</label>
               <select id="uRole">
-                <option value="admin">Admin — sob access</option>
-                <option value="manager">Manager — sales, purchase, report</option>
-                <option value="salesman">Salesman — memo o delivery</option>
-                <option value="accountant">Accountant — hishab o report</option>
+                <option value="admin">Admin — full access</option>
+                <option value="manager">Manager — sales, purchase, reports</option>
+                <option value="salesman">Salesman — memos and delivery</option>
+                <option value="accountant">Accountant — accounts and reports</option>
               </select></div>
           </div>
           <div class="row" style="margin-top:11px"><button class="btn-pink" onclick="addUser()">Add User</button></div>
@@ -468,10 +464,10 @@
       <!-- ===== SETTINGS ===== -->
       <section id="page-settings" class="page">
         <h1>Settings</h1>
-        <div class="muted">Company info, memo header, sync o rules</div>
+        <div class="muted">Company info, memo header, sync and rules</div>
 
         <div class="card" style="margin-top:13px">
-          <h2>Company (memo-te print hobe)</h2>
+          <h2>Company (printed on the memo)</h2>
           <div class="formgrid">
             <div><label>Company Name</label><input id="co_name"></div>
             <div><label>Tagline</label><input id="co_tagline"></div>
@@ -482,8 +478,8 @@
             <div><label>BIN</label><input id="co_bin"></div>
             <div><label>VAT Reg No.</label><input id="co_vatReg"></div>
             <div><label>Memo Prefix</label><input id="stMemoPrefix"></div>
-            <div><label>Device Tag (PC / PH)</label><input id="stDeviceTag" placeholder="auto: PC ba PH" maxlength="6">
-              <div class="hint">PC ar phone-er memo number alada rakhe, jate dutoi ek hoye na</div></div>
+            <div><label>Device Tag (PC / PH)</label><input id="stDeviceTag" placeholder="auto: PC or PH" maxlength="6">
+              <div class="hint">Keeps the PC’s and the phone’s memo numbers apart so they never collide</div></div>
           </div>
           <div class="formgrid" style="margin-top:11px">
             <div><label>Default Low-Stock Level</label><input id="stLowStock" type="number"></div>
@@ -498,11 +494,11 @@
 
         <div class="card">
           <h2>App Update</h2>
-          <div class="note">Phone-e purono version atke thakle ekhane dekhbe. <b>Version</b> ta
-          Settings-e dekhano mone rakhen — notun version ashle number ta bodlabe.</div>
+          <div class="note">Shown here when the phone is stuck on an old version. Note the
+          <b>Version</b> shown in Settings — it changes when a new version arrives.</div>
           <div class="row">
             <span class="muted">Version:</span><b id="appVersion">-</b>
-            <button class="btn-primary btn-sm" onclick="checkForUpdate()">Update chek korun</button>
+            <button class="btn-primary btn-sm" onclick="checkForUpdate()">Check for update</button>
           </div>
           <div id="updateOut" style="margin-top:10px;font-size:13px"></div>
         </div>
@@ -510,21 +506,21 @@
         <div class="card">
           <h2>Stock Rule</h2>
           <div class="note good">
-            <b>Memo-i ashol.</b> Stock na thakleo memo save hobe — ar jei product memo-te uthbe
-            seta <b>Stock page-e nijei bose jabe</b>. Apni pore shudhu received/opening qty tole din.
-            Memo kokhono atkabe na.
+            <b>The memo is what counts.</b> It saves even with no stock, and any product on it
+            <b>appears on the Stock page by itself</b>. Enter the received/opening qty later.
+            A memo is never blocked.
           </div>
           <label style="display:flex;gap:9px;align-items:center;font-weight:600">
             <input id="stShortWarn" type="checkbox" style="width:auto" onchange="toggleShortStockWarn(this.checked)">
-            Stock na thakle memo-te mone koriye din (shudhu reminder, save atkabe na)
+            Warn on the memo when stock is short (reminder only, never blocks the save)
           </label>
         </div>
 
         <div class="card">
           <h2>Google Sheets Sync</h2>
           <div class="note">
-            Ei sync ta ekhon <b>verify kore</b> — response na pele "synced" bole na. Internet na thakle job queue te thake,
-            ar internet firlo automatic pathay jay.
+            This sync <b>verifies</b> each upload — it will not say "synced" without a reply. If the internet
+            is down the job waits in a queue and is sent automatically when it returns.
           </div>
           <label>Google Apps Script Web App URL</label>
           <input id="stSyncUrl" placeholder="https://script.google.com/macros/s/.../exec">
@@ -535,9 +531,9 @@
           </div>
           <label style="margin-top:14px;display:flex;align-items:center;gap:9px">
             <input id="stAutoPull" type="checkbox" style="width:auto" onchange="saveAutoPull()">
-            <span><b>Nijei sheet theke notun data niye ashe</b><br>
-            <span class="muted">Ei ta on thakle PC/phone kholar shomoy onno device-er lekha
-            data ekhane nijei chole ashbe — apnake chap dite hobe na.</span></span>
+            <span><b>Pull new data from the sheet automatically</b><br>
+            <span class="muted">When this is on, opening the PC or phone brings in what the other
+            device wrote — no need to press anything.</span></span>
           </label>
           <div id="syncTestOut" style="margin-top:10px;font-size:13px"></div>
         </div>
@@ -546,7 +542,7 @@
       <!-- ===== BACKUP ===== -->
       <section id="page-backup" class="page">
         <h1>Backup / Data</h1>
-        <div class="muted">Data export, restore, sync queue o purono app theke import</div>
+        <div class="muted">Data export, restore, sync queue and import from the old app</div>
 
         <div class="card" style="margin-top:13px">
           <h2>Backup &amp; Restore</h2>
@@ -557,25 +553,25 @@
             <button class="btn-light" onclick="exportAllCSV()">Export All CSV</button>
           </div>
           <div class="note" style="margin-top:12px">
-            <b>Automatic safety copy:</b> prottek save-er age ekta snapshot rakha hoy, jate bhul data theke ferar upay thake.
+            <b>Automatic safety copy:</b> a snapshot is kept before every save, so a wrong entry can be undone.
           </div>
         </div>
 
         <div class="card">
-          <h2>Purono memo-r profit thik korun</h2>
+          <h2>Fix old memos’ profit</h2>
           <div class="note warn">
-            Memo save howar shomoy tar buying price (cost) memo-te <b>lekha hoye jay</b>. Jodi
-            kono memo bhul buying price niye lekha hoye thake, tahole product-e dam thik korleo
-            <b>sei purono memo-r profit ar nijei thik hoy na</b>. Ei button ta purono memo gulo
-            dekhe koto gulo bhul ache, tarpor apnar <b>onumoti niye</b> product-er ekhonkar
-            buying price diye hishab thik kore dey.
+            When a memo is saved, its buying price (cost) is <b>written into the memo</b>. If a
+            memo was saved with a wrong buying price, fixing the product's price does not fix
+            that old memo's profit. This button looks through the old memos, shows how many are
+            wrong, and then — with your <b>approval</b> — recalculates them using the
+            product's current buying price.
             <br><br>
-            <b>Ki badlabe:</b> shudhu profit ar cost of goods. Bikri, customer, qty, due —
-            kichui bodlabe na. Stock-o bodlabe na.
+            <b>What changes:</b> only profit and cost of goods. Sales, customer, qty and due are
+            untouched. Stock is untouched too.
           </div>
           <div class="row">
-            <button class="btn-light" onclick="previewMemoCostRepair()">Ki ki bhul ache dekhun</button>
-            <button class="btn-pink" id="repairApplyBtn" style="display:none" onclick="applyMemoCostRepairUI()">Profit thik kore din</button>
+            <button class="btn-light" onclick="previewMemoCostRepair()">See what is wrong</button>
+            <button class="btn-pink" id="repairApplyBtn" style="display:none" onclick="applyMemoCostRepairUI()">Fix the profit</button>
           </div>
           <div id="repairOut" style="margin-top:11px;font-size:13px"></div>
         </div>
@@ -583,9 +579,9 @@
         <div class="card">
           <h2>Import from old app (v1)</h2>
           <div class="note warn">
-            Purono app-er data (<code>texpark_biz_v1</code>) ei PC-te thakle ekhane niye asha jabe.
-            Purono key <b>muchhe fela hobe na</b> — shudhu porea niye notun model-e boshabo.
-            Purono memo-te cost chilo na, tai sei memo gulor profit 0 dekhabe.
+            Data from the old app (<code>texpark_biz_v1</code>) can be brought in here if it is on
+            this PC. The old key is <b>not deleted</b> — it is only read and mapped to the new
+            model. Old memos had no cost, so their profit shows as 0.
           </div>
           <button class="btn-primary" onclick="importOldData()">Import old data</button>
         </div>
@@ -593,14 +589,14 @@
         <div class="card">
           <h2>Cloud Backup &amp; Restore</h2>
           <div class="note good">
-            Ei PC/phone-er pura data Google Sheet-e ek row hisebe rakha jay. Noyto PC/phone
-            hariye gele sekhan theke <b>sob fire asha jabe</b>. Prottek device er alada
-            backup thake (<b id="cloudDeviceTag">-</b>).
+            This PC/phone's full data can be kept as one row in the Google Sheet. If the PC or
+            phone is lost, <b>everything can be brought back</b> from there. Each device keeps its
+            own backup (<b id="cloudDeviceTag">-</b>).
           </div>
           <div class="row">
-            <button class="btn-pink" onclick="cloudBackupNow()">Cloud-e backup pathaan</button>
-            <button class="btn-light" onclick="cloudDeviceList()">Sheet-e ki ki ache</button>
-            <button class="btn-light" onclick="cloudRestore()">Ei device er backup fire aan</button>
+            <button class="btn-pink" onclick="cloudBackupNow()">Send backup to cloud</button>
+            <button class="btn-light" onclick="cloudDeviceList()">What is in the sheet</button>
+            <button class="btn-light" onclick="cloudRestore()">Restore this device’s backup</button>
           </div>
           <div id="cloudOut" style="margin-top:10px;font-size:13px"></div>
         </div>
@@ -608,7 +604,7 @@
         <div class="card"><h2>Data Summary</h2><div id="dataCounts"></div></div>
         <div class="card">
           <h2>Auto Snapshots</h2>
-          <div class="note">Prottek save-er age ekta snapshot rakha hoy (latest 8 ta). Bhul hoye gele ek click-e ferot.</div>
+          <div class="note">A snapshot is kept before every save (latest 8). A wrong entry can be restored in one click.</div>
           <div id="snapshotTable"></div>
         </div>
         <div class="card">
@@ -649,13 +645,13 @@
       <div><label>Total Return Qty</label><input id="rtQty" type="number" min="0" oninput="returnQtyChanged()"></div>
       <div><label>Condition</label>
         <select id="rtCondition" onchange="returnTotals()">
-          <option value="good">Good - abar bikri hobe</option>
-          <option value="damaged">Damaged - bikri hobe na</option>
+          <option value="good">Good — can be sold again</option>
+          <option value="damaged">Damaged — not for sale</option>
         </select>
       </div>
-      <div><label>Note</label><input id="rtNote" placeholder="Karon / driver"></div>
+      <div><label>Note</label><input id="rtNote" placeholder="Reason / driver"></div>
     </div>
-    <div class="muted" style="margin-top:10px;font-size:12.5px">Kon product koto firloo - proyojon hole alada alada din.</div>
+    <div class="muted" style="margin-top:10px;font-size:12.5px">How much of each product came back — split it per product if needed.</div>
     <div id="rtLines"></div>
     <div id="rtHint" class="note"></div>
     <div class="modal-actions">
@@ -712,7 +708,7 @@
       <div><label>Adjustment Qty</label><input id="adQty" type="number" placeholder="+ add / - reduce"></div>
       <div><label>Reason</label><input id="adReason" placeholder="Damage / Count correction"></div>
     </div>
-    <div class="note">Positive number = stock barbe. Negative number = stock kombe.</div>
+    <div class="note">Positive number = stock goes up. Negative number = stock goes down.</div>
     <div class="modal-actions">
       <button class="btn-light" onclick="closeAdjust()">Cancel</button>
       <button class="btn-orange" onclick="saveAdjust()">Apply</button>
@@ -730,7 +726,7 @@
       <div><label>Sold Qty</label><input id="seSold" type="number" min="0"></div>
       <div><label>Unit Cost (৳)</label><input id="seCost" type="number" min="0" step="0.01"></div>
     </div>
-    <div class="note">Sold qty memo-r asol bikri theke kome hote parbe na. Memo-te bikri tolar cheye beshi hole Available 0 thakbe, ar beyta <b>Tola baki</b> column-e dekhabe.</div>
+    <div class="note">Sold qty cannot go below what the memos actually sold. If sales exceed what was received, Available stays 0 and the difference shows in the <b>Short</b> column.</div>
     <div class="modal-actions">
       <button class="btn-light" onclick="closeStockEdit()">Cancel</button>
       <button class="btn-pink" onclick="saveStockEdit()">Save Changes</button>

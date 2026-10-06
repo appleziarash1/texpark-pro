@@ -166,15 +166,15 @@ addMemoLine();
 memoDraft.items = [{ productId: widget.id, qty: 10, rate: 150, cost: 100, vat: 0, amount: 1500 }];
 renderMemoLines();
 calcMemo();
-ok(el('memoStockWarn').innerHTML.includes('stock ekhono tola hoy ni'),
+ok(el('memoStockWarn').innerHTML.includes('has not been entered yet'),
   'reminder shown that stock was not entered yet');
-ok(!el('memoStockWarn').innerHTML.includes('save hobe na'), 'the message does not threaten to block');
+ok(!/will not save|cannot save/i.test(el('memoStockWarn').innerHTML), 'the message does not threaten to block');
 eq(el('memoSaveBtn').disabled, false, 'save button is ENABLED, not disabled');
 
 triggers.alert.length = 0;
 saveMemo();
 eq(db.memos.length, 1, 'MEMO WAS SAVED with 0 stock - the memo is the source of truth');
-ok(!triggers.alert.some(a => a.includes('save kora holo na')), 'nothing told the user the memo failed');
+ok(!triggers.alert.some(a => /failed|could not save/i.test(a)), 'nothing told the user the memo failed');
 
 const autoCard = findStock(widget.id);
 ok(!!autoCard, 'THE STOCK CARD WAS AUTO-CREATED from the memo');
@@ -380,7 +380,7 @@ el('seSold').value = '1';
 triggers.alert.length = 0;
 saveStockEdit();
 eq(findStock(widget.id).sold, 5, 'sold qty left alone - real memos sold 5');
-ok(triggers.alert.some(a => a.includes('kome hote pare na')),
+ok(triggers.alert.some(a => a.includes('cannot go below')),
   'user warned they cannot lower sold below real sales');
 
 console.log('\n--- delivery ---');
@@ -442,7 +442,7 @@ ok(/memo-grand/.test(sheet2) && /memo-due/.test(sheet2),
    'the grand total and the due are the two highlighted rows');
 ok(/memo-items/.test(sheet2), 'the sheet has its item table');
 ok(/Signature/.test(sheet2), 'and the two signature lines');
-ok(/Sharto:/.test(sheet2), 'and the terms the shop hands over with every memo');
+ok(/Terms:/.test(sheet2), 'and the terms the shop hands over with every memo');
 ok(!/memo-sheet\b[^>]*class="mh"/.test(sheet2), 'the old .mh header markup is gone');
 ok(/memo-strip/.test(sheet2), 'the sheet has the due date / payment / delivery strip');
 ok(/Due Date/.test(sheet2), 'the strip prints the due date');
@@ -463,7 +463,7 @@ const emptySheet = memoSheet({ memoNo: 'X', date: today(), customerName: 'A', it
   totalQty: 0, subtotal: 0, discount: 0, deliveryCharge: 0, vat: 0, grandTotal: 0,
   advance: 0, due: 0, note: '' });
 ok(!/undefined|NaN/.test(emptySheet), 'an empty memo sheet renders without undefined/NaN');
-ok(/Kono product nei/.test(emptySheet), 'and says so instead of showing a bare table');
+ok(/No products/.test(emptySheet), 'and says so instead of showing a bare table');
 
 console.log('\n--- a memo can leave the app as a file ---');
 ok(typeof memoSheetSVG === 'function' && /<svg/.test(memoSheetSVG(db.memos[0])),
@@ -635,7 +635,7 @@ let blk = micCase(IPHONE, { standalone: true, secure: true });
 ok(!!blk, 'iPhone + installed app is caught');
 ok(/Apple/i.test(blk.title + blk.body), 'and the reason names Apple, not the user');
 ok(/Safari/i.test(blk.body), 'and tells them to open Safari instead');
-ok(!/onumoti nei|permission/i.test(blk.title), 'it does not blame a missing permission');
+ok(!/permission/i.test(blk.title), 'it does not blame a missing permission');
 
 blk = micCase(IPHONE, { standalone: false, secure: true });
 eq(blk, null, 'iPhone in plain Safari is allowed through');
@@ -667,8 +667,8 @@ voiceToggle();
 ok(!!fired, 'tapping the mic actually starts a session when nothing is blocking');
 fired.onerror({ error: 'not-allowed' });
 const panelText = document.getElementById('voiceBody').innerHTML;
-ok(/onumoti/i.test(panelText), 'a denied permission is explained');
-ok(/type kore/i.test(panelText), 'and the typing fallback is pointed at');
+ok(/permission/i.test(panelText), 'a denied permission is explained');
+ok(/type below/i.test(panelText), 'and the typing fallback is pointed at');
 ok(!document.createElement('voiceBtn').classList.contains('listening'), 'the button stops showing as listening');
 
 console.log('\n--- phone install / offline wiring ---');

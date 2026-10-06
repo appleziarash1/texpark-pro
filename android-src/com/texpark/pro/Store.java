@@ -169,7 +169,7 @@ public class Store {
             // write threw, commit() returned false with no reason given, and the
             // memo the owner had just typed simply vanished. Create it first.
             if (dir != null && !dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) {
-                lastSaveError = "data folder banano gelo na: " + dir;
+                lastSaveError = "Could not create the data folder: " + dir;
                 return false;
             }
             stampChanged(nowIso());
@@ -304,12 +304,12 @@ public class Store {
        web app prints the same ones: a memo handed over from the PC and one from the
        phone must read the same. */
     public static final String MEMO_TERMS =
-        "Sharto: Panyo bikri-r por ferot neya hoy na (damaged chara). "
-        + "Delivery charge memo-te add kora hoyeche. Due amount memo-r tarikh theke "
-        + "15 diner moddhe porishodh korben.";
+        "Terms: Goods are not taken back after sale (unless damaged). "
+        + "The delivery charge has been added to this memo. Please settle the due amount "
+        + "within 15 days of the memo date.";
 
     public static final String MEMO_THANKS =
-        "Dhonnobad! Panyo-r gunogota niye kono obhijog thakle 3 diner moddhe janan.";
+        "Thank you! Please report any issue with the goods within 3 days.";
 
     /** Up to two initials for the header badge - "TEXPARK BUYING HOUSE" -> "TB". */
     public static String initials(String name) {
@@ -668,7 +668,7 @@ public class Store {
             l.put("qty", Long.valueOf(0));
             l.put("balance", Double.valueOf(stockAvailable(s)));
             l.put("ref", "Memo");
-            l.put("note", "Stock card created from a sales memo - received qty ekhono deya hoy ni");
+            l.put("note", "Stock card created from a sales memo - received quantity not yet given");
             list("ledger").add(l);
         }
         return s;
@@ -1600,16 +1600,16 @@ public class Store {
     /** Replaces the working data with a safety copy. Returns a message for the UI. */
     public String restoreSnapshot(int index) {
         List<Object> arr = listSnapshots();
-        if (index < 0 || index >= arr.size()) return "Snapshot nei.";
+        if (index < 0 || index >= arr.size()) return "No such snapshot.";
         Map<String, Object> snap = rec(arr.get(index));
         String data = str(snap, "data");
         Object parsed = Json.read(data);
-        if (!(parsed instanceof Map)) return "Snapshot ta thik na.";
+        if (!(parsed instanceof Map)) return "The snapshot is not valid.";
         db = migrate(cast(parsed));
         ensureUsers();
         lastCommitted = null;
         commit();
-        return "Snapshot restore hoyeche.";
+        return "Snapshot restored.";
     }
 
     private void snapshot() {

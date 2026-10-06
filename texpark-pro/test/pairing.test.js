@@ -103,8 +103,8 @@ ok(el('dashLow').innerHTML.includes('Kids 3pcs Set') && el('dashLow').innerHTML.
 
 console.log('\n--- 2. the dashboard says why, instead of staying silent ---');
 ok(el('syncWarn').style.display !== 'none', 'the sync warning is visible');
-ok(el('syncWarn').innerHTML.includes('sync bondho'), 'it says sync is off');
-ok(el('syncWarn').innerHTML.includes('onno device'), 'it explains other devices will not show up');
+ok(el('syncWarn').innerHTML.includes('Sync is off'), 'it says sync is off');
+ok(el('syncWarn').innerHTML.includes('other devices'), 'it explains other devices will not show up');
 ok(el('syncWarn').innerHTML.includes('demo product'), 'and that what is on screen is only the demo data');
 ok(el('syncWarn').innerHTML.includes('Settings'), 'it points at Settings');
 eq(el('syncBadge').textContent, 'Sync off', 'the badge agrees');
@@ -115,7 +115,7 @@ db.memos.push({ id: 'm1', memoNo: 'TXP/SM/2026/09/21-PC001', date: today(), cust
   advance: 0, due: 0, cogs: 0, profit: 0 });
 nav('dashboard');
 ok(el('syncWarn').innerHTML.includes('1'), 'it counts his own records');
-ok(el('syncWarn').innerHTML.includes('sheet-e utheni'), 'and warns they are not uploaded yet');
+ok(el('syncWarn').innerHTML.includes('reached the sheet'), 'and warns they are not uploaded yet');
 
 console.log('\n--- 4. the pairing link: one tap on the phone ---');
 const link = 'https://appleziarash1.github.io/texpark-pro/?sync=' + encodeURIComponent(SHEET);
@@ -132,7 +132,7 @@ ok(replaced[replaced.length - 1].includes('/texpark-pro/'), 'and it still points
 console.log('\n--- 5. the warning goes away once paired ---');
 nav('dashboard');
 eq(el('syncWarn').style.display, 'none', 'no warning once sync is configured');
-ok(!el('syncWarn').innerHTML.includes('sync bondho'), 'and nothing is left in it');
+ok(!el('syncWarn').innerHTML.includes('Sync is off'), 'and nothing is left in it');
 
 console.log('\n--- 6. a junk link must not be accepted ---');
 global.location = { origin: 'https://x', pathname: '/', search: '?sync=' + encodeURIComponent('https://evil.example.com/steal'), hash: '', reload() {} };

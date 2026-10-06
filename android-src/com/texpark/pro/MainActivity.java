@@ -278,11 +278,11 @@ public class MainActivity extends Activity {
         // Back on the dashboard is the exit gesture, but it asks first: a stray
         // press while a memo is open must not close the app.
         new AlertDialog.Builder(this)
-            .setMessage("App ta bondho korben?")
-            .setPositiveButton("Hyan", new DialogInterface.OnClickListener() {
+            .setMessage("Close the app?")
+            .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface d, int w) { finish(); }
             })
-            .setNegativeButton("Na", null)
+            .setNegativeButton("No", null)
             .show();
         return true;
     }
@@ -315,17 +315,17 @@ public class MainActivity extends Activity {
      * product names happen to be roman either way.
      */
     private void startVoice() {
-        if (store.session == null) { toast("Age login korun."); return; }
+        if (store.session == null) { toast("Please sign in first."); return; }
         try {
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "bn-BD");
             i.putExtra(RecognizerIntent.EXTRA_PROMPT,
-                    "Boliye din \u2014 jemon: \"Kids 3pcs 5 piece\"");
+                    "Say it \u2014 for example: \"Kids 3pcs 5 piece\"");
             startActivityForResult(i, REQ_VOICE);
         } catch (Exception e) {
-            toast("Ei phone-e voice recognition nei. Google app install korun.");
+            toast("This phone has no voice recognition. Please install the Google app.");
         }
     }
 
@@ -354,18 +354,18 @@ public class MainActivity extends Activity {
         Voice.Reading r = Voice.read(store, text);
 
         if (r.product == null) {
-            say("Ei product ta chinlam na.");
-            toast("Product chinlam na. Products page-e nam ta din.");
+            say("I could not recognise that product.");
+            toast("Product not recognised. Enter the name on the Products page.");
             return;
         }
         if (r.intent == Voice.Intent.UNKNOWN) {
-            say(r.productName + " — ashlo na bikri, seta bolun.");
-            toast("Bujhlam na. Bolun \"ashlo\" ba \"bikri\" shobdo diye.");
+            say(r.productName + " — say whether it came in or was sold.");
+            toast("Did not understand. Say it with the word \"received\" or \"sold\".");
             return;
         }
         if (r.qty <= 0) {
-            say(r.productName + " er poriman bolun.");
-            toast(r.productName + " pelam, kintu koto piece seta bolun.");
+            say("Say the quantity for " + r.productName + ".");
+            toast("Found " + r.productName + ", but say how many pieces.");
             return;
         }
 
@@ -376,7 +376,7 @@ public class MainActivity extends Activity {
             card.put("available", Double.valueOf(Store.stockAvailable(card)));
             store.logStock(pid, "Opening", r.qty, "Voice", "Voice: " + r.heard);
             store.commit();
-            say(r.productName + " " + Ui.qty(r.qty) + " piece stock-e jog holo.");
+            say(r.productName + " " + Ui.qty(r.qty) + " piece(s) added to stock.");
             screens.render();
             return;
         }
@@ -394,7 +394,7 @@ public class MainActivity extends Activity {
         line.rate = Ui.qty(r.product.get("rate"));
         line.cost = Ui.qty(store.stockCost(Store.str(r.product, "id")));
         screens.render();
-        say(r.productName + " " + Ui.qty(r.qty) + " piece memo-te dilam. Rate dekhe save korun.");
+        say(r.productName + " " + Ui.qty(r.qty) + " piece(s) put on the memo. Check the rate and save.");
     }
 
     private void say(String text) {
@@ -465,21 +465,21 @@ public class MainActivity extends Activity {
      *  downloaded APK cannot be installed silently. */
     private void offerDownloadOnly(final String url) {
         new AlertDialog.Builder(this)
-            .setTitle("Notun version ache")
-            .setMessage("App-er notun version ber hoyeche. Download kore install korben?\n\n"
-                    + "Apnar data (memo, stock, customer) muchbe na \u2014 sob thakbe.")
+            .setTitle("A new version is available")
+            .setMessage("A new version of the app is available. Download and install it?\n\n"
+                    + "Your data (memos, stock, customers) will not be erased \u2014 everything stays.")
             .setPositiveButton("Download", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface d, int w) {
                     try {
                         startActivity(new Intent(Intent.ACTION_VIEW,
                                 Uri.parse(trimSlash(url) + "/TexparkPro.apk")));
-                        toast("Download shesh hole file ta tap kore install korun.");
+                        toast("When the download finishes, tap the file to install it.");
                     } catch (Exception e) {
-                        toast("Browser khola gelo na.");
+                        toast("Could not open the browser.");
                     }
                 }
             })
-            .setNegativeButton("Pore", null)
+            .setNegativeButton("Later", null)
             .show();
     }
 
