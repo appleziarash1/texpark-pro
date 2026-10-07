@@ -26,6 +26,7 @@ const SHEETS = {
   expenses: 'Expenses',
   profit: 'Profit',
   backup: 'Backup',
+  records: 'Records',
   appLog: 'App_Log'
 };
 
@@ -61,6 +62,12 @@ const HEADERS = {
      the previous Code.gs. See chunked backup notes in AGENTS.md. */
   backup: ['Timestamp', 'Device', 'Date', 'App Version', 'JSON',
     'Chunk', 'Of', 'Total Len', 'Checksum'],
+  /* Per-record mirror of the Firestore sync, so a device without Firestore (the
+     Android app) still sees every change the web app made. One row per record per
+     chunk; the record is keyed on Collection + Record ID and upserted, never
+     duplicated. A record larger than one cell is split like a backup. */
+  records: ['Timestamp', 'Collection', 'Record ID', 'At', 'Deleted',
+    'JSON', 'Chunk', 'Of', 'Checksum'],
   appLog: ['Timestamp', 'Type', 'Data']
 };
 
@@ -238,7 +245,15 @@ function doGet(e) {
       }
       return out_({ success: true, devices: devs, json: '' });
     }
-    return out_({ success: true, message: 'Texpark Pro sync API is running', version: 4 });
+    if (action === 'records') {
+      // The Sheet fallback for Firestore: every record newer than `since`, so a
+      // device that has been offline catches up from the sheet alone.
+      const ss = ss_();
+      ensureAll_(ss);
+      const recs = readRecords_(ss, String(p.since || ''));
+      return out_({ success: true, records: recs });
+    }
+    return out_({ success: true, message: 'Texpark Pro sync API is running', version: 5 });
   } catch (err) {
     return out_({ success: false, message: String((err && err.message) || err) });
   }
@@ -265,6 +280,7 @@ function doPost(e) {
     else if (type === 'payment') savePayment_(ss, d);
     else if (type === 'expense') saveExpense_(ss, d);
     else if (type === 'backup') result = saveBackup_(ss, d);
+    else if (type === 'record') result = saveRecord_(ss, d);
     else if (type === 'customer') sheet_(ss, 'customers').appendRow([new Date(), d.name || '', d.phone || '', d.address || '']);
     else if (type === 'supplier') sheet_(ss, 'suppliers').appendRow([new Date(), d.name || '', d.contact || '', d.phone || '', d.address || '']);
     else { sheet_(ss, 'appLog').appendRow([new Date(), type || 'unknown', JSON.stringify(d)]); result = 'Logged'; }
@@ -381,6 +397,81 @@ function saveMemo_(ss, d) {
         n_(d.vat), n_(d.grandTotal), n_(d.advance), n_(d.due), n_(d.available || vals[i][13])]]);
     }
   }
+}
+
+/* One record of the Firestore mirror, written to the Records tab. Keyed on
+   Collection + Record ID and upserted: the record's previous chunks are cleared and a
+   fresh contiguous block is written at the bottom, so a shorter record cannot leave a
+   stale tail. Same finite-grid care as saveBackup_ - grow first, write one range, never
+   append into a full tab. */
+function saveRecord_(ss, d) {
+  const sh = sheet_(ss, 'records');
+  const coll = String(d.key || '');
+  const rid = String(d.id || '');
+  if (!coll || !rid) throw new Error('Record needs a collection and an id.');
+  const at = String(d.at || new Date().toISOString());
+  const json = String(d.json || '');
+  if (!json) throw new Error('Empty record payload');
+  const cols = HEADERS.records.length;
+  const chunks = Math.max(1, Math.ceil(json.length / CHUNK_CHARS));
+  const sum = checksum_(json);
+  const now = new Date();
+
+  // Clear this record's existing rows, read from the sheet so a hand-edited tab
+  // cannot make us clear a different record's row.
+  ensureCols_(sh, cols);
+  const vals = sh.getDataRange().getValues();
+  for (let i = 1; i < vals.length; i++) {
+    if (String(vals[i][1] || '') === coll && String(vals[i][2] || '') === rid) {
+      sh.getRange(i + 1, 1, 1, cols).clearContent();
+    }
+  }
+
+  const block = [];
+  for (let n = 1; n <= chunks; n++) {
+    block.push([now, coll, rid, at, d.deleted ? 'TRUE' : '',
+      json.substring((n - 1) * CHUNK_CHARS, n * CHUNK_CHARS), n, chunks,
+      n === 1 ? sum : '']);
+  }
+  const last = sh.getLastRow();
+  ensureRows_(sh, last + chunks);
+  sh.getRange(last + 1, 1, chunks, cols).setValues(block);
+  return 'Record ' + coll + '/' + rid + ' saved (' + chunks + ' chunk' + (chunks === 1 ? '' : 's') + ')';
+}
+
+/* Read back every record newer than `since`, reassembled per Collection + Record ID,
+   so a device recovering from the Sheet can catch up without Firestore. */
+function readRecords_(ss, since) {
+  const sh = sheet_(ss, 'records');
+  const vals = sh.getDataRange().getValues();
+  const sets = {};
+  for (let i = 1; i < vals.length; i++) {
+    const row = vals[i];
+    const coll = String(row[1] || '');
+    const rid = String(row[2] || '');
+    const at = String(row[3] || '');
+    if (!coll || !rid) continue;
+    if (since && !(at > since)) continue;
+    const key = coll + '\u0000' + rid;
+    const s = sets[key] || (sets[key] = { coll: coll, rid: rid, at: at, deleted: String(row[4] || '') === 'TRUE', parts: [] });
+    if (String(at) > String(s.at)) s.at = at;
+    if (String(row[4] || '') === 'TRUE') s.deleted = true;
+    // A row with no chunk number is a whole record in one cell.
+    const n = chunkNum_(row[6]);
+    const of = chunkNum_(row[7]);
+    if (!n) s.parts.push({ n: 1, of: 1, json: String(row[5] || '') });
+    else s.parts.push({ n: n, of: of, json: String(row[5] || ''), sum: row[8] });
+  }
+  const out = [];
+  Object.keys(sets).forEach(key => {
+    const s = sets[key];
+    s.parts.sort((a, b) => a.n - b.n);
+    out.push({
+      key: s.coll, id: s.rid, at: s.at, deleted: s.deleted,
+      json: s.parts.map(p => p.json).join('')
+    });
+  });
+  return out;
 }
 
 function deleteMemo_(ss, d) {

@@ -15,6 +15,8 @@ const ASSETS = [
   './js/db.js',
   './js/voice.js',
   './js/sync.js',
+  './js/firebase-config.js',
+  './js/cloud.js',
   './js/memoexport.js',
   './js/app.js',
   './icon-192.png',

@@ -573,3 +573,50 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   out byte-different: `git status` showed the committed `.zip` as modified after every run, which
   made a real change to the archive indistinguishable from a rebuild. After touching either
   builder, run it twice and compare `md5sum` — they must match.
+
+## Live multi-device sync (Firestore) with the Sheet as fallback (2026-10-07)
+
+The Google Sheet sync (`js/sync.js`) pushes a whole JSON snapshot and the newest snapshot wins as
+a set. It is verified and retried, but it is not live, and a phone edit reaches the PC only on the
+next snapshot round. `js/cloud.js` adds per-record sync over Firestore so one changed memo is one
+document write and one document read — not the whole book — and it arrives in seconds. Design:
+`docs/FIRESTORE_PLAN.md`. Owner setup: `docs/FIRESTORE_SETUP_BANGLA.txt`.
+
+- **No SDK, no build step.** Firebase Auth and Firestore are spoken over their REST APIs directly
+  (`js/cloud.js`). The app has no bundler and must keep running from a USB stick; loading the
+  Firebase JS SDK would add a second, versioned dependency and an async init to every page.
+- **Data model.** One shop per signed-in account: `shops/{uid}/records/{key}__{id}`. The uid is a
+  path segment, so a range query needs no composite index and the rules can prove ownership
+  (`texpark-pro/firestore.rules`, deny by default). Record keys are the `MERGE_KEYS` collections;
+  business settings ride as one `_settings__shop` document.
+- **One merge, not two.** A Firestore delta is converted back into the `incoming` shape and pushed
+  through the *same* `mergeCloudInto_` the Sheet pull uses (`cloudMergeDelta`). There is exactly
+  one definition of "newer wins" in the app; `cloud.js` must never grow a second.
+- **The free-plan rule: delta only.** Both directions use the record's `at` stamp. Pull is a
+  `runQuery` with `where at > cursor orderBy at`; push sends only records whose `at` moved since
+  the last commit (`cloudQueueChanges`, fed the pre-commit index from `commit()`). The test asserts
+  a pull with nothing new reads **zero** documents. A whole-collection read would burn the Spark
+  50k/day read budget — do not add one.
+- **One outbox, two transports.** `syncPush(..., via)` defaults to `'sheet'`; `'firestore'` jobs are
+  sent by `cloudSendJob` and share the queue, retry and badge. Because a commit now queues many
+  records, `syncFlush` is non-re-entrant (`syncFlushing`) and drains continuously (it picks the next
+  pending job each turn), not from a snapshot — otherwise jobs queued mid-flush would wait for the
+  retry timer.
+- **The Sheet fallback is never the resting state.** A quota/offline/`NOT_SIGNED_IN` failure sets
+  `DEGRADED_SHEET`, arms a backoff retry (30s→15m), and the same record is also pushed to the Sheet
+  `Records` tab (through the existing outbox) so the Android app, which has no Firestore, still
+  sees every web change. A success returns to `ONLINE_FIRESTORE` and drains what queued.
+- **Settings keys are machine-local.** `firebase` joined `LOCAL_SETTING_KEYS`, so one device's
+  project id is never merged onto another's.
+- **Migration is idempotent.** On first successful connect the whole local book is upserted in
+  chunks (batched `:commit`), then `texpark_pro_firestore_migrated` is set. Re-running upserts on
+  the record id, so it can resume safely.
+- **Unconfigured = untouched.** With no keys the app behaves exactly as before; nothing in
+  `cloud.js` runs. `test/cloud.test.js` drives the real `cloud.js` against an in-memory fake of
+  Auth + Firestore with quota/offline toggles, and covers two devices, delta reads/writes,
+  deletes/tombstones, payments, degrade→recover, offline queueing.
+- **Code.gs `Records` tab** (`record` / `records` routes, version 5): upsert keyed on
+  Collection + Record ID, chunked like a backup, `since` delta reads. The same finite-grid care as
+  `saveBackup_` applies — grow rows/cols before writing.
+- **No APK/signing change.** Android keeps using the Sheet; the web app mirrors to it. Do not
+  rebuild or re-sign the APK for this.

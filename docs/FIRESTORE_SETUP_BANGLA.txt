@@ -1,0 +1,83 @@
+TEXPARK PRO — CLOUD SYNC (FIRESTORE) SETUP GUIDE
+================================================
+
+Ei guide ta ekbar korlei hobe. Er por phone ar PC nijei nijei sync hobe.
+Firebase er FREE plan e kaj kore — kono card lagbe na, kono server lagbe na.
+
+Settings → "Cloud sync (Firestore)" e giye ei kaj gula korun:
+
+------------------------------------------------------------------------
+STEP 1 — Firebase project khulun (ekbar)
+------------------------------------------------------------------------
+1. https://console.firebase.google.com khulun, Google account diye sign in korun.
+2. "Add project" → nam din (jemon: texpark-pro) → Continue → Continue
+   (Google Analytics off rakhte paren) → Create project.
+3. Project ready hole "Continue".
+
+------------------------------------------------------------------------
+STEP 2 — Web API key ar Project ID nin
+------------------------------------------------------------------------
+1. Project er bhitor, upore gear icon → "Project settings".
+2. "General" tab e "Your apps" er niche "Web API Key" dekhabe — seta copy korun.
+3. "Project ID" (General tab er upore) copy korun.
+
+Ebar app e:
+4. Texpark Pro khulun → Settings → "Cloud sync (Firestore)".
+5. "Firebase Web API key" box e key ta paste korun.
+6. "Firebase Project ID" box e project id ta paste korun.
+7. "Save keys" chapun.
+8. "Test cloud" chapun — "Cloud reachable" ashle thik.
+
+Ei duita key kono secret na. Eta die keu apnar data dekhte parbe na —
+security ta ase Firestore Rules e (Step 4).
+
+------------------------------------------------------------------------
+STEP 3 — Cloud account banan (ekta email/password)
+------------------------------------------------------------------------
+Ekta email diye account banate hobe. Ei email+password e PC ar phone
+duitai sign in korbe, tai duitai EK TA account e thakbe.
+
+1. "Cloud account (email)" box e email likhun (jemon: amar.dokan@gmail.com).
+   Firebase er jonno ei email ta notun hote pare, apnar asol email nao hote pare.
+   Ei email ta Firebase project er moddhe ekta account, eta alada.
+2. "Cloud password" box e ekta password din (kompokkhe 6 character).
+3. "Create account" chapun.
+4. "Sign in" chapun (jodi account age theke thake).
+5. "Send all data to cloud" chapun — apnar shob purono data cloud e jabe.
+
+Ebar phone e (ba onno PC te) same email+password diye "Sign in" korlei
+duita device eksi data dekhabe.
+
+------------------------------------------------------------------------
+STEP 4 — Rules bosan (security)
+------------------------------------------------------------------------
+Jotokhon na rules bosan, keu apnar project e likhte parbe na ba porte parbe na.
+firestore.rules file ta repo te ase. Eta bosan:
+
+1. Firebase console → Build → Firestore Database → "Create database".
+2. Location bachun → "Start in production mode" → Enable.
+3. "Rules" tab e giye repo te thaka firestore.rules er lekha paste korun → Publish.
+   (Ei rule bole: keu nijer uid chara onner data porte/ likhte parbe na.)
+
+------------------------------------------------------------------------
+STEP 5 — Phone/onno device
+------------------------------------------------------------------------
+1. Settings → "Cloud sync (Firestore)" e same Web API key + Project ID din.
+2. Same email + password diye "Sign in".
+3. "Send all data to cloud" chapun.
+
+Bas. Ebar jekono device e kichu change korle onno device e kichu second e
+chole ashbe.
+
+------------------------------------------------------------------------
+KICHU JANAR MOTON KOTHA
+------------------------------------------------------------------------
+* FREE plan e ki ki ase: 1 GB storage, din e ~50,000 read + 20,000 write.
+  Apnar dokaner hisebe eta onek beshi. App sudhu ja bodleche setai pathay —
+  pura boi na — tai limit er kache jaben na.
+* Cloud fail korle (net nei / limit ses): app nijei Google Sheet e save kore
+  rakhe, kichu hariye jay na. Cloud fire asle nijei abar sync suru kore.
+* Status badge: "Firestore live" (thik ase), "Cloud degraded → Sheet"
+  (cloud fail, Sheet cholche), "Cloud off (Sheet only)" (key dewa nai).
+* Firebase key na dile app age er moto sudhu Google Sheet diye cholbe —
+  kichu bhange na.

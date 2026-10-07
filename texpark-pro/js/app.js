@@ -76,6 +76,9 @@ function boot() {
     // push what is pending, then pull the other devices' work down.
     syncFlush();
     cloudAutoSync('open');
+    // Live Firestore sync, kept separate from the Sheet path above so a device with
+    // no cloud keys is untouched. Quiet on boot: it never pops an alert.
+    if (typeof cloudBoot === 'function') cloudBoot();
   } else {
     buildLogin();
   }
@@ -149,6 +152,7 @@ function doLogin() {
   // Login is the moment the owner starts looking at the books, so bring the other
   // machines' work down now rather than waiting for the next manual step.
   cloudAutoSync('login');
+  if (typeof cloudBoot === 'function') cloudBoot();
 }
 
 function doLogout() { clearSession(); buildLogin(); }
@@ -2162,6 +2166,14 @@ function renderSettings() {
     if (e) e.value = c[k] || '';
   });
   document.getElementById('stSyncUrl').value = db.settings.syncUrl || '';
+  const fb = db.settings.firebase || {};
+  const fbKeyEl = document.getElementById('stFbKey');
+  if (fbKeyEl) fbKeyEl.value = fb.apiKey || '';
+  const fbProjEl = document.getElementById('stFbProject');
+  if (fbProjEl) fbProjEl.value = fb.projectId || '';
+  const fbEmailEl = document.getElementById('stFbEmail');
+  if (fbEmailEl && !fbEmailEl.value && typeof fbEmail === 'function') fbEmailEl.value = fbEmail() || '';
+  if (typeof cloudStatusRender === 'function') cloudStatusRender();
   const ap = document.getElementById('stAutoPull');
   if (ap) ap.checked = db.settings.autoPull !== false;
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
@@ -2255,6 +2267,76 @@ function saveAutoPull() {
   if (on) cloudAutoSync('turned on');
   alert(on ? 'Auto-pull on — from now on it pulls from the sheet on open.'
            : 'Auto-pull off — now it only pulls from the sheet when you press the button.');
+}
+
+/* ===================== cloud (Firestore) settings ===================== */
+function saveFirebaseConfig() {
+  const key = (document.getElementById('stFbKey').value || '').trim();
+  const proj = (document.getElementById('stFbProject').value || '').trim();
+  db.settings.firebase = { apiKey: key, projectId: proj };
+  // The keys are machine-local: syncing them would push one project's id onto every
+  // device. They live in db.settings but are excluded from the merge like a sync URL.
+  commit();
+  cloudStatusRender();
+  alert(key && proj ? 'Cloud keys saved. Now sign in and send your data to the cloud.'
+                    : 'Cloud keys cleared — the app will use the Google Sheet only.');
+}
+
+function cloudOut(html) {
+  const el = document.getElementById('cloudTestOut');
+  if (el) el.innerHTML = html;
+}
+
+async function cloudSignIn() {
+  const email = (document.getElementById('stFbEmail').value || '').trim();
+  const pass = document.getElementById('stFbPass').value || '';
+  if (!cloudConfigured()) return cloudOut('<span class="red">Save the Firebase key and project id first.</span>');
+  if (!email || !pass) return cloudOut('<span class="red">Enter the cloud email and password.</span>');
+  cloudOut('Signing in...');
+  try {
+    await fbSignIn(email, pass);
+    if (!cloudMigrated()) await cloudMigrate(true);
+    await cloudAutoSyncNew('signin');
+    cloudOut('<span style="color:var(--green)">Signed in as ' + email + '. Cloud sync is live.</span>');
+  } catch (e) { cloudOut('<span class="red">' + e.message + '</span>'); }
+}
+
+async function cloudCreateAccount() {
+  const email = (document.getElementById('stFbEmail').value || '').trim();
+  const pass = document.getElementById('stFbPass').value || '';
+  if (!cloudConfigured()) return cloudOut('<span class="red">Save the Firebase key and project id first.</span>');
+  if (!email || !pass) return cloudOut('<span class="red">Enter the cloud email and password.</span>');
+  cloudOut('Creating the account...');
+  try {
+    await fbSignUp(email, pass);
+    await cloudMigrate(true);
+    cloudOut('<span style="color:var(--green)">Account created. Cloud sync is live.</span>');
+  } catch (e) { cloudOut('<span class="red">' + e.message + '</span>'); }
+}
+
+function cloudSignOutNow() {
+  fbSignOut();
+  cloudStatusRender();
+  cloudOut('Signed out of the cloud. The Google Sheet sync keeps working.');
+}
+
+async function testFirebase() {
+  if (!cloudConfigured()) return cloudOut('<span class="red">Save the Firebase key and project id first.</span>');
+  cloudOut('Testing the cloud...');
+  try {
+    const delta = await fbPullDelta();
+    cloudOut('<span style="color:var(--green)">Cloud reachable. ' + delta.records.length +
+      ' record(s) changed since the last sync.</span>');
+  } catch (e) { cloudOut('<span class="red">' + e.message + '</span>'); }
+}
+
+async function migrateToCloud() {
+  if (!cloudConfigured()) return cloudOut('<span class="red">Save the Firebase key and project id first.</span>');
+  if (!fbSignedIn()) return cloudOut('<span class="red">Sign in to the cloud first.</span>');
+  cloudOut('Sending every record to the cloud...');
+  const ok = await cloudMigrate(false);
+  cloudOut(ok ? '<span style="color:var(--green)">All data is in the cloud.</span>'
+              : '<span class="red">Could not finish — it will resume next time.</span>');
 }
 
 function toggleShortStockWarn(on) {
@@ -2516,7 +2598,7 @@ function syncNow() { syncRetryAll(); setTimeout(renderBackup, 1500); }
 /* ===================== boot ===================== */
 window.addEventListener('DOMContentLoaded', function () {
   boot();
-  window.addEventListener('online', () => cloudAutoSync('online'));
+  window.addEventListener('online', () => { cloudAutoSync('online'); if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('online'); });
   // Push a full cloud backup once a day when the app is opened, so at least one
   // recent restorable copy always exists off-device without anyone remembering.
   setTimeout(maybeDailyCloudBackup, 4000);

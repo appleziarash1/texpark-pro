@@ -184,7 +184,7 @@ const TOMB_MAX = 4000;                 // plenty of history; stops unbounded gro
 
    `autoPull` is deliberately per-device too: switching auto-pull off on the phone
    is a decision about the phone, and it must not silence the PC. */
-const LOCAL_SETTING_KEYS = ['syncUrl', 'deviceTag', 'autoPull'];
+const LOCAL_SETTING_KEYS = ['syncUrl', 'deviceTag', 'autoPull', 'firebase'];
 
 /* A record without its change stamp - what "changed?" actually compares. */
 function bare_(o) {
@@ -434,6 +434,9 @@ function dedupeStockCards_() {
 }
 
 function commit() {
+  // Capture what the indexes looked like before this save, so both stampChanged_ and
+  // the Firestore delta can tell which records actually moved.
+  const prevIndex = lastCommitted;
   try {
     // Stamp what this save changed *before* it is written, so the copy going to
     // disk (and later to the cloud) already carries the timestamps the merge needs.
@@ -448,6 +451,10 @@ function commit() {
   if (typeof renderAll === 'function') renderAll();
   // Anything saved since the last upload is worth pushing before the tab closes.
   if (typeof window !== 'undefined') window.cloudDirty = true;
+  // Live per-record push: send only the records whose stamp moved, so Firestore sees
+  // a few documents per save rather than the whole book. Muted while a merge is being
+  // committed, or a record that just came down would be sent straight back up.
+  if (typeof cloudQueueChanges === 'function') cloudQueueChanges(prevIndex);
   // Upload now, not only when the tab closes. A browser cancels a request started
   // from beforeunload, so "wait until he leaves the page" meant an edit made on the
   // web app often never reached the sheet at all.

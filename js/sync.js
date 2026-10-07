@@ -6,6 +6,11 @@ const SYNC_KEY = 'texpark_pro_syncq';
 
 var syncQueue = [];
 let syncTimer = null;
+/* syncFlush is not re-entrant. Before cloud.js, commit() queued one job and
+   syncPush's flush usually found nothing else to do; now a single save queues many
+   records, so the flush that each syncPush starts could run nested over the same
+   queue. A commit kicks off one flush at the end; the nested ones just return. */
+let syncFlushing = false;
 
 function syncLoad() {
   try { syncQueue = JSON.parse(localStorage.getItem(SYNC_KEY) || '[]'); }
@@ -64,14 +69,18 @@ function syncRequeueBackups() {
   if (changed) syncSave();
 }
 
-/* Queue one job. type is what Code.gs dispatches on. */
-function syncPush(type, data, label) {
-  if (!syncUrl()) return;
+/* Queue one job. type is what Code.gs dispatches on. `via` selects the transport:
+   the default is the Sheets endpoint; 'firestore' jobs are sent by cloud.js to
+   Firestore and never POSTed to the sheet, so the two paths share one durable
+   queue and one retry/backoff instead of each growing its own. */
+function syncPush(type, data, label, via) {
+  if (via !== 'firestore' && !syncUrl()) return;
   syncQueue.push({
     id: id(),
     type,
     data,
     label: label || type,
+    via: via || 'sheet',
     tries: 0,
     state: 'pending',            // pending | failed
     at: new Date().toISOString(),
@@ -105,38 +114,65 @@ function syncReply(txt, status) {
 }
 
 async function syncFlush() {
-  if (!syncUrl()) { syncStatusRender(); return; }
+  if (!syncUrl() && !(typeof cloudConfigured === 'function' && cloudConfigured())) { syncStatusRender(); return; }
   if (syncTimer) return;
-  const url = syncUrl();
-  const pending = syncQueue.filter(j => j.state === 'pending');
-  if (!pending.length) { syncStatusRender(); return; }
+  if (syncFlushing) return;            // a flush is already walking the queue
+  syncFlushing = true;
+  const attempted = {};
+  try {
+    const url = syncUrl();
+    // Drain until nothing new is left. A commit adds its jobs while the first of
+    // them is still in flight, so a single snapshot of the queue would leave the
+    // rest waiting for the retry timer; picking the next pending job each turn
+    // sends them all in one pass.
+    for (let guard = 0; guard < 1000; guard++) {
+      const job = syncQueue.find(j => j.state === 'pending' && !attempted[j.id]);
+      if (!job) break;
+      attempted[job.id] = true;
+      try {
+        // A Firestore job is sent by cloud.js, not POSTed to the sheet. Its failure
+        // mode (quota, offline) degrades the device to the Sheet path, and the job
+        // stays queued for the retry timer.
+        if (job.via === 'firestore') {
+          const r = await cloudSendJob(job);
+          if (!r.ok) {
+            job.tries++;
+            job.error = String(r.message || r);
+            if (job.tries >= 5) job.state = 'failed';
+            continue;
+          }
+          syncQueue = syncQueue.filter(j => j.id !== job.id);
+          syncSave();
+          continue;
+        }
+        if (!url) { continue; }   // a sheet job with no URL simply waits
+        const res = await fetch(url, {
+          method: 'POST',
+          // text/plain avoids the CORS preflight that Apps Script cannot answer.
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ type: job.type, data: job.data })
+        });
+        // We now actually READ the reply instead of assuming success.
+        const txt = await res.text();
+        const verdict = syncReply(txt, res.status);
+        if (!verdict.ok) throw new Error(verdict.message);
 
-  for (const job of pending) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        // text/plain avoids the CORS preflight that Apps Script cannot answer.
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ type: job.type, data: job.data })
-      });
-      // We now actually READ the reply instead of assuming success.
-      const txt = await res.text();
-      const verdict = syncReply(txt, res.status);
-      if (!verdict.ok) throw new Error(verdict.message);
-
-      syncQueue = syncQueue.filter(j => j.id !== job.id);
-      // This device's snapshot is now in the sheet; any older backup job for it -
-      // including ones parked as failed - is stale and must not go up later.
-      if (job.type === 'backup') syncDropSupersededBackups((job.data && job.data.device) || '', job.at);
-      syncSave();
-    } catch (e) {
-      job.tries++;
-      job.error = String(e.message || e);
-      // Keep retrying on a backoff; after 5 tries mark failed but never drop.
-      if (job.tries >= 5) job.state = 'failed';
+        syncQueue = syncQueue.filter(j => j.id !== job.id);
+        // This device's snapshot is now in the sheet; any older backup job for it -
+        // including ones parked as failed - is stale and must not go up later.
+        if (job.type === 'backup') syncDropSupersededBackups((job.data && job.data.device) || '', job.at);
+        syncSave();
+      } catch (e) {
+        job.tries++;
+        job.error = String(e.message || e);
+        // Keep retrying on a backoff; after 5 tries mark failed but never drop.
+        if (job.tries >= 5) job.state = 'failed';
+      }
     }
+    syncStatusRender();
+  } finally {
+    syncFlushing = false;
   }
-  syncStatusRender();
   if (syncQueue.some(j => j.state === 'pending')) {
     syncTimer = setTimeout(() => { syncTimer = null; syncFlush(); }, 8000);
   }

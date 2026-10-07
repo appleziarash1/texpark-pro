@@ -145,7 +145,7 @@ const rowsIn = (spreadsheet, name) => (spreadsheet._sheets[name]._rows || []).sl
 console.log('\n--- the sheet answers a health check ---');
 const health = get({});
 ok(health.success === true, 'doGet succeeds');
-ok(health.version === 4, 'it reports the chunked-backup version');
+ok(health.version === 5, 'it reports the chunked-backup + records version');
 
 console.log('\n--- a device backs itself up, then reads it back ---');
 const pcDb = { products: [{ id: 'p1', name: 'Kids 3pcs Set' }], memos: [{ memoNo: 'TXP/SM/2026/09/22-PC001' }], customers: [] };
@@ -401,6 +401,58 @@ console.log('\n--- a payment on a narrow Payments tab grows the columns first --
   ok(a.SS._sheets['Payments'].getMaxColumns() >= 8, 'the tab was widened to the full header width');
   const row = rowsIn(a.SS, 'Payments').filter(x => String(x[6]) === 'pay-wide')[0];
   ok(!!row && String(row[7]) === '', 'the receipt is stored whole, with its id in the id column');
+})();
+
+console.log('\n--- the Records mirror upserts a record and reads it back ---');
+(() => {
+  const sSS = makeSpreadsheet();
+  const a = buildApi(sSS);
+  a.post('test', {});
+  const rec = { id: 'm-1', memoNo: 'TXP/SM/1-PC001', at: '2026-10-05T10:00:00.000Z', grandTotal: 500, due: 200 };
+  const w = a.post('record', { key: 'memos', id: 'm-1', at: rec.at, json: JSON.stringify(rec) });
+  ok(w.success === true, 'a record writes to the Records tab: ' + w.message);
+  const read = a.get({ action: 'records' });
+  ok(read.success === true, 'records read succeeds');
+  ok(read.records.length === 1, 'one record comes back');
+  ok(JSON.parse(read.records[0].json).memoNo === 'TXP/SM/1-PC001', 'the record round-trips intact');
+  ok(read.records[0].key === 'memos' && read.records[0].id === 'm-1', 'the collection and id are preserved');
+
+  // Re-sending the same record is an upsert, never a duplicate row.
+  const rec2 = Object.assign({}, rec, { due: 0, at: '2026-10-05T11:00:00.000Z' });
+  a.post('record', { key: 'memos', id: 'm-1', at: rec2.at, json: JSON.stringify(rec2) });
+  const read2 = a.get({ action: 'records' });
+  ok(read2.records.length === 1, 'the same record updates in place, no duplicate');
+  ok(JSON.parse(read2.records[0].json).due === 0, 'the newer version of the record is the one stored');
+
+  // A delta read returns only what moved after `since`.
+  const read3 = a.get({ action: 'records', since: '2026-10-05T10:30:00.000Z' });
+  ok(read3.records.length === 1, 'a since-filter returns the newer record');
+  const read4 = a.get({ action: 'records', since: '2026-10-05T12:00:00.000Z' });
+  ok(read4.records.length === 0, 'a since-filter newer than the record returns nothing');
+})();
+
+console.log('\n--- a deleted record travels as a tombstone ---');
+(() => {
+  const sSS = makeSpreadsheet();
+  const a = buildApi(sSS);
+  a.post('test', {});
+  a.post('record', { key: 'memos', id: 'm-del', at: '2026-10-05T10:00:00.000Z', deleted: true, json: JSON.stringify({ id: 'm-del', at: '2026-10-05T10:00:00.000Z' }) });
+  const read = a.get({ action: 'records' });
+  ok(read.records.length === 1 && read.records[0].deleted === true, 'the tombstone is stored and read back as deleted');
+})();
+
+console.log('\n--- a record too large for one cell is chunked, like a backup ---');
+(() => {
+  const sSS = makeSpreadsheet();
+  const a = buildApi(sSS);
+  a.post('test', {});
+  const big = { id: 'm-big', at: '2026-10-05T10:00:00.000Z', note: 'x'.repeat(90000) };
+  const w = a.post('record', { key: 'memos', id: 'm-big', at: big.at, json: JSON.stringify(big) });
+  ok(w.success === true, 'the large record writes: ' + w.message);
+  ok(/3 chunks/.test(w.message), 'it was split into three chunks');
+  const read = a.get({ action: 'records' });
+  const got = read.records.filter(r => r.id === 'm-big')[0];
+  ok(!!got && JSON.parse(got.json).note.length === 90000, 'the large record reassembles to its full length');
 })();
 
 console.log('\n=================');

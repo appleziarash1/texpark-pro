@@ -537,6 +537,36 @@
           </label>
           <div id="syncTestOut" style="margin-top:10px;font-size:13px"></div>
         </div>
+
+        <div class="card">
+          <h2>Cloud sync (Firestore) <span id="cloudStatus" class="sync-badge sync-blue">Cloud off (Sheet only)</span></h2>
+          <div class="note">
+            The Google Sheet above ships the whole book and is not instant. This adds
+            <b>live</b> sync: one changed memo is one small update, so a sale typed on the phone shows
+            on the PC in seconds. It uses Firebase's <b>free</b> plan — no card, no server. If the
+            cloud is unreachable, or over quota, the app keeps saving and falls back to the Sheet by
+            itself, then recovers when the cloud comes back. Leave it empty and nothing changes.
+          </div>
+          <label>Firebase Web API key</label>
+          <input id="stFbKey" placeholder="AIza... (Firebase console → Project settings → Web API key)">
+          <label>Firebase Project ID</label>
+          <input id="stFbProject" placeholder="texpark-pro-8f21c">
+          <div class="row" style="margin-top:11px">
+            <button class="btn-pink" onclick="saveFirebaseConfig()">Save keys</button>
+            <button class="btn-light" onclick="testFirebase()">Test cloud</button>
+            <button class="btn-light" onclick="migrateToCloud()">Send all data to cloud</button>
+          </div>
+          <label style="margin-top:14px">Cloud account (email)</label>
+          <input id="stFbEmail" autocomplete="username" placeholder="shop@example.com (same on every device)">
+          <label>Cloud password</label>
+          <input id="stFbPass" type="password" autocomplete="current-password" placeholder="at least 6 characters">
+          <div class="row" style="margin-top:11px">
+            <button class="btn-pink" onclick="cloudSignIn()">Sign in</button>
+            <button class="btn-light" onclick="cloudCreateAccount()">Create account</button>
+            <button class="btn-light" onclick="cloudSignOutNow()">Sign out of cloud</button>
+          </div>
+          <div id="cloudTestOut" style="margin-top:10px;font-size:13px"></div>
+        </div>
       </section>
 
       <!-- ===== BACKUP ===== -->
@@ -761,6 +791,8 @@
 <script src="js/db.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/sync.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/cloud.js"></script>
 <script src="js/memoexport.js"></script>
 <script src="js/app.js"></script>
 <script>

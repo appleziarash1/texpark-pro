@@ -156,17 +156,39 @@ Receivable stays **derived**, never a hand-edited field.
 
 ## Phase 3 — Free live multi-device sync with Firestore + Sheet fallback
 
-**Status: NOT STARTED.**
+**Status: DONE (web layer).** Implemented per `docs/FIRESTORE_PLAN.md`: the design was written
+first, then the web Firestore layer, the Sheet `Records` fallback tab, the ONLINE_FIRESTORE ↔
+DEGRADED_SHEET state machine, auth/rules, one-time migration, tests, and
+`docs/FIRESTORE_SETUP_BANGLA.txt`.
 
-Plan document to be written first: `docs/FIRESTORE_PLAN.md` (data model, merge rules, reuse of
-the outbox/retry queue, risks). Then the web Firestore layer (`js/cloud.js` +
-`js/firebase-config.js`), the Sheet `Records` fallback tab, the ONLINE_FIRESTORE ↔ DEGRADED_SHEET
-state machine, auth/rules, one-time migration, tests, and `docs/FIRESTORE_SETUP_BANGLA.txt`.
-Android gets no Firestore in this phase; the web app mirrors every record to the Sheet `Records`
-tab so Android never sees stale data. Phase 4 (Android via Firestore REST) is proposed in the plan.
+### What shipped
+- `js/firebase-config.js` — the owner's project keys (placeholders), machine-local so they never
+  sync between devices.
+- `js/cloud.js` — Firebase Auth + Firestore over REST (no SDK, no build step), delta push/pull on
+  an `at` cursor, per-record documents `shops/{uid}/records/{key}__{id}`, tombstones, settings as
+  one document, one-time idempotent migration, the state machine and its backoff, and the Sheet
+  fallback driver. Reuses `mergeCloudInto_`, so there is one definition of "newer wins".
+- `js/sync.js` — one outbox for both transports (`via: 'sheet' | 'firestore'`), a re-entrancy
+  guard and a continuous drain so a commit that queues many records sends them all in one pass.
+- `Code.gs` — the `Records` tab plus the `record` / `records` routes (upsert, chunked, `since`
+  delta reads), version bumped to 5.
+- `index.html` / `js/app.js` — the Settings → Cloud sync panel: status badge, key save, test,
+  sign-in/create account, migrate.
+- `firestore.rules` — deny by default; `shops/{uid}/records` only for that uid.
+- `test/cloud.test.js` — real `cloud.js` against an in-memory fake of Auth + Firestore with
+  quota/offline toggles: two devices, delta-only reads/writes, delete/tombstone, payments,
+  degrade→recover, offline queueing, idempotent migration, unconfigured device untouched.
+- `sw.js` / `build.js` / zip builders — the two new scripts are copied and bundled.
 
-### Open risks
-- Read budget on Spark (50k/day): must use `at`-cursor delta reads, never whole-collection reads.
-- Anonymous/public repo: config keys are public identifiers, but rules must deny by default.
-- Without the owner's Firebase project we cannot run against a live Firestore; tests use an
-  in-memory fake with quota/offline toggles.
+### Verified
+Full suite green: logic 84, sheet 87 (incl. Records-tab tests), e2e 262, receivable 31, cost 11,
+journey 19, autopull 39, return 51, cloud 33, session 25, pairing 31, repair 30, ownerdata 29.
+
+### Open risks (unchanged)
+- Read budget on Spark (50k/day): the delta cursor is asserted to read ZERO documents when nothing
+  has changed.
+- Anonymous/public repo: config keys are public identifiers; rules deny by default.
+- No live Firestore in the sandbox; tests use a faithful in-memory fake written to the REST
+  contract, and the Bangla guide tells the owner how to paste keys and deploy the rules.
+- Android still uses the Sheet; the web app mirrors every record to the Sheet `Records` tab so
+  Android never sees stale data. No APK rebuild, no signing change.
