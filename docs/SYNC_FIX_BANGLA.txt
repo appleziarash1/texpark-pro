@@ -17,6 +17,14 @@ Ekhon ki boro thik holo (backup size):
   Tai ekhon joto boro hisab-i hok, backup hobe. Redeploy korle purono
   fail kora backup job gulo nijei abar chesta korbe.
 
+Ekhon ki aro thik holo (row out of bounds):
+  Tukro kora backup jokhon Backup tab-er row shesh kore phelto, tokhon
+  Google "Those rows are out of bounds." (Bangla: "ওইসব সারি সীমার বাইরে
+  রয়েছে।") bole dibe dito, ar upload fail korto. Karon ekta Google sheet-e
+  nirdisto shongkhok row/column thake. Notun code ekhon likhar age sheet
+  proshosto moto boro kore ney, ar purono row delete na kore shudhu khali
+  kore notun data bosay. Tai ekhon kono row shima'r baire jabe na.
+
 
 STEP 1 — Apps Script kholun
 ---------------------------

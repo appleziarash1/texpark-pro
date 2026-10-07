@@ -69,6 +69,9 @@ function sheet_(ss, key) {
   let sh = ss.getSheetByName(name);
   if (!sh) sh = ss.insertSheet(name);
   const h = HEADERS[key];
+  // A tab can be narrower than its header row; writing one column past the grid is
+  // the same "out of bounds" failure as a row, so widen before touching row 1.
+  ensureCols_(sh, h.length);
   const cur = sh.getRange(1, 1, 1, h.length).getValues()[0];
   let changed = false;
   h.forEach((x, i) => { if (!cur[i]) { cur[i] = x; changed = true; } });
@@ -284,10 +287,32 @@ function upsertMemoSummary_(ss, d) {
   else sh.appendRow(rec);
 }
 
-/* A device's snapshot, split across rows. The whole previous backup for that device
-   is removed first, so the tab keeps exactly one backup per device and does not grow
-   without bound. The write is all-or-nothing from the reader's point of view: the
-   client only calls it a success when this returns, which is after every chunk landed. */
+/* Grow a sheet's grid so `need` rows fit. A Google sheet is not infinite: it holds a
+   fixed number of rows, and a long-lived one can be trimmed to very few. Writing at a
+   row past the last one throws "Those rows are out of bounds." - which is exactly what
+   a chunked backup did once it needed more rows than the Backup tab had. */
+function ensureRows_(sh, need) {
+  const max = sh.getMaxRows();
+  if (need > max) sh.insertRowsAfter(max, need - max);
+}
+
+/* The same for columns, if a chunk ever needs more columns than the tab holds. */
+function ensureCols_(sh, need) {
+  const max = sh.getMaxColumns();
+  if (need > max) sh.insertColumnsAfter(max, need - max);
+}
+
+/* A device's snapshot, split across rows. The device's previous rows are cleared and
+   a fresh contiguous block is written at the bottom, so the tab keeps exactly one
+   backup per device and does not grow without bound. The write is all-or-nothing from
+   the reader's point of view: the client only calls it a success when this returns,
+   which is after every chunk landed.
+
+   Nothing here deletes rows, and nothing appends into a grid that is already full.
+   deleteRow/deleteRows shift every row below and can throw "Those rows are out of
+   bounds." on the row past the grid; and appendRow does not grow the sheet, so on a
+   full tab it throws the same error. Clearing contents and writing an explicit range
+   whose size the grid has been grown to fit avoids both. */
 function saveBackup_(ss, d) {
   const sh = sheet_(ss, 'backup');
   const dev = String(d.device || 'unknown');
@@ -295,27 +320,37 @@ function saveBackup_(ss, d) {
   const json = String(d.json || '');
   if (!json) throw new Error('Empty backup payload');
 
-  const stamps = CHUNK_CHARS;
-  const chunks = Math.max(1, Math.ceil(json.length / stamps));
+  const cols = HEADERS.backup.length;
+  const chunks = Math.max(1, Math.ceil(json.length / CHUNK_CHARS));
   const sum = checksum_(json);
   const now = new Date();
 
-  // 1. Drop every existing row for this device, so no stale chunk of a previous,
-  //    larger backup can be spliced onto the new one.
-  const vals = sh.getDataRange().getValues();
-  for (let i = vals.length - 1; i >= 1; i--) {
-    if (String(vals[i][1] || '') === dev) sh.deleteRow(i + 1);
+  // The new block: timestamp, device, date, version, chunk, n, of, total, sum. The
+  // full length and checksum ride on the first chunk; the others repeat `of` so a
+  // stray row still looks like part of a set rather than a legacy single-cell backup.
+  const block = [];
+  for (let n = 1; n <= chunks; n++) {
+    block.push([now, dev, date, String(d.version || ''),
+      json.substring((n - 1) * CHUNK_CHARS, n * CHUNK_CHARS), n, chunks,
+      n === 1 ? json.length : '', n === 1 ? sum : '']);
   }
 
-  // 2. Write the new set - timestamp, device, date, version, chunk, n, of, total, sum.
-  for (let n = 1; n <= chunks; n++) {
-    const part = json.substring((n - 1) * stamps, n * stamps);
-    // The full integrity stamp rides on the first chunk; the others repeat `of`
-    // so a lone row still looks like part of a set rather than a legacy backup.
-    const total = n === 1 ? json.length : '';
-    const chk = n === 1 ? sum : '';
-    sh.appendRow([now, dev, date, String(d.version || ''), part, n, chunks, total, chk]);
+  ensureCols_(sh, cols);
+
+  // 1. Clear every row this device already occupies, read from the sheet rather than
+  //    assumed, so a hand-edited tab cannot make us overwrite a different device and
+  //    no stale chunk of a larger previous backup survives below the new block.
+  const vals = sh.getDataRange().getValues();
+  for (let i = 1; i < vals.length; i++) {
+    if (String(vals[i][1] || '') === dev) sh.getRange(i + 1, 1, 1, cols).clearContent();
   }
+
+  // 2. Write the new block at the bottom, one contiguous range. getLastRow is read
+  //    after the clear, so the cleared rows are not counted, and the grid is grown
+  //    first because a write past the last row is the "out of bounds" failure.
+  const last = sh.getLastRow();
+  ensureRows_(sh, last + chunks);
+  sh.getRange(last + 1, 1, chunks, cols).setValues(block);
 
   return 'Backup saved for ' + dev + ' (' + Math.round(json.length / 1024) + ' KB in ' + chunks + ' chunk' + (chunks === 1 ? '' : 's') + ')';
 }

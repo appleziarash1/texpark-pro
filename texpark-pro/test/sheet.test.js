@@ -7,38 +7,89 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 function ok(cond, msg) { if (cond) { pass++; console.log('  PASS  ' + msg); } else { fail++; console.log('  FAIL  ' + msg); } }
 
-/* Minimal in-memory sheet: a grid of rows, enough of the API surface that
-   Code.gs uses (getDataRange, getRange, setValues, appendRow, getSheetByName). */
-function makeSheet(name, width) {
+/* Minimal in-memory sheet. It now enforces a FINITE grid - a fixed number of rows
+   and columns - and throws the exact errors Google Sheets does when a range reaches
+   outside it, so Code.gs cannot pass these tests by writing past the grid. This is
+   the whole point: the chunked backup used to do exactly that and fail on every
+   upload with "Those rows are out of bounds." */
+function makeSheet(name, width, maxRows, maxCols) {
   const rows = [[]];
-  const pad = (r) => { while (r.length < width) r.push(''); return r; };
-  const range = (row, col, nr, nc) => ({
-    getValues: () => {
-      const out = [];
-      for (let i = 0; i < nr; i++) {
-        const src = rows[row - 1 + i] || [];
-        const line = [];
-        for (let j = 0; j < nc; j++) line.push(src[col - 1 + j] !== undefined ? src[col - 1 + j] : '');
-        out.push(line);
-      }
-      return out;
-    },
-    setValues: (vals) => {
-      vals.forEach((line, i) => {
-        const idx = row - 1 + i;
-        if (!rows[idx]) rows[idx] = [];
-        line.forEach((v, j) => { rows[idx][col - 1 + j] = v; });
-        pad(rows[idx]);
-      });
-    },
-    setFontWeight: () => {}
-  });
+  let nRows = maxRows || 1000, nCols = maxCols || 26;
+  const cols = Math.max(width || 0, nCols);
+  const pad = (r) => { while (r.length < cols) r.push(''); return r; };
+  const cellEmpty = (v) => v === undefined || v === null || v === '';
+  const lastRow = () => {
+    for (let i = Math.max(rows.length - 1, 0); i >= 0; i--) {
+      const r = rows[i] || [];
+      for (let j = 0; j < r.length; j++) if (!cellEmpty(r[j])) return i + 1;
+    }
+    return 0;
+  };
+  const assertRows = (row, nr) => {
+    if (!(row >= 1) || nr < 0 || row + nr - 1 > nRows) throw new Error('Those rows are out of bounds.');
+  };
+  const assertCols = (col, nc) => {
+    if (!(col >= 1) || nc < 0 || col + nc - 1 > nCols) throw new Error('Those columns are out of bounds.');
+  };
+  const range = (row, col, nr, nc) => {
+    if (nr === undefined) { nr = row; row = col; col = 1; }   // getRange(a1) is not used, but keep it honest
+    nr = nr || 1; nc = nc || 1;
+    assertRows(row, nr); assertCols(col, nc);
+    return {
+      getValues: () => {
+        const out = [];
+        for (let i = 0; i < nr; i++) {
+          const src = rows[row - 1 + i] || [];
+          const line = [];
+          for (let j = 0; j < nc; j++) line.push(src[col - 1 + j] !== undefined ? src[col - 1 + j] : '');
+          out.push(line);
+        }
+        return out;
+      },
+      setValues: (vals) => {
+        vals.forEach((line, i) => {
+          const idx = row - 1 + i;
+          if (!rows[idx]) rows[idx] = [];
+          line.forEach((v, j) => { rows[idx][col - 1 + j] = v; });
+          pad(rows[idx]);
+        });
+      },
+      clearContent: () => {
+        for (let i = 0; i < nr; i++) {
+          const idx = row - 1 + i;
+          if (!rows[idx]) rows[idx] = [];
+          for (let j = 0; j < nc; j++) rows[idx][col - 1 + j] = '';
+          pad(rows[idx]);
+        }
+      },
+      setFontWeight: () => {}
+    };
+  };
   return {
     _rows: rows,
-    getDataRange: () => range(1, 1, rows.length, width),
+    getName: () => name,
+    getMaxRows: () => nRows,
+    getMaxColumns: () => nCols,
+    getLastRow: lastRow,
+    getDataRange: () => range(1, 1, Math.max(lastRow(), 1), cols),
     getRange: range,
-    appendRow: (r) => { rows.push(pad(r.slice())); },
-    deleteRow: (n) => { rows.splice(n - 1, 1); },
+    insertRowsAfter: (afterRow, howMany) => { nRows += howMany; },
+    insertColumnsAfter: (afterCol, howMany) => { nCols += howMany; },
+    appendRow: (r) => {
+      // Like Sheets: appendRow writes just below the last row of data and does NOT
+      // grow the sheet, so on a full grid it throws instead of adding the row.
+      if (!(lastRow() < nRows)) throw new Error('Those rows are out of bounds.');
+      const idx = lastRow();
+      rows[idx] = pad(r.slice());
+    },
+    deleteRow: (n) => {
+      assertRows(n, 1);
+      rows.splice(n - 1, 1);
+    },
+    deleteRows: (start, howMany) => {
+      assertRows(start, howMany);
+      rows.splice(start - 1, howMany);
+    },
     setFrozenRows: () => {}
   };
 }
@@ -48,35 +99,48 @@ function makeSpreadsheet() {
   return {
     _sheets: sheets,
     getSheetByName: (n) => sheets[n] || null,
-    insertSheet: (n) => { const s = makeSheet(n, 40); sheets[n] = s; return s; }
+    insertSheet: (n) => { const s = makeSheet(n, 26, 1000, 26); sheets[n] = s; return s; }
   };
 }
 
-const SS = makeSpreadsheet();
-const sandbox = {
-  console,
-  Date,
-  isFinite,
-  JSON,
-  Number,
-  String,
-  Object,
-  Array,
-  Math,
-  Error,
-  SpreadsheetApp: { openById: () => SS },
-  ContentService: {
-    MimeType: { JSON: 'application/json' },
-    createTextOutput: (t) => ({ _t: t, setMimeType() { return this; }, getContent() { return this._t; } })
-  }
-};
-vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8'), sandbox);
+const CODE = fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8');
 
-const post = (type, data) => JSON.parse(sandbox.doPost({ postData: { contents: JSON.stringify({ type, data }) } }).getContent());
-const get = (params) => JSON.parse(sandbox.doGet({ parameter: params || {} }).getContent());
-/* Rows of the Backup tab, header removed - the raw material the pull reassembles. */
-const backupRows = () => SS._sheets['Backup']._rows.slice(1).filter(r => r && r.length);
+/* Load Code.gs into a fresh sandbox bound to `SS`, so a test can give it a
+   spreadsheet with an unusually small grid and prove it copes. */
+function buildApi(SS) {
+  const sandbox = {
+    console,
+    Date,
+    isFinite,
+    JSON,
+    Number,
+    String,
+    Object,
+    Array,
+    Math,
+    Error,
+    SpreadsheetApp: { openById: () => SS },
+    ContentService: {
+      MimeType: { JSON: 'application/json' },
+      createTextOutput: (t) => ({ _t: t, setMimeType() { return this; }, getContent() { return this._t; } })
+    }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(CODE, sandbox);
+  return {
+    SS,
+    post: (type, data) => JSON.parse(sandbox.doPost({ postData: { contents: JSON.stringify({ type, data }) } }).getContent()),
+    get: (params) => JSON.parse(sandbox.doGet({ parameter: params || {} }).getContent()),
+    save: (d) => sandbox.saveBackup_(SS, d)
+  };
+}
+
+const api = buildApi(makeSpreadsheet());
+const SS = api.SS;
+const post = api.post;
+const get = api.get;
+/* Raw rows of a sheet, for asserting the stored shape rather than the API's view. */
+const rowsIn = (spreadsheet, name) => (spreadsheet._sheets[name]._rows || []).slice(1).filter(r => r && r.length);
 
 console.log('\n--- the sheet answers a health check ---');
 const health = get({});
@@ -219,6 +283,86 @@ ok(!!mixed.errors && /BROKEN/.test(Object.keys(mixed.errors).join(',')),
   'and the broken device is named in an errors map: ' + JSON.stringify(mixed.errors));
 const goodPull = get({ action: 'pull', device: 'GOOD' });
 ok(goodPull.success === true && goodPull.json === small, 'the healthy device was never affected');
+
+console.log('\n--- a backup on a fresh, empty sheet works ---');
+/* A brand-new spreadsheet: one blank row, nothing written. The old saveBackup_ got
+   "Those rows are out of bounds." here the moment a snapshot needed more than one
+   row, because it appended past a grid that had never been grown. */
+(() => {
+  const a = buildApi(makeSpreadsheet());          // fresh: no sheets yet
+  const small = JSON.stringify({ products: [], memos: [{ memoNo: 'FRESH-1' }], customers: [] });
+  const r = a.post('backup', { device: 'PC', date: '2026-10-10', version: '2027-01-01.10', json: small });
+  ok(r.success === true, 'the very first backup on a fresh sheet is accepted');
+  const back = a.get({ action: 'pull', device: 'PC' });
+  ok(back.json === small, 'and reads back byte-identically');
+})();
+
+console.log('\n--- a backup bigger than the grid forces rows to be added ---');
+(() => {
+  // A normal 26-column tab trimmed to 5 rows (header takes one). That is far too few
+  // for a big snapshot's chunks unless the grid is grown first, and it is exactly the
+  // shape that made Google answer "Those rows are out of bounds." on every upload.
+  const sSS = makeSpreadsheet();
+  sSS.insertSheet = (n) => { const s = makeSheet(n, 26, 5, 26); sSS._sheets[n] = s; return s; };
+  const a = buildApi(sSS);
+  const big = JSON.stringify({ blob: 'Q'.repeat(300000), tail: 'GRID-GROWN-END' });
+  const chunks = Math.ceil(big.length / 40000);
+  ok(chunks > 5, 'the snapshot needs more chunks than the grid has rows (' + chunks + ' > 5)');
+  const r = a.post('backup', { device: 'PC', date: '2026-10-10', version: '2027-01-01.10', json: big });
+  ok(r.success === true, 'the backup succeeds instead of failing out of bounds: ' + r.message);
+  const sheet = sSS._sheets['Backup'];
+  ok(sheet.getMaxRows() >= 1 + chunks, 'the sheet grew to hold every chunk (' + sheet.getMaxRows() + ' rows)');
+  const back = a.get({ action: 'pull', device: 'PC' });
+  ok(back.json === big, 'and the grown sheet reassembles the payload byte-identically');
+})();
+
+console.log('\n--- a second, smaller backup upserts with no stale rows ---');
+(() => {
+  const a = buildApi(makeSpreadsheet());
+  // >2 MB, i.e. more than 40 chunks, so the payload cannot hide in one cell even
+  // if the writer ignored CHUNK_CHARS entirely.
+  const first = JSON.stringify({ blob: 'W'.repeat(2100000), tail: 'FIRST' });
+  const second = JSON.stringify({ memos: [{ memoNo: 'SECOND' }] });
+  a.post('backup', { device: 'PC', date: '2026-10-10', version: '2027-01-01.10', json: first });
+  const many = rowsIn(a.SS, 'Backup').filter(r => String(r[1]) === 'PC').length;
+  ok(many > 1, 'the first backup is stored across several rows (' + many + ')');
+  a.post('backup', { device: 'PC', date: '2026-10-11', version: '2027-01-01.10', json: second });
+  const after = rowsIn(a.SS, 'Backup').filter(r => String(r[1]) === 'PC');
+  ok(after.length === 1, 'the smaller backup leaves exactly one row for the device (' + after.length + ')');
+  ok(a.get({ action: 'pull', device: 'PC' }).json === second, 'and no tail of the old, larger payload survives');
+})();
+
+console.log('\n--- many devices and dates coexist, then each is read back ---');
+(() => {
+  const a = buildApi(makeSpreadsheet());
+  const devices = ['PC', 'PH', 'LAPTOP'];
+  const expected = {};
+  devices.forEach((dev, k) => {
+    expected[dev] = JSON.stringify({ device: dev, memos: [{ memoNo: dev + '-' + k }], blob: dev.repeat(1) + 'x'.repeat(k * 60000) });
+    // Two writes per device: an earlier one, then the newer one that must win.
+    a.post('backup', { device: dev, date: '2026-10-0' + (k + 1), version: '2027-01-01.10', json: JSON.stringify({ device: dev, old: true }) });
+    a.post('backup', { device: dev, date: '2026-10-1' + k, version: '2027-01-01.10', json: expected[dev] });
+  });
+  const all = JSON.parse(a.get({ action: 'pullall' }).json);
+  devices.forEach(dev => ok(all[dev] === expected[dev], dev + ' reads back its newest snapshot'));
+  ok(a.get({ action: 'pull' }).devices.length === 3, 'all three devices are listed');
+})();
+
+console.log('\n--- a legacy single-cell backup in a grown sheet still reads back ---');
+(() => {
+  const a = buildApi(makeSpreadsheet());
+  const legacy = JSON.stringify({ products: [{ id: 'old' }], memos: [{ memoNo: 'LEGACY-BOUNDS' }], customers: [] });
+  // Write it the way the previous Code.gs did: whole JSON in one cell, no chunk cols.
+  a.post('test', {});   // a harmless write, so every tab (Backup included) exists
+  const bkB = a.SS._sheets['Backup'];
+  bkB._rows[bkB.getLastRow()] = [new Date(), 'OLD', '2026-09-01', '2026-09-01.1', legacy, '', '', '', ''];
+  ok(a.get({ action: 'pull', device: 'OLD' }).json === legacy, 'a legacy row is returned unchanged');
+  // And a chunked backup alongside it must not disturb it or be disturbed.
+  const fresh = JSON.stringify({ memos: [{ memoNo: 'NEW' }] });
+  a.post('backup', { device: 'PC', date: '2026-10-10', version: '2027-01-01.10', json: fresh });
+  ok(a.get({ action: 'pull', device: 'OLD' }).json === legacy, 'the legacy row still reads back after a chunked write');
+  ok(a.get({ action: 'pull', device: 'PC' }).json === fresh, 'and the chunked device is unaffected');
+})();
 
 console.log('\n=================');
 console.log('PASS ' + pass + '   FAIL ' + fail);

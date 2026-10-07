@@ -33,6 +33,21 @@ function syncCoalesceBackups() {
     j.type !== 'backup' || latest[(j.data && j.data.device) || ''] === j);
 }
 
+/* Once a device's snapshot has actually reached the sheet, every earlier queued or
+   parked snapshot for that same device is dead weight: it is an older set of books
+   and re-uploading it would only overwrite the newer one that just landed. Drop
+   them, but never a job stamped later than the one that succeeded (that is a newer
+   snapshot still waiting to go) and never a non-backup job. */
+function syncDropSupersededBackups(device, succeededAt) {
+  const before = syncQueue.length;
+  syncQueue = syncQueue.filter(j => {
+    if (j.type !== 'backup') return true;
+    if (((j.data && j.data.device) || '') !== device) return true;
+    return String(j.at || '') > String(succeededAt || '');
+  });
+  return before - syncQueue.length;
+}
+
 /* The oversized-cell failure is gone now that Code.gs chunks the backup, so a job
    that was parked as failed by "Backup too large" only needs one more attempt.
    Marked so it is requeued once rather than on every load. */
@@ -110,6 +125,9 @@ async function syncFlush() {
       if (!verdict.ok) throw new Error(verdict.message);
 
       syncQueue = syncQueue.filter(j => j.id !== job.id);
+      // This device's snapshot is now in the sheet; any older backup job for it -
+      // including ones parked as failed - is stale and must not go up later.
+      if (job.type === 'backup') syncDropSupersededBackups((job.data && job.data.device) || '', job.at);
       syncSave();
     } catch (e) {
       job.tries++;

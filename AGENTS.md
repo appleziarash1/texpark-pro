@@ -190,6 +190,29 @@ chunking, and the reasoning is worth keeping because the limit is Google's, not 
   `syncRequeueBackups()` un-parks a job that failed with the "too large" error, once, so the
   existing failed jobs retry after the server is redeployed. Real data jobs (memos, stock, …)
   are never coalesced or dropped.
+- **A sheet grid is finite; write to it as if it were not at your peril.** The first chunked
+  `saveBackup_` appended the chunk rows and deleted the device's old ones, and every upload then
+  failed with Google's `Those rows are out of bounds.` A Google tab holds a *fixed* number of
+  rows and columns, and `appendRow` does **not** grow it - on a full (or trimmed) tab it throws
+  the same error as `getRange` past the last row. `deleteRow`/`deleteRows` are just as exposed:
+  they shift everything below, so a delete at the last row or one row past throws too.
+  The rewrite in `saveBackup_` never deletes rows and never appends into a full grid:
+  1. `ensureRows_`/`ensureCols_` grow the grid (`insertRowsAfter`/`insertColumnsAfter`) whenever
+     a write or a header would reach outside it. `sheet_` calls `ensureCols_` before touching
+     row 1, because a 26-column tab can be narrower than a header.
+  2. The device's old rows are found by reading the sheet, then `clearContent`'d (never
+     deleted). `getLastRow()` is read *after* the clear, so the cleared rows are not counted.
+  3. The new block is written in **one** `getRange(...).setValues()` at `getLastRow()+1`, with
+     the grid grown first. One write means a later failure cannot leave a half-written backup,
+     and no grid math has to survive an intervening delete.
+  `test/sheet.test.js` now backs its fake `Sheet` with a **finite** grid that throws the exact
+  Google errors, so this class of bug cannot pass the suite again. Its `makeSheet(name, width,
+  maxRows, maxCols)` + `buildApi()` let a test hand Code.gs a 5-row tab and prove the row count
+  is grown.
+- **Queue cleanup on a landed backup.** `js/sync.js` also drops a device's superseded backup
+  jobs - any FAILED or PENDING "Cloud backup" for that device stamped before the one that just
+  succeeded - because an older snapshot would only overwrite the newer one now in the sheet.
+  Newer backups and every non-backup job are left alone (`syncDropSupersededBackups`).
 - **The deployment is manual and the URL must not change.** Apps Script code is not served from
   the repo: the owner has to paste the new `Code.gs` into the project and
   *Deploy → Manage deployments → edit → New version*, keeping the same `/exec` URL and

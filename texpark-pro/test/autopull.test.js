@@ -247,6 +247,36 @@ addMemo(ph, 'TXP/SM/1-PH001', 'Phone Customer', 3, 250);
   eq(rq.syncQueue.find(j => j.id === 'b1').tries, 0, 'with its retry count reset');
   eq(rq.syncQueue.find(j => j.id === 'm1').state, 'failed', 'a memo that failed for another reason is left alone');
 
+  /* ------------------ a landed backup retires that device's older jobs ------------------ */
+  console.log('\n--- when a newer backup lands, older backups of that device are dropped ---');
+  const dq = makeDevice('PC', bigSheet);
+  dq.syncQueue = [
+    { id: 'old-failed', type: 'backup', data: { device: 'PC' }, state: 'failed', tries: 9, at: '2026-10-09T00:00:00.000Z', error: 'Those rows are out of bounds.' },
+    { id: 'old-pending', type: 'backup', data: { device: 'PC' }, state: 'pending', tries: 1, at: '2026-10-09T00:00:30.000Z', error: '' },
+    { id: 'newer-still-queued', type: 'backup', data: { device: 'PC' }, state: 'pending', tries: 0, at: '2026-10-09T01:00:00.000Z', error: '' },
+    { id: 'other-device', type: 'backup', data: { device: 'PH' }, state: 'failed', tries: 9, at: '2026-10-08T00:00:00.000Z', error: 'boom' },
+    { id: 'real-job', type: 'memo', data: { memoNo: 'KEEP' }, state: 'failed', tries: 9, at: '2026-10-08T00:00:00.000Z', error: 'boom' }
+  ];
+  dq.syncDropSupersededBackups('PC', '2026-10-09T00:30:00.000Z');
+  ok(!dq.syncQueue.some(j => j.id === 'old-failed'), 'the older FAILED backup of the same device is dropped');
+  ok(!dq.syncQueue.some(j => j.id === 'old-pending'), 'the older PENDING backup of the same device is dropped');
+  ok(dq.syncQueue.some(j => j.id === 'newer-still-queued'), 'a backup stamped after the success is kept - it is newer work');
+  ok(dq.syncQueue.some(j => j.id === 'other-device'), 'another device\'s backup is untouched');
+  ok(dq.syncQueue.some(j => j.id === 'real-job'), 'a non-backup job is never dropped');
+
+  /* End to end: a successful flush retires the device's older backups by itself. */
+  console.log('\n--- a successful upload cleans the queue, not just an explicit call ---');
+  const fq = makeDevice('PC', bigSheet);
+  fq.db.settings.syncUrl = 'https://example.test/exec';
+  fq.fetch = () => Promise.resolve({ ok: true, text: async () => JSON.stringify({ success: true, message: 'Saved' }) });
+  fq.syncQueue = [
+    { id: 'redundant', type: 'backup', data: { device: 'PC' }, state: 'failed', tries: 9, at: '2026-10-09T00:00:00.000Z', error: 'Those rows are out of bounds.' },
+    { id: 'fresh', type: 'backup', data: { device: 'PC' }, state: 'pending', tries: 0, at: '2026-10-09T01:00:00.000Z', error: '' }
+  ];
+  await fq.syncFlush();
+  ok(!fq.syncQueue.some(j => j.id === 'redundant'), 'the redundant older backup is gone after the fresh one lands');
+  ok(!fq.syncQueue.some(j => j.id === 'fresh'), 'and the fresh upload was itself dequeued');
+
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
   console.log('=================');
