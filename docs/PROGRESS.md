@@ -82,24 +82,70 @@ recovers the original keystore, a version bump + rebuild can be done then, safel
 
 ## Phase 2 — Receivable must drop when a delivery is marked delivered
 
-**Status: NOT STARTED.**
+**Status: DONE.** All suites green. Web + native + Code.gs changes below.
 
-### Investigation (to fill in before coding)
-- How is "RECEIVABLE — Due from customers" computed today (web `js/db.js`/`js/app.js`, native
-  `Store.java`/dashboard)?
-- Is there any payment/collection record today?
-- How do deliveries work (Delivered/Partial/Pending, shared pending maths with returns, charge)?
-- One-paragraph root cause.
+### Root cause (confirmed by reading the code)
+Receivable was `sum(memo.due)`, and `memo.due` was computed once at save time
+(`grandTotal − advance`) and **never touched again by anything**. So when the customer handed
+over cash at delivery, nothing reduced `due`; the dashboard, the memo, the history row, the
+customer ledger and the ageing buckets all kept showing the original amount. The app already had
+a `payments` list (`{date, customerId, amount, method, note}`) driven by the "Receive" button,
+but it was **customer-level** — it reduced the customer ledger's due (`customerDue`) yet the
+dashboard never netted it, and it could not be tied to a delivery or a memo, so it could not
+drive a per-memo figure. There was no way to record "cash collected when this parcel went out".
 
-### Plan (design to confirm against the code)
-Receivable stays DERIVED. Add a `payments` list (id, memoId, amount, date, method, deliveryId,
-`at`, `del`). Memo remaining due = memo total − advance − sum(live payments), min 0.
-Receivable = sum over live memos. Existing data with no payments must give EXACTLY today's
-number. Choose Option A (delivery collects cash) vs Option B (explicit "Receive payment") after
-reading how deliveries actually behave in this app.
+### Design chosen — Option A: the delivery collects the cash
+Receivable stays **derived**, never a hand-edited field.
+- Receipts gain `memoId`, `deliveryId`, `customerId`. When a delivery goes out, the owner sees a
+  new **Collected (৳)** box prefilled with the memo's remaining due (split proportionally for a
+  partial delivery) and can overwrite it, including to 0.
+- `memoRemainingDue(memo) = max(0, grandTotal − advance − Σ live memo-linked receipts)`.
+- `totalReceivable() = Σ memoRemainingDue(memo)` over live memos.
+- **Regression guarantee:** a memo with no receipts contributes exactly its stored `due`, so any
+  book that exists today reads the same number. The Receive button still writes a
+  customer-level receipt (no `memoId`); that keeps the ledger exactly as before and, by design,
+  never moved the dashboard — so its behaviour is preserved too.
+- **Tombstones:** a removed receipt (delivery/memo deleted, or the delivery re-entered) is
+  soft-deleted with `del:true` rather than spliced out, so `stampChanged` records the delete and
+  the cloud merge cannot resurrect it. `payments` is already in `MERGE_KEYS` on both platforms.
+- Over-collection is clamped to the remaining due with a warning, so a due can never go negative.
+- The collection and the delivery are written in the **same commit**, so every screen moves
+  together — no instant where a parcel is delivered but the money is missing.
 
-### Next
-Start Step A: read the code and write the findings here.
+### What changed
+- **Web** `texpark-pro/js/db.js`: `paymentsForMemo_`, `collectedOnMemo_`, `paidOnMemo_`,
+  `memoRemainingDue`; `totalReceivable` rewritten to derive; `ageingBuckets` buckets the remaining
+  due (callers pass memos) so a paid memo stops ageing.
+- **Web** `texpark-pro/js/app.js`: `customerIdForMemo_`, `collectedPrefill_`, `deliveryQtyChanged`,
+  `removePaymentForDelivery_`; `saveDelivery` records the collection in the same commit and emits
+  a `payment` sync job; `openDelivery` prefills the box; `deleteMemo` soft-deletes the memo's
+  receipts; history/print use `memoRemainingDue` (and the print shows a "Received (delivery)" line
+  when money came in); `customerDue` ignores tombstoned receipts.
+- **Web** `texpark-pro/index.html`: the `dlQty`/`dlCollect` fields in the delivery modal.
+- **Native** `android-src/com/texpark/pro/Store.java`: `collectedOnMemo`, `memoRemainingDue`,
+  `totalReceivable` (derived), `findDelivery`, `collectedPrefill`, `removePaymentsForDelivery`,
+  `recordCollection`, `customerIdForMemo`; `deleteMemo` soft-deletes receipts; `ageingBuckets`
+  uses the remaining due.
+- **Native** `android-src/com/texpark/pro/ScreensMore.java`: the delivery card gains a Collected
+  box and records the receipt in the same save.
+- **Code.gs** `texpark-pro/Code.gs`: `payments` header gains `Payment ID` and `Memo No`;
+  `savePayment_` upserts on Payment ID (falling back to append for the old id-less client) and
+  calls `ensureCols_`/`ensureRows_` first so a narrow Payments tab cannot throw out of bounds.
+
+### Tests (all green)
+- New `texpark-pro/test/receivable.test.js` (web, 31 asserts): fresh memo = full due; the exact
+  no-receipt regression; delivery prefill full/partial; collection drops memo + dashboard;
+  over-collection clamp; receipt linkage; ledger/history agreement; memo delete soft-deletes its
+  receipts; Receive button unchanged; a stale-merge test proving a soft-deleted receipt is not
+  resurrected.
+- `test/native.test.js` new `receivable` op + assertion (phone parity: prefill, collect, clamp,
+  remove, delete, reload).
+- `test/sheet.test.js` two new cases (payment id upsert; narrow Payments tab widened).
+- `test/e2e.test.js` delivery/payment section updated to the new contract (collection in the same
+  commit, prefill, manual Receive now adds a third receipt).
+
+### Docs
+- `docs/RECEIVABLE_BANGLA.txt` — Bangla guide for the owner.
 
 ### Open risks
 - The native Android UI cannot be driven in this environment; native changes are covered by JVM

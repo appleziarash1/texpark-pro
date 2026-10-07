@@ -1,0 +1,55 @@
+RECEIVABLE + DELIVERY COLLECTION (ki notun holo)
+================================================
+
+Ki thik holo (main kaj):
+  Ager obosthay memo-r "Due" ekbar likhe dile ar palte na. Customer delivery-r
+  shomoy taka dileo dashboard-er "Receivable" (mot due) ar memo-r due ekhono
+  purono onko-i dekhato. Tai hisab milto na.
+
+  Ekhon delivery korar shomoy ekta "Collected (৳)" box ache. Customer delivery-r
+  shomoy jodi kono taka dey, shei taka oi box-e likhe Save Delivery chap dile
+  sei taka memo-r due theke shathe shathe komে jabe. Ar dashboard-er Receivable
+  o, history-r due o, customer ledger o, ageing (Due >60d) o — shob ek shathe
+  thik hoye jabe.
+
+Box ta nijei bhorti hoye ashe:
+  - Pura memo deliver hole box pura due dekhabe.
+  - Adha deliver hole (jemon 10 er 4) box due-r shei ongsho (10-er 4 vag) dekhabe.
+  - Apni chailে box-er onko bondole dite paren, ba 0 rekhe dite paren (jodi
+    ei trip-e taka na dey).
+
+Niom gulo (guarantee):
+  - Jodi apni due-r beshi taka likhen, system apnake janabe ar
+    shudhu joto due ache toto-i record korbe. Kono due kokhono negative hobe na.
+  - Receipt ar delivery EK chhe kobe save hoy (ek commit-e). Tai delivery hole
+    taka mochh kore jabe na, ar taka record hoye delivery harie jabe na.
+  - Jodi khali memo teh kono receipt na thake, tahole due ager motoi thake —
+    purono kono onko bondol hobe na. Purono data ekdom ager motoi pora jabe.
+
+Receipt share kora:
+  - Delivery-r receipt ta memo ar delivery dutor shathe juda thake (memoId,
+    deliveryId). Tai memo delete korle shei receipt o shathe chole jay —
+  kono taka "orphan" pore thake na.
+  - Abar ek bar Save chap dile (double click) notun delivery/receipt toiri
+    hobe na.
+  - "Receive" button (purono system) age-r motoi kaj kore: customer ledger-e
+    dhukbe. Dashboard to memo-r upor nirbhor kore, tai oikhanে purono hisab
+    ekdom same-i thake.
+
+Google Sheet-er dike (apps script):
+  - Payment row guলো ekhon "Payment ID" diye upsert hoy. Ek ta receipt ekbar-
+    er beshi pathale (retry / sync replay) notun row toiri hobe na, purono ta
+    update hobe. Payment ID na thakle purono motoi notun row hoy.
+  - Payments tab purono ar chhoto (6 column) holeo code age column boro kore
+    ney, tai "Those rows/columns are out of bounds." ar asbe na.
+
+Test:
+  - Notun test: texpark-pro/test/receivable.test.js (web) ar
+    native.test.js er "receivable" case (phone), ar sheet.test.js-e payment
+    upsert-er doita case. Sob PNG (PASS) — kono FAIL nei.
+
+Gurutwopurno:
+  - Ei kaj GitHub-e push na kore, ar sync URL na bodelе client-er kache
+    pouchhabe na. Web file gulo network-first, tai push korlei normal reload-e
+    notun version ashbe. Apps Script Code.gs shudhu apni re-deploy korলেই
+    sheet-er dike notun niom cholbe.

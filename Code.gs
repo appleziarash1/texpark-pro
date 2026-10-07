@@ -45,7 +45,10 @@ const HEADERS = {
      stock, so it is written down next to the qty rather than inferred. */
   returns: ['Timestamp', 'Return Date', 'Memo No', 'Customer', 'Products', 'Qty', 'Returned Qty',
     'Pending Qty', 'Condition', 'Note'],
-  payments: ['Timestamp', 'Date', 'Customer', 'Amount', 'Method', 'Note'],
+  /* A receipt. The Payment ID column is what makes a re-sent payment an upsert
+     rather than a duplicate row: the client stamps every receipt with an id, and
+     a delivery's receipt carries the delivery id too so the two can be matched. */
+  payments: ['Timestamp', 'Date', 'Customer', 'Amount', 'Method', 'Note', 'Payment ID', 'Memo No'],
   expenses: ['Timestamp', 'Date', 'Head', 'Amount', 'Note'],
   profit: ['Timestamp', 'Date', 'Ref', 'Sales', 'COGS', 'Profit', 'Type'],
   /* Full app snapshots, so a lost PC or phone can be restored instead of lost.
@@ -424,8 +427,30 @@ function saveReturn_(ss, d) {
 }
 
 function savePayment_(ss, d) {
-  sheet_(ss, 'payments').appendRow([new Date(), d.date || '', d.customerName || d.customerId || '',
-    n_(d.amount), d.method || '', d.note || '']);
+  const sh = sheet_(ss, 'payments');
+  const cols = HEADERS.payments.length;   // 8
+  const rec = [new Date(), d.date || '', d.customerName || d.customerId || '',
+    n_(d.amount), d.method || '', d.note || '',
+    String(d.paymentId || d.id || ''), String(d.memoNumber || d.memoNo || '')];
+  /* Upsert on Payment ID, so a re-sent receipt does not pile up a second row for the
+     same money. A receipt with no id (the old client) falls back to appendRow exactly
+     as before. Grid is widened first: a Payments tab can predate these two columns. */
+  ensureCols_(sh, cols);
+  const pid = rec[6];
+  let row = -1;
+  if (pid) {
+    const vals = sh.getDataRange().getValues();
+    for (let i = 1; i < vals.length; i++) if (String(vals[i][6] || '') === pid) { row = i + 1; break; }
+  }
+  if (row > 0) {
+    ensureRows_(sh, row);
+    sh.getRange(row, 1, 1, cols).setValues([rec]);
+  } else {
+    const last = sh.getLastRow();
+    ensureRows_(sh, last + 1);
+    if (pid) sh.getRange(last + 1, 1, 1, cols).setValues([rec]);
+    else sh.appendRow(rec);
+  }
   sheet_(ss, 'profit').appendRow([new Date(), d.date || '', 'PAYMENT', 0, 0, n_(d.amount), 'Received']);
 }
 

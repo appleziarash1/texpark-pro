@@ -364,6 +364,45 @@ console.log('\n--- a legacy single-cell backup in a grown sheet still reads back
   ok(a.get({ action: 'pull', device: 'PC' }).json === fresh, 'and the chunked device is unaffected');
 })();
 
+console.log('\n--- a payment re-send upserts instead of duplicating a row ---');
+(() => {
+  const a = buildApi(makeSpreadsheet());
+  a.post('test', {});   // create every tab, Payments included
+  const payRows = () => rowsIn(a.SS, 'Payments').filter(r => r && r.length);
+  a.post('payment', { paymentId: 'pay-1', date: '2026-10-01', customerName: 'Karim', amount: 600, method: 'Cash', memoNumber: 'TXP/SM/1' });
+  ok(payRows().length === 1, 'the first receipt writes one row');
+  ok(String(payRows()[0][6]) === 'pay-1', 'the Payment ID is stored in its own column (' + String(payRows()[0][6]) + ')');
+  ok(String(payRows()[0][7]) === 'TXP/SM/1', 'the memo number is stored too');
+  // The same payment re-sent (a retry, or a sync replay) must update, not pile up.
+  a.post('payment', { paymentId: 'pay-1', date: '2026-10-01', customerName: 'Karim', amount: 600, method: 'bKash', memoNumber: 'TXP/SM/1' });
+  ok(payRows().length === 1, 'a re-sent receipt does not create a second row');
+  ok(String(payRows()[0][4]) === 'bKash', 'and the row is updated in place');
+  // A different receipt still appends.
+  a.post('payment', { paymentId: 'pay-2', date: '2026-10-02', customerName: 'Rahim', amount: 300, method: 'Cash' });
+  ok(payRows().length === 2, 'a different receipt appends normally');
+  // The old client sends no id: it must still write, exactly as before.
+  a.post('payment', { date: '2026-10-03', customerName: 'Legacy', amount: 100, method: 'Cheque' });
+  ok(payRows().length === 3, 'a receipt with no id still writes (old client)');
+})();
+
+console.log('\n--- a payment on a narrow Payments tab grows the columns first ---');
+(() => {
+  // A Payments tab the owner has had since before the two new columns existed:
+  // six columns wide, so writing Payment ID/Memo No would run off the grid.
+  const sSS = makeSpreadsheet();
+  sSS.insertSheet = (n) => {
+    const s = n === 'Payments' ? makeSheet(n, 6, 1000, 6) : makeSheet(n, 26, 1000, 26);
+    sSS._sheets[n] = s; return s;
+  };
+  const a = buildApi(sSS);
+  a.post('test', {});
+  const r = a.post('payment', { paymentId: 'pay-wide', date: '2026-10-04', customerName: 'Karim', amount: 250, method: 'Cash' });
+  ok(r.success === true, 'the payment succeeds instead of failing out of bounds: ' + r.message);
+  ok(a.SS._sheets['Payments'].getMaxColumns() >= 8, 'the tab was widened to the full header width');
+  const row = rowsIn(a.SS, 'Payments').filter(x => String(x[6]) === 'pay-wide')[0];
+  ok(!!row && String(row[7]) === '', 'the receipt is stored whole, with its id in the id column');
+})();
+
 console.log('\n=================');
 console.log('PASS ' + pass + '   FAIL ' + fail);
 console.log('=================');

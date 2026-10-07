@@ -383,22 +383,34 @@ eq(findStock(widget.id).sold, 5, 'sold qty left alone - real memos sold 5');
 ok(triggers.alert.some(a => a.includes('cannot go below')),
   'user warned they cannot lower sold below real sales');
 
-console.log('\n--- delivery ---');
+console.log('\n--- delivery collects cash and drops the memo due ---');
 nav('delivery');
 openDelivery(db.memos[0].id);
+/* The cash box wakes up prefilled with what the memo still owes; the owner can
+   overwrite it, and here he types the amount the driver actually brought back. */
+eq(num(el('dlCollect').value), 750, 'the collect box prefills the whole remaining due for a full delivery');
 el('dlQty').value = '2';
+el('dlCollect').value = '300';
 el('dlDriver').value = 'Jamal';
 el('dlVehicle').value = 'DHAKA-TA-11-2233';
 el('dlReceiver').value = 'Karim';
 saveDelivery();
 eq(db.deliveries.length, 1, 'delivery recorded');
 eq(db.deliveries[0].status, 'Partial', 'partial delivery status');
+eq(db.payments.length, 1, 'the 300 collected on the delivery is recorded as a payment in the same commit');
+eq(db.payments[0].memoId, db.memos[0].id, 'the payment is linked to the memo');
+eq(db.payments[0].deliveryId, db.deliveries[0].id, 'the payment is linked to the delivery that collected it');
+eq(memoRemainingDue(db.memos[0]), 450, 'the memo due drops by the 300 that came in');
+
 openDelivery(db.memos[0].id);
 eq(String(el('dlQty').value), '3', 'the form pre-fills the pending qty');
+eq(num(el('dlCollect').value), 270, 'a 3-of-5 delivery prefills three fifths of the 450 still owed');
+el('dlCollect').value = '450';
 saveDelivery();
 eq(db.deliveries[db.deliveries.length - 1].status, 'Delivered', 'full delivery status once the whole memo is delivered');
+eq(memoRemainingDue(db.memos[0]), 0, 'the whole memo is now collected');
 
-console.log('\n--- payment receive ---');
+console.log('\n--- manual payment receive ---');
 nav('customers');
 const cust = db.customers.find(c => c.name === 'Karim Store');
 ok(!!cust, 'customer exists');
@@ -406,8 +418,8 @@ openPayment(cust.id);
 el('payAmount').value = '300';
 el('payMethod').value = 'bKash';
 savePayment();
-eq(db.payments.length, 1, 'payment recorded');
-eq(db.payments[0].method, 'bKash', 'payment method stored');
+eq(db.payments.length, 3, 'the manual receipt is added alongside the two delivery receipts');
+eq(db.payments[2].method, 'bKash', 'payment method stored');
 
 console.log('\n--- sync queue is real, not fake-success ---');
 db.settings.syncUrl = '';

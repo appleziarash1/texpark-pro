@@ -264,6 +264,74 @@ public class Driver {
       st = new Store(st.dbDir());
       st.load();
       out.put("returnCountAfterReload", st.list("returns").size());
+    } else if (op.equals("receivable")) {
+      /* The delivery-collection rules, driven through the real Store methods the
+         Android delivery screen calls. This is the exact scenario the owner hits:
+         a parcel goes out, some cash comes back with it, and the memo's due and the
+         dashboard Receivable must both fall - never negative, never double-counted. */
+      st.list("returns").clear();
+      st.list("deliveries").clear();
+      st.list("payments").clear();
+      st.list("memos").clear();
+      Map<String,Object> card = st.stockOf("seed-k3s");
+      card.put("opening", 100.0); card.put("sold", 0.0);
+      card.put("available", Store.stockAvailable(card));
+      Map<String,Object> draft = new LinkedHashMap<String,Object>();
+      draft.put("customerName", "Collect Test");
+      draft.put("discount", "0"); draft.put("delivery", "0"); draft.put("advance", "0");
+      List<Object> items = new ArrayList<Object>();
+      Map<String,Object> it = new LinkedHashMap<String,Object>();
+      it.put("productId", "seed-k3s"); it.put("qty", 10.0); it.put("rate", 150.0);
+      it.put("cost", 100.0); it.put("vat", 0.0);
+      items.add(it);
+      Map<String,Object> memo = st.saveMemo(draft, items);
+      out.put("grandTotal", memo.get("grandTotal"));
+      out.put("receivableFresh", st.totalReceivable());
+      out.put("remainingFresh", st.memoRemainingDue(memo));
+      // A full delivery prefills the whole due; a partial one prefills its share.
+      out.put("prefillFull", st.collectedPrefill(memo, 10.0));
+      out.put("prefillPartial", st.collectedPrefill(memo, 4.0));
+
+      // Deliver 4 and collect 4/10 of the 1500 due = 600.
+      Map<String,Object> dl = new LinkedHashMap<String,Object>();
+      String deliveryId = Store.id();
+      dl.put("id", deliveryId); dl.put("memoId", Store.str(memo, "id"));
+      dl.put("memoNo", Store.str(memo, "memoNo")); dl.put("date", Store.today());
+      dl.put("qty", 4.0); dl.put("delivered", 0.0);
+      st.list("deliveries").add(dl);
+      Map<String,Object> pay = st.recordCollection(memo, deliveryId, 600.0);
+      out.put("collected", pay == null ? null : pay.get("amount"));
+      out.put("remainingAfterPartial", st.memoRemainingDue(memo));
+      out.put("receivableAfterPartial", st.totalReceivable());
+
+      // Collecting more than is owed is clamped, so the due never goes negative.
+      st.recordCollection(memo, deliveryId, 5000.0);
+      out.put("remainingClamped", st.memoRemainingDue(memo));
+      out.put("receivableClamped", st.totalReceivable());
+      out.put("paymentsLive", st.list("payments").size());
+
+      // Removing the delivery's receipts takes the money back off the due.
+      out.put("removed", st.removePaymentsForDelivery(deliveryId));
+      out.put("remainingAfterRemove", st.memoRemainingDue(memo));
+      out.put("receivableAfterRemove", st.totalReceivable());
+
+      // Deleting the memo soft-deletes any receipts it still owns.
+      Map<String,Object> pay2 = st.recordCollection(memo, deliveryId, 300.0);
+      out.put("collected2", pay2 == null ? null : pay2.get("amount"));
+      st.deleteMemo(memo);
+      out.put("memosLeft", st.list("memos").size());
+      out.put("receivableAfterDelete", st.totalReceivable());
+      boolean orphan = false;
+      for (Object o : st.list("payments")) {
+        Map<String,Object> p = Store.rec(o);
+        if (!Boolean.TRUE.equals(p.get("del")) && !Store.str(p, "memoId").isEmpty()) orphan = true;
+      }
+      out.put("orphanReceipt", orphan);
+      // The whole thing must survive a save/reload, so the receipt is really on disk.
+      st.commit();
+      st = new Store(st.dbDir());
+      st.load();
+      out.put("receivableAfterReload", st.totalReceivable());
     } else if (op.equals("deleteMemo")) {
       /* Deleting a memo that had a return filed against it. reverseSaleFromStock used
          to clamp sold at zero, so the returned qty was swallowed and the shelf read
@@ -850,6 +918,29 @@ test('native: a parcel return raises stock for good goods and records damaged on
   assert.strictEqual(r.pendingDeliveryPlusReturn, 0, '4 delivered + 6 returned = the whole memo');
   // Two returns were entered (one good, one damaged), so both must come back.
   assert.strictEqual(r.returnCountAfterReload, 2, 'returns survive a save and reload');
+});
+
+test('native: a delivery collects cash and the receivable follows, never negative', () => {
+  const r = runNative({ op: 'receivable' });
+  assert.strictEqual(r.grandTotal, 1500, 'the memo is 10 x 150');
+  assert.strictEqual(r.remainingFresh, 1500, 'a fresh memo owes its whole grand total');
+  assert.strictEqual(r.receivableFresh, 1500, 'and that is the dashboard receivable');
+  assert.strictEqual(r.prefillFull, 1500, 'a full delivery prefills the whole due');
+  assert.strictEqual(r.prefillPartial, 600, 'a 4-of-10 delivery prefills four tenths');
+  assert.strictEqual(r.collected, 600, 'the receipt records the 600 collected');
+  assert.strictEqual(r.remainingAfterPartial, 900, 'the memo due falls to 900');
+  assert.strictEqual(r.receivableAfterPartial, 900, 'and so does the dashboard');
+  assert.strictEqual(r.remainingClamped, 0, 'an over-collection is clamped, never a negative due');
+  assert.strictEqual(r.receivableClamped, 0, 'the dashboard floors at zero too');
+  assert.strictEqual(r.paymentsLive, 2, 'each collection is its own receipt record');
+  assert.strictEqual(r.removed, 2, 'removing a delivery retires both its receipts');
+  assert.strictEqual(r.remainingAfterRemove, 1500, 'the due comes all the way back');
+  assert.strictEqual(r.receivableAfterRemove, 1500, 'and the dashboard with it');
+  assert.strictEqual(r.collected2, 300, 'a later collection records normally again');
+  assert.strictEqual(r.memosLeft, 0, 'the memo is gone');
+  assert.strictEqual(r.receivableAfterDelete, 0, 'so the receivable is zero');
+  assert.strictEqual(r.orphanReceipt, false, 'deleting the memo leaves no live orphan receipt');
+  assert.strictEqual(r.receivableAfterReload, 0, 'and the receipt state survives a reload');
 });
 
 test('native: deleting a memo with a return restores stock exactly, like the web', () => {

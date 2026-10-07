@@ -822,6 +822,12 @@ public class Store {
     public void deleteMemo(Map<String, Object> m) {
         reverseSaleFromStock(m);
         String mid = str(m, "id");
+        /* Receipts the memo's deliveries created go with it, soft-deleted so the
+           tombstone travels to the other device and the money stops counting. */
+        for (Object o : list("payments")) {
+            Map<String, Object> p = rec(o);
+            if (mid.equals(str(p, "memoId"))) p.put("del", Boolean.TRUE);
+        }
         List<Object> keepD = new ArrayList<Object>();
         for (Object o : list("deliveries")) {
             if (!mid.equals(str(rec(o), "memoId"))) keepD.add(o);
@@ -881,6 +887,70 @@ public class Store {
             if (str(d, "memoId").equals(memoId)) q += num(d.get("qty"));
         }
         return q;
+    }
+
+    public Map<String, Object> findDelivery(String deliveryId) {
+        if (deliveryId == null || deliveryId.isEmpty()) return null;
+        for (Object o : list("deliveries")) if (deliveryId.equals(str(o, "id"))) return rec(o);
+        return null;
+    }
+
+    /** How much cash to prefill when a delivery goes out: the memo's remaining due,
+     *  split in proportion to the qty being delivered. A partial 3 of 10 prefills
+     *  three tenths of what is owed. The owner can overwrite it. */
+    public double collectedPrefill(Map<String, Object> memo, double qty) {
+        double remaining = memoRemainingDue(memo);
+        double sold = num(memo == null ? null : memo.get("totalQty"));
+        if (sold <= 0) return remaining;
+        double share = Math.min(1, Math.max(0, qty / sold));
+        return round2(remaining * share);
+    }
+
+    /** Every live receipt a delivery created, soft-deleted. Keyed on deliveryId, so
+     *  it can never touch a receipt some other delivery (or a manual payment) owns. */
+    public int removePaymentsForDelivery(String deliveryId) {
+        if (deliveryId == null || deliveryId.isEmpty()) return 0;
+        int n = 0;
+        for (Object o : list("payments")) {
+            Map<String, Object> p = rec(o);
+            if (deliveryId.equals(str(p, "deliveryId")) && !Boolean.TRUE.equals(p.get("del"))) {
+                p.put("del", Boolean.TRUE);
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** Record the cash a delivery collected. Over an amount greater than what is
+     *  still owed is clamped down so no memo reads a negative due. The receipt is
+     *  saved in the same commit as the delivery, so every screen moves together. */
+    public Map<String, Object> recordCollection(Map<String, Object> memo, String deliveryId, double amount) {
+        double owed = memoRemainingDue(memo);
+        double amt = Math.max(0, Math.min(amount, owed));
+        if (amt <= 0) return null;
+        Map<String, Object> pay = new LinkedHashMap<String, Object>();
+        pay.put("id", id());
+        pay.put("memoId", str(memo, "id"));
+        pay.put("deliveryId", deliveryId == null ? "" : deliveryId);
+        pay.put("customerId", customerIdForMemo(memo));
+        pay.put("date", today());
+        pay.put("amount", Double.valueOf(amt));
+        pay.put("method", "Cash");
+        pay.put("note", "Collected on delivery " + str(memo, "memoNo"));
+        list("payments").add(pay);
+        return pay;
+    }
+
+    /** The customer record a memo belongs to, matched the way the web build matches
+     *  memos to a customer, so a receipt lands on the right ledger. */
+    public String customerIdForMemo(Map<String, Object> memo) {
+        if (memo == null) return "";
+        for (Object o : list("customers")) {
+            Map<String, Object> c = rec(o);
+            if (str(c, "name").equals(str(memo, "customerName"))
+                && str(c, "phone").equals(str(memo, "customerPhone"))) return str(c, "id");
+        }
+        return "";
     }
 
     public double returnedQtyOf(String memoId) {
@@ -1035,9 +1105,33 @@ public class Store {
         return r;
     }
 
+    /* Money a memo has actually collected since the sale: every live receipt whose
+       memoId is this memo and whose delivery (if any) still exists. A receipt is a
+       soft-deleted record (`del`) when its delivery or memo went away, and is skipped. */
+    public double collectedOnMemo(String memoId) {
+        double a = 0;
+        for (Object o : list("payments")) {
+            Map<String, Object> p = rec(o);
+            if (Boolean.TRUE.equals(p.get("del"))) continue;
+            if (!memoId.equals(str(p, "memoId"))) continue;
+            if (!str(p, "deliveryId").isEmpty() && findDelivery(str(p, "deliveryId")) == null) continue;
+            a = round2(a + num(p.get("amount")));
+        }
+        return a;
+    }
+
+    /** What a memo still owes: grand total minus advance minus what its deliveries
+     *  have collected, floored at zero. Derived, never hand-edited, so a delivery
+     *  marked delivered drops the customer's due the moment it is saved. */
+    public double memoRemainingDue(Map<String, Object> memo) {
+        if (memo == null) return 0;
+        return Math.max(0, round2(num(memo.get("grandTotal"))
+            - num(memo.get("advance")) - collectedOnMemo(str(memo, "id"))));
+    }
+
     public double totalReceivable() {
         double a = 0;
-        for (Object o : list("memos")) a = round2(a + num(rec(o).get("due")));
+        for (Object o : list("memos")) a = round2(a + memoRemainingDue(rec(o)));
         return a;
     }
 
@@ -1179,7 +1273,10 @@ public class Store {
         double current = 0, d30 = 0, d60 = 0, d90 = 0, over90 = 0;
         for (Object o : items) {
             Map<String, Object> it = rec(o);
-            double due = num(it.get("due"));
+            /* Bucket the remaining due, not the frozen field, so a customer who paid
+               on delivery stops ageing an already-collected amount. Callers pass
+               memos; a line without grandTotal falls back to its stored due. */
+            double due = it.containsKey("grandTotal") ? memoRemainingDue(it) : num(it.get("due"));
             if (due <= 0) continue;
             long days = (t - parseDate(str(it, "date"))) / 86400000L;
             if (days <= 30) current += due;
