@@ -3173,13 +3173,13 @@ function toast(msg) {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.11';
+const APP_VERSION = '2027-01-01.10';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
 const RELEASE_URL = 'https://appleziarash1.github.io/texpark-pro';
 
-/* Numeric version compare, so 2027-01-01.11 sorts above 2027-01-01.9. A plain
+/* Numeric version compare, so 2027-01-01.10 sorts above 2027-01-01.9. A plain
    string compare puts .10 first, which is the wrong way round for releases. */
 function versionNewer(a, b) {
   const parts = v => String(v || '').split(/[^0-9]+/).filter(s => s.length).map(Number);

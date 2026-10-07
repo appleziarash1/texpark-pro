@@ -376,7 +376,7 @@ so this symptom can never be "fixed" by changing what an unpaired device display
   two databases rather than as one.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
-- Current version: `2027-01-01.11` in `sw.js`, `js/app.js`, `version.txt` and
+- Current version: `2027-01-01.10` in `sw.js`, `js/app.js`, `version.txt` and
   `MainActivity.java` (bump them together, then rebuild — the e2e test fails if the two js
   files drift apart, and `ci/check-site.py` fails if the Java or the APK drifts too).
 - `Code.gs` lives in **two** places and they are the same file: `texpark-pro/Code.gs` is the
