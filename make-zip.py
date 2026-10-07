@@ -36,6 +36,8 @@ APP_FILES = [
     'js/app.js',
     'js/db.js',
     'js/sync.js',
+    'js/firebase-config.js',
+    'js/cloud.js',
     'js/voice.js',
     'js/memoexport.js',
     'sw.js',

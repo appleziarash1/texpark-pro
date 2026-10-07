@@ -33,6 +33,8 @@ SITE_FILES = [
     'js/app.js',            # where the update check reads APP_VERSION from
     'js/db.js',
     'js/sync.js',
+    'js/firebase-config.js',
+    'js/cloud.js',
     'js/voice.js',
     'js/memoexport.js',
     'css/app.css',

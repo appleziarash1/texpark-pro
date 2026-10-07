@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Deny by default. If the rule below is ever wrong, the answer is "nobody"
+    // rather than "everybody".
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // One shop per signed-in account, scoped by the uid in the path. The uid is a
+    // path segment, so Firestore can prove this for a range query inside the
+    // subcollection without a composite index - which is why the shop is keyed by
+    // path and not by an `owner` field.
+    match /shops/{uid}/records/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}
