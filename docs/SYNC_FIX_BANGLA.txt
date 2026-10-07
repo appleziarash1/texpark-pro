@@ -7,6 +7,16 @@ Keno dorkar:
   purono memo-r profit repair) kaaj kore na. URL ta same rakhbo, shudhu
   tar pichone notun code boshabo. Data kichui muchbe na.
 
+Ekhon ki boro thik holo (backup size):
+  Ager code apnar pura hisab ekta matro sheet cell-e likhto, ar ek cell-e
+  50,000 character-er beshi dhoy na. Apnar hisab 49 KB-er beshi hote-i
+  protita upload "Backup too large for one sheet cell" bole bad pore jeto,
+  tai kono backup sheet-e pauchhilo na — kintu queue bhore jeto abar
+  green "sync" dekhate thakto. Notun code ekhon backup ke 40,000
+  character-er chhoto chhoto tukro kore koyek row-te likhe, abar joda lagaye.
+  Tai ekhon joto boro hisab-i hok, backup hobe. Redeploy korle purono
+  fail kora backup job gulo nijei abar chesta korbe.
+
 
 STEP 1 — Apps Script kholun
 ---------------------------
@@ -93,6 +103,6 @@ PROBLEM HOLE
   * Test Sync-e permission error           -> "Who has access: Anyone" din,
     ar ekbar authorize korun (Advanced -> Go to project -> Allow).
   * App-e purono version atke ache         -> Settings -> App Update ->
-    "Update chek korun". Version 2027-01-01.9 ba beshi thaka uchit.
+    "Update chek korun". Version 2027-01-01.11 ba beshi thaka uchit.
   * Kichu bujhte na parle               -> ei file ta repo-te rakha ache:
     https://github.com/appleziarash1/texpark-pro/blob/main/docs/SYNC_FIX_BANGLA.txt
