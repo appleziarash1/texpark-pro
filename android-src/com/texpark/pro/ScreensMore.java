@@ -493,6 +493,7 @@ public class ScreensMore {
             final int[] chosen = {0};
             final Button picker = Ui.ghost(s.act, memoNos.get(0));
             final EditText qty = Ui.number(s.act, "Delivery Qty", "");
+            final EditText collect = Ui.number(s.act, "Collected (\u09F3)", "");
             final EditText driver = Ui.field(s.act, "Driver Name", "", InputType.TYPE_CLASS_TEXT);
             final EditText vehicle = Ui.field(s.act, "Vehicle / Truck No", "", InputType.TYPE_CLASS_TEXT);
             final EditText receiver = Ui.field(s.act, "Receiver Name", "", InputType.TYPE_CLASS_TEXT);
@@ -507,6 +508,9 @@ public class ScreensMore {
                                 double tot = 0;
                                 for (Object io : Json.arr(m.get("items"))) tot += Store.num(Store.rec(io).get("qty"));
                                 qty.setText(Ui.qty(tot));
+                                /* Prefill the cash box with what is still owed on the memo,
+                                   which the owner can overwrite before saving. */
+                                collect.setText(Ui.qty(store.collectedPrefill(m, tot)));
                             }
                         }
                     });
@@ -514,6 +518,7 @@ public class ScreensMore {
             });
             add.addView(picker);
             add.addView(Ui.label(s.act, "Delivery Qty")); add.addView(qty);
+            add.addView(Ui.label(s.act, "Collected (\u09F3)")); add.addView(collect);
             add.addView(Ui.label(s.act, "Driver")); add.addView(driver);
             add.addView(Ui.label(s.act, "Vehicle")); add.addView(vehicle);
             add.addView(Ui.label(s.act, "Receiver")); add.addView(receiver);
@@ -522,7 +527,8 @@ public class ScreensMore {
                 public void onClick(View v) {
                     Map<String, Object> m = ScreensData.findMemo(store, memoIds.get(chosen[0]));
                     Map<String, Object> d = new LinkedHashMap<String, Object>();
-                    d.put("id", Store.id());
+                    String deliveryId = Store.id();
+                    d.put("id", deliveryId);
                     d.put("memoId", memoIds.get(chosen[0]));
                     d.put("memoNo", m == null ? "" : Store.str(m, "memoNo"));
                     d.put("customerName", m == null ? "" : Store.str(m, "customerName"));
@@ -533,7 +539,13 @@ public class ScreensMore {
                     d.put("vehicle", vehicle.getText().toString().trim());
                     d.put("receiver", receiver.getText().toString().trim());
                     store.list("deliveries").add(d);
-                    s.afterSave("Delivery added.");
+                    d.put("status", m != null && store.pendingQtyOf(m) <= 0 ? "Delivered" : "Partial");
+                    /* The collection rides in the same commit as the delivery, so the
+                       dashboard and the customer due move the moment this saves. */
+                    Map<String, Object> pay = m == null ? null
+                        : store.recordCollection(m, deliveryId, Store.num(collect.getText().toString()));
+                    s.afterSave(pay == null ? "Delivery added."
+                        : "Delivery added. " + Ui.money(pay.get("amount")) + " collected.");
                 }
             });
             add.addView(save);

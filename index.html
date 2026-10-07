@@ -667,12 +667,14 @@
     <div class="muted" id="dlInfo"></div>
     <input id="dlMemo" type="hidden">
     <div class="formgrid" style="margin-top:12px">
-      <div><label>Delivery Qty</label><input id="dlQty" type="number" min="1"></div>
+      <div><label>Delivery Qty</label><input id="dlQty" type="number" min="1" oninput="deliveryQtyChanged()"></div>
+      <div><label>Collected (৳)</label><input id="dlCollect" type="number" min="0" step="1"></div>
       <div><label>Driver Name</label><input id="dlDriver"></div>
       <div><label>Vehicle / Truck No</label><input id="dlVehicle"></div>
       <div><label>Receiver Name</label><input id="dlReceiver"></div>
       <div class="wide"><label>Note</label><textarea id="dlNote"></textarea></div>
     </div>
+    <div class="muted" style="margin-top:6px">Collected is the cash the customer paid on this delivery. It is taken off the memo's due automatically.</div>
     <div class="modal-actions">
       <button class="btn-light" onclick="closeDelivery()">Cancel</button>
       <button class="btn-pink" onclick="saveDelivery()">Save Delivery</button>

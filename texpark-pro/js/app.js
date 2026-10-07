@@ -755,7 +755,7 @@ function renderHistory() {
         return '<tr><td>' + esc(m.memoNo) + '</td><td>' + m.date + '</td><td>' + esc(m.customerName) + '</td>' +
           '<td class="right">' + m.totalQty + '</td><td class="right">' + money(m.grandTotal) + '</td>' +
           '<td class="right"><b class="' + (num(m.profit) >= 0 ? 'green' : 'red') + '">' + money(m.profit) + '</b></td>' +
-          '<td class="right">' + money(m.due) + '</td>' +
+          '<td class="right">' + money(memoRemainingDue(m)) + '</td>' +
           '<td><span class="pill ' + st + '">' + d + '/' + m.totalQty + (r ? ' <b class="red">R' + r + '</b>' : '') + '</span></td>' +
           '<td><button class="btn-light btn-sm" onclick="viewMemo(\'' + m.id + '\')">View</button> ' +
           '<button class="btn-light btn-sm" onclick="printMemoById(\'' + m.id + '\')">Print</button> ' +
@@ -796,6 +796,10 @@ function deleteMemo(mid) {
   if (!m) return;
   if (!confirm('Delete memo ' + m.memoNo + '? The stock will be returned.')) return;
   reverseSaleFromStock(m);
+  /* Receipts the memo's deliveries created go with it. Soft-deleted (`del`) rather
+     than removed, so the tombstone travels to the other device and the money stops
+     counting everywhere a merge reaches - no orphan receipt left behind. */
+  db.payments.forEach(p => { if (p && p.memoId === mid) p.del = true; });
   db.deliveries = db.deliveries.filter(d => d.memoId !== m.id);
   (db.returns || []).filter(r => r.memoId === m.id).forEach(reverseReturnFromStock);
   db.returns = (db.returns || []).filter(r => r.memoId !== m.id);
@@ -1038,7 +1042,10 @@ function memoSheet(m) {
         (num(m.vat) ? '<tr><td>VAT</td><td class="right">+ ' + money(m.vat) + '</td></tr>' : '') +
         '<tr class="memo-grand"><td>Grand Total</td><td class="right">' + money(m.grandTotal) + '</td></tr>' +
         '<tr><td>Advance</td><td class="right">- ' + money(m.advance) + '</td></tr>' +
-        '<tr class="memo-due"><td>Due</td><td class="right">' + money(m.due) + '</td></tr>' +
+        (collectedOnMemo_(m) > 0
+          ? '<tr><td>Received (delivery)</td><td class="right">- ' + money(collectedOnMemo_(m)) + '</td></tr>'
+          : '') +
+        '<tr class="memo-due"><td>Due</td><td class="right">' + money(memoRemainingDue(m)) + '</td></tr>' +
       '</table></div></div>' +
     '<div class="memo-sign"><div>Customer Signature</div><div>Authorized Signature</div></div>' +
     '<div class="memo-thanks">Thank you! Please report any issue with the goods within 3 days.</div>' +
@@ -1099,6 +1106,25 @@ function renderDelivery() {
     : '<div class="empty">No returns</div>';
 }
 
+/* The customer record a memo belongs to, matched the same way customerDue() matches
+   memos to a customer, so a receipt lands on the right ledger. */
+function customerIdForMemo_(m) {
+  const c = db.customers.find(x => x.name === m.customerName && (x.phone || '') === (m.customerPhone || ''));
+  return c ? c.id : '';
+}
+
+/* How much cash to prefill when a delivery goes out: the memo's remaining due, split
+   in proportion to the qty being delivered. A partial delivery of 3 of 10 prefills
+   three tenths of what is owed; a full one prefills the lot. The owner can overwrite
+   it, including to 0. */
+function collectedPrefill_(m, qty) {
+  const remaining = memoRemainingDue(m);
+  const sold = num(m.totalQty) || 0;
+  if (sold <= 0) return remaining;
+  const share = Math.min(1, Math.max(0, num(qty) / sold));
+  return round2(remaining * share);
+}
+
 function openDelivery(mid) {
   const m = db.memos.find(x => x.id === mid);
   if (!m) return;
@@ -1112,9 +1138,29 @@ function openDelivery(mid) {
   document.getElementById('dlVehicle').value = m.vehicle || '';
   document.getElementById('dlReceiver').value = m.receiver || '';
   document.getElementById('dlNote').value = m.deliveryNote || '';
+  /* The box always starts from what is still owed on the memo, split for a partial
+     delivery, so the owner sees the right figure without typing. He can overwrite it. */
+  document.getElementById('dlCollect').value = collectedPrefill_(m, pendingQtyOf(m));
   document.getElementById('deliveryModal').classList.add('show');
 }
 function closeDelivery() { document.getElementById('deliveryModal').classList.remove('show'); }
+
+/* Re-suggest the collection when the delivery qty changes, so the box tracks the
+   parcel being sent rather than the one the modal opened with. */
+function deliveryQtyChanged() {
+  const m = db.memos.find(x => x.id === document.getElementById('dlMemo').value);
+  if (!m) return;
+  document.getElementById('dlCollect').value = collectedPrefill_(m, num(document.getElementById('dlQty').value));
+}
+
+/* Remove the receipt a delivery created. Used both when that delivery is deleted and
+   when it is re-entered with different qty, and it is keyed on deliveryId so it can
+   never remove a receipt some other delivery (or a manual payment) owns. */
+function removePaymentForDelivery_(deliveryId) {
+  const hit = db.payments.filter(p => p && !p.del && p.deliveryId === deliveryId);
+  hit.forEach(p => { p.del = true; });
+  return hit.length;
+}
 
 function saveDelivery() {
   const mid = document.getElementById('dlMemo').value;
@@ -1124,8 +1170,29 @@ function saveDelivery() {
   if (q <= 0) return alert('Enter a delivery qty.');
   if (q > pendingQtyOf(m)) return alert('Delivery qty cannot exceed what is pending. Pending: ' + pendingQtyOf(m));
   const already = deliveredQtyOf(mid);
+
+  /* What the customer paid. Floored at 0; an over-payment is allowed but clamped down
+     to what is actually still owed, with a warning, so the dashboard cannot show a
+     negative due and no money is counted against a paid memo. */
+  let collected = Math.max(0, num(document.getElementById('dlCollect').value));
+  const owed = memoRemainingDue(m);
+  if (collected > owed) {
+    alert('Collected ' + money(collected) + ' is more than the ' + money(owed) +
+      ' still due on this memo, so it is recorded as ' + money(owed) + '.');
+    collected = owed;
+  }
+
+  /* Clicking Save twice must not create two deliveries or two receipts: if this memo's
+     delivery was just saved with the same qty and no field changed, do nothing. */
+  const last = db.deliveries[db.deliveries.length - 1];
+  if (last && last.memoId === mid && num(last.qty) === q && last.driver === document.getElementById('dlDriver').value.trim()) {
+    closeDelivery();
+    return;
+  }
+
+  const deliveryId = id();
   db.deliveries.push({
-    id: id(), memoId: mid, qty: q, date: today(),
+    id: deliveryId, memoId: mid, qty: q, date: today(),
     driver: document.getElementById('dlDriver').value.trim(),
     vehicle: document.getElementById('dlVehicle').value.trim(),
     receiver: document.getElementById('dlReceiver').value.trim(),
@@ -1139,6 +1206,21 @@ function saveDelivery() {
   m.vehicle = document.getElementById('dlVehicle').value.trim();
   m.receiver = document.getElementById('dlReceiver').value.trim();
   m.deliveryNote = document.getElementById('dlNote').value.trim();
+
+  /* The collection and the delivery are saved in the SAME commit, so the dashboard,
+     the memo history, the customer due and the reports all move together - there is no
+     instant where a parcel reads delivered but the money is missing, or vice versa. */
+  let payment = null;
+  if (collected > 0) {
+    payment = {
+      id: id(), memoId: mid, deliveryId,
+      customerId: customerIdForMemo_(m),
+      date: today(), amount: collected,
+      method: 'Cash', note: 'Collected on delivery ' + m.memoNo
+    };
+    db.payments.push(payment);
+  }
+
   if (!commit()) return;
   syncPush('delivery', {
     memoNumber: m.memoNo, customer: m.customerName, qty: q, deliveredQty: already + q,
@@ -1146,8 +1228,17 @@ function saveDelivery() {
     driver: m.driver, vehicle: m.vehicle, receiver: m.receiver,
     status: pend <= 0 ? 'Delivered' : 'Partial', note: m.deliveryNote
   }, 'Delivery ' + m.memoNo);
+  if (payment) {
+    syncPush('payment', {
+      paymentId: payment.id, memoId: mid, deliveryId,
+      memoNumber: m.memoNo, customerName: m.customerName, customerId: payment.customerId,
+      date: payment.date, amount: collected, method: 'Cash'
+    }, 'Payment ' + m.memoNo);
+  }
   closeDelivery();
-  alert('Delivery updated.');
+  alert(collected > 0
+    ? 'Delivery updated. ' + money(collected) + ' collected.'
+    : 'Delivery updated.');
 }
 
 /* ===================== parcel return ===================== */
@@ -1270,7 +1361,11 @@ function customerDue(c) {
   const ms = db.memos.filter(m => m.customerName === c.name && (m.customerPhone || '') === (c.phone || ''));
   const sales = ms.reduce((a, m) => a + num(m.grandTotal), 0);
   const adv = ms.reduce((a, m) => a + num(m.advance), 0);
-  const paid = db.payments.filter(p => p.customerId === c.id).reduce((a, p) => a + num(p.amount), 0);
+  /* Live receipts only, so a receipt removed with its delivery or memo stops counting.
+     Both the old customer-level receipts and the new memo-linked ones carry a
+     customerId, so they are covered here; a tombstoned one is filtered by `del`. */
+  const paid = db.payments.filter(p => p && !p.del && p.customerId === c.id)
+    .reduce((a, p) => a + num(p.amount), 0);
   return { sales, adv, paid, due: round2(sales - adv - paid), memos: ms };
 }
 

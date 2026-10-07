@@ -789,8 +789,37 @@ function plSummary(from, to) {
   };
 }
 
+/* Money a memo has actually collected: the advance at sale time plus every live
+   receipt linked to that memo. A receipt is linked by memoId, and the old
+   customer-level receipts (no memoId) are ignored here on purpose: they already sit
+   in customerDue() and must not be counted a second time in the memo's own due. */
+function paymentsForMemo_(memoId) {
+  return db.payments.filter(p => p && !p.del && p.memoId === memoId);
+}
+function collectedOnMemo_(memo) {
+  return round2(paymentsForMemo_(memo.id).reduce((a, p) => a + num(p.amount), 0));
+}
+function paidOnMemo_(memo) {
+  return round2(num(memo.advance) + collectedOnMemo_(memo));
+}
+
+/* What is still owed on one memo: grand total minus advance minus receipts, floored
+   at zero. This is a DERIVED figure and is never hand-edited; recording a payment is
+   the only way to move it. For a memo with no payments it can differ from m.due by at
+   most a rounding of the stored field, which keeps old data reading exactly as before. */
+function memoRemainingDue(memo) {
+  return Math.max(0, round2(num(memo.grandTotal) - paidOnMemo_(memo)));
+}
+
+/* Customers' total due: the sum over live memos of what each still owes. A memo with
+   no receipts contributes exactly its stored due, so every figure that exists today is
+   unchanged; a memo that has collected a payment contributes the smaller remainder, so
+   marking a delivery delivered (which records that payment) drops the dashboard at
+   once. Payments with no memoId are deliberately not netted here - they are a legacy
+   customer-level receipt that the customer ledger shows separately, and the dashboard
+   never subtracted them, so leaving them out keeps old data reading identically. */
 function totalReceivable() {
-  return round2(db.memos.reduce((a, m) => a + num(m.due), 0));
+  return round2(db.memos.reduce((a, m) => round2(a + memoRemainingDue(m)), 0));
 }
 function totalPayable() {
   return round2(db.purchases.reduce((a, p) => a + num(p.due), 0));
@@ -883,7 +912,10 @@ function ageingBuckets(items, todayStr) {
   const t = new Date(todayStr || today()).getTime();
   const b = { current: 0, d30: 0, d60: 0, d90: 0, over90: 0 };
   items.forEach(it => {
-    const due = num(it.due);
+    /* Bucket the remaining due, not the frozen field, so a customer who paid on
+       delivery stops ageing an already-collected amount into "Due >60d". Callers
+       pass memos; a line without grandTotal falls back to its stored due. */
+    const due = it && it.grandTotal !== undefined ? memoRemainingDue(it) : num(it.due);
     if (due <= 0) return;
     const days = Math.floor((t - new Date(it.date).getTime()) / 86400000);
     if (days <= 30) b.current += due;
