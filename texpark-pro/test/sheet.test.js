@@ -38,6 +38,7 @@ function makeSheet(name, width) {
     getDataRange: () => range(1, 1, rows.length, width),
     getRange: range,
     appendRow: (r) => { rows.push(pad(r.slice())); },
+    deleteRow: (n) => { rows.splice(n - 1, 1); },
     setFrozenRows: () => {}
   };
 }
@@ -74,11 +75,13 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8'), 
 
 const post = (type, data) => JSON.parse(sandbox.doPost({ postData: { contents: JSON.stringify({ type, data }) } }).getContent());
 const get = (params) => JSON.parse(sandbox.doGet({ parameter: params || {} }).getContent());
+/* Rows of the Backup tab, header removed - the raw material the pull reassembles. */
+const backupRows = () => SS._sheets['Backup']._rows.slice(1).filter(r => r && r.length);
 
 console.log('\n--- the sheet answers a health check ---');
 const health = get({});
 ok(health.success === true, 'doGet succeeds');
-ok(health.version === 3, 'it reports the backup-capable version');
+ok(health.version === 4, 'it reports the chunked-backup version');
 
 console.log('\n--- a device backs itself up, then reads it back ---');
 const pcDb = { products: [{ id: 'p1', name: 'Kids 3pcs Set' }], memos: [{ memoNo: 'TXP/SM/2026/09/22-PC001' }], customers: [] };
@@ -93,12 +96,11 @@ const restored = JSON.parse(pulled.json);
 ok(restored.memos.length === 1 && restored.memos[0].memoNo === 'TXP/SM/2026/09/22-PC001', 'the memo survives the round trip');
 ok(restored.products.length === 1, 'products survive too');
 
-console.log('\n--- the same device re-backs-up the same day, replacing its row ---');
-const before = SS._sheets['Backup']._rows.filter(r => r && r[0]).length;
+console.log('\n--- the same device re-backs-up, replacing its previous rows ---');
 const pcDb2 = { products: [{ id: 'p1' }], memos: [{ memoNo: 'TXP/SM/2026/09/22-PC001' }, { memoNo: 'TXP/SM/2026/09/22-PC002' }], customers: [] };
 post('backup', { device: 'PC', date: '2026-09-22', version: '2026-09-22.5', json: JSON.stringify(pcDb2) });
 const rows = SS._sheets['Backup']._rows.filter(r => r && String(r[1]) === 'PC');
-ok(rows.length === 1, 'still exactly one row for that device and day');
+ok(rows.length === 1, 'still exactly one row for that device (a small snapshot is one chunk)');
 const pulled2 = JSON.parse(get({ action: 'pull', device: 'PC' }).json);
 ok(pulled2.memos.length === 2, 'the pull sees the newer, larger snapshot');
 
@@ -138,14 +140,85 @@ ok(threw, 'an empty backup is rejected');
 const stillThere = JSON.parse(get({ action: 'pull', device: 'PC' }).json);
 ok(stillThere.memos.length === 2, 'the earlier good backup is untouched');
 
-console.log('\n--- a database too big for one cell is refused, not truncated ---');
-let tooBig = '';
-try { sandbox.saveBackup_(SS, { device: 'PC', date: '2026-09-22', json: 'x'.repeat(50000) }); }
-catch (e) { tooBig = e.message; }
-ok(/too large/.test(tooBig), 'the oversize error explains itself');
-ok(tooBig.indexOf('KB') > 0, 'it tells the operator how big the data is');
-const unchanged = JSON.parse(get({ action: 'pull', device: 'PC' }).json);
-ok(unchanged.memos.length === 2, 'the good backup is still intact after the refusal');
+console.log('\n--- a snapshot far bigger than one cell round-trips byte-identically ---');
+/* 52 KB of JSON (the size that used to be refused outright), then 240 KB, each
+   with non-ASCII and a confusing tail so a lost chunk cannot pass by luck. */
+const big = JSON.stringify({
+  products: [{ id: 'p1', name: '\u0989\u09AA\u09B9\u09BE\u09B0 Kids 3pcs Set', note: 'x'.repeat(60000) }],
+  memos: [{ memoNo: 'TXP/SM/2026/10/07-PC001', tail: 'THE-END-OF-THE-BIG-PAYLOAD' }],
+  customers: []
+});
+ok(big.length > 52000, 'the payload is bigger than one cell (' + Math.round(big.length / 1024) + ' KB)');
+const bigSaved = post('backup', { device: 'PC', date: '2026-10-07', version: '2027-01-01.11', json: big });
+ok(bigSaved.success === true, 'an oversize backup is now accepted');
+ok(/chunk/.test(bigSaved.message), 'the reply says it was chunked: ' + bigSaved.message);
+const bigRows = SS._sheets['Backup']._rows.filter(r => r && String(r[1]) === 'PC');
+ok(bigRows.length > 1, 'it is stored across several rows (' + bigRows.length + ')');
+ok(bigRows.every(r => String(r[4] || '').length <= 40000), 'no single cell exceeds the 40,000-char chunk size');
+const bigBack = get({ action: 'pull', device: 'PC' });
+ok(bigBack.json === big, 'the pull reassembles it byte-identically');
+ok(JSON.parse(bigBack.json).memos[0].tail === 'THE-END-OF-THE-BIG-PAYLOAD', 'the tail of the payload survived');
+
+console.log('\n--- a multi-megabyte snapshot also round-trips ---');
+const huge = JSON.stringify({ blob: 'A\u00E9\u0989'.repeat(700000), end: 'HUGE-END' });
+ok(huge.length > 2000000, 'the payload is over 2 MB (' + Math.round(huge.length / 1048576) + ' MB)');
+post('backup', { device: 'PC', date: '2026-10-08', version: '2027-01-01.11', json: huge });
+const hugeBack = get({ action: 'pull', device: 'PC' });
+ok(hugeBack.json === huge, 'a several-MB snapshot survives chunking in both directions');
+
+console.log('\n--- a smaller backup over a bigger one leaves no stale chunks ---');
+const small = JSON.stringify({ products: [], memos: [{ memoNo: 'TXP/SM/2026/10/09-PC001' }], customers: [] });
+post('backup', { device: 'PC', date: '2026-10-09', version: '2027-01-01.11', json: small });
+const afterSmall = SS._sheets['Backup']._rows.filter(r => r && String(r[1]) === 'PC');
+ok(afterSmall.length === 1, 'only the new, single-chunk backup remains (' + afterSmall.length + ' row)');
+const smallBack = get({ action: 'pull', device: 'PC' });
+ok(smallBack.json === small, 'and the pull returns exactly the small payload, with no tail of the old one');
+
+console.log('\n--- the old single-cell format already in the sheet is still read ---');
+/* Write a legacy row by hand: whole JSON in column 5, no chunk columns - exactly
+   what the previous Code.gs left behind. */
+const legacyJson = JSON.stringify({ products: [{ id: 'old' }], memos: [{ memoNo: 'LEGACY-1' }], customers: [] });
+SS._sheets['Backup']._rows.push([new Date(), 'OLD', '2026-09-01', '2026-09-01.1', legacyJson, '', '', '', '']);
+const legacyBack = get({ action: 'pull', device: 'OLD' });
+ok(legacyBack.success === true && legacyBack.json === legacyJson, 'a legacy single-cell backup is pulled unchanged');
+const legacyAll = JSON.parse(get({ action: 'pullall' }).json);
+ok(legacyAll.OLD === legacyJson, 'and pullall carries it alongside the chunked devices');
+
+console.log('\n--- a corrupted / missing chunk is reported, not half-restored ---');
+/* Append a second device so we can prove a broken one does not hide a good one. */
+post('backup', { device: 'GOOD', date: '2026-10-09', version: '2027-01-01.11', json: small });
+const brokenChars = 'z'.repeat(90000);
+post('backup', { device: 'BROKEN', date: '2026-10-09', version: '2027-01-01.11', json: brokenChars });
+const brokenRows = SS._sheets['Backup']._rows.filter(r => r && String(r[1]) === 'BROKEN');
+ok(brokenRows.length >= 3, 'the broken device has several chunks to damage');
+// Delete the middle chunk, as a partial write or a manual sheet edit would.
+const victim = brokenRows[Math.floor(brokenRows.length / 2)];
+const vIdx = SS._sheets['Backup']._rows.indexOf(victim);
+SS._sheets['Backup']._rows.splice(vIdx, 1);
+const brokenPull = get({ action: 'pull', device: 'BROKEN' });
+ok(brokenPull.success === false, 'a missing chunk makes the pull fail, not return a half-backup');
+ok(/incomplete|missing/i.test(brokenPull.message), 'and it says a chunk is missing: ' + brokenPull.message);
+ok(!brokenPull.json, 'no truncated payload is handed to a restore');
+
+/* A wrong checksum (a chunk silently overwritten) must fail the same way. */
+post('backup', { device: 'BROKEN2', date: '2026-10-09', version: '2027-01-01.11', json: brokenChars });
+const b2 = SS._sheets['Backup']._rows.filter(r => r && String(r[1]) === 'BROKEN2');
+const lastChunk = b2[b2.length - 1];
+lastChunk[4] = String(lastChunk[4]).replace(/z$/, 'y');
+const corruptPull = get({ action: 'pull', device: 'BROKEN2' });
+ok(corruptPull.success === false && /corrupt|checksum/i.test(corruptPull.message),
+  'a corrupted chunk is caught by the checksum: ' + corruptPull.message);
+
+console.log('\n--- one broken device does not hide the others in pullall ---');
+const mixed = get({ action: 'pullall' });
+ok(mixed.success === true, 'pullall still succeeds');
+const mixedJson = JSON.parse(mixed.json);
+ok(!!mixedJson.GOOD, 'the healthy device is still delivered');
+ok(!mixedJson.BROKEN, 'the broken device is withheld rather than truncated');
+ok(!!mixed.errors && /BROKEN/.test(Object.keys(mixed.errors).join(',')),
+  'and the broken device is named in an errors map: ' + JSON.stringify(mixed.errors));
+const goodPull = get({ action: 'pull', device: 'GOOD' });
+ok(goodPull.success === true && goodPull.json === small, 'the healthy device was never affected');
 
 console.log('\n=================');
 console.log('PASS ' + pass + '   FAIL ' + fail);

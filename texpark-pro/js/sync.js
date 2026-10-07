@@ -10,11 +10,44 @@ let syncTimer = null;
 function syncLoad() {
   try { syncQueue = JSON.parse(localStorage.getItem(SYNC_KEY) || '[]'); }
   catch (e) { syncQueue = []; }
+  syncRequeueBackups();
 }
 function syncSave() {
   try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncQueue.slice(-500))); } catch (e) {}
 }
 function syncUrl() { return (db?.settings?.syncUrl || '').trim(); }
+
+/* A backup is a full snapshot, so an older queued one is worthless the moment a
+   newer snapshot for the same device is queued - it would write yesterday's books
+   over today's. Keep only the newest backup job per device and drop the rest. */
+function syncCoalesceBackups() {
+  const latest = {};
+  syncQueue.forEach(j => {
+    if (j.type !== 'backup') return;
+    const dev = (j.data && j.data.device) || '';
+    // On an equal timestamp the later entry wins, which is the one whose payload
+    // was serialised most recently.
+    if (!latest[dev] || String(j.at || '') >= String(latest[dev].at || '')) latest[dev] = j;
+  });
+  syncQueue = syncQueue.filter(j =>
+    j.type !== 'backup' || latest[(j.data && j.data.device) || ''] === j);
+}
+
+/* The oversized-cell failure is gone now that Code.gs chunks the backup, so a job
+   that was parked as failed by "Backup too large" only needs one more attempt.
+   Marked so it is requeued once rather than on every load. */
+function syncRequeueBackups() {
+  let changed = false;
+  syncQueue.forEach(j => {
+    if (j.type === 'backup' && j.state === 'failed' && !j.reTried && /too large|too big|cell/i.test(j.error || '')) {
+      j.state = 'pending';
+      j.tries = 0;
+      j.reTried = true;
+      changed = true;
+    }
+  });
+  if (changed) syncSave();
+}
 
 /* Queue one job. type is what Code.gs dispatches on. */
 function syncPush(type, data, label) {
@@ -29,9 +62,31 @@ function syncPush(type, data, label) {
     at: new Date().toISOString(),
     error: ''
   });
+  syncCoalesceBackups();
   syncSave();
   syncStatusRender();
   syncFlush();
+}
+
+/* The sheet's own verdict on a reply, and an honest reason when it is not one.
+   Apps Script answers 200 whether it wrote or refused, and a proxy or a login page
+   answers 200 with HTML. Only a JSON object with success not-false is a save, and
+   when it is not, the owner is told which of the two it was instead of a bare
+   "failed" - an HTML page means the URL is wrong or the deployment is stale, not
+   that the data was too big. */
+function syncReply(txt, status) {
+  const body = String(txt == null ? '' : txt).trim();
+  if (!body) return { ok: false, message: 'The sheet returned an empty reply (HTTP ' + status + ').' };
+  try {
+    const j = JSON.parse(body);
+    if (j && j.success !== false) return { ok: true, message: j.message || 'ok' };
+    return { ok: false, message: (j && j.message) || ('the sheet refused the write (HTTP ' + status + ')') };
+  } catch (e) { /* not JSON */ }
+  if (/^\s*<(!doctype|html)/i.test(body)) {
+    return { ok: false, message: 'The sync URL did not return the app script - it sent an HTML page. Check the /exec URL and that the deployment is up to date.' };
+  }
+  if (/success|true/i.test(body)) return { ok: true, message: body.slice(0, 120) };
+  return { ok: false, message: body.slice(0, 160) || ('HTTP ' + status) };
 }
 
 async function syncFlush() {
@@ -51,16 +106,8 @@ async function syncFlush() {
       });
       // We now actually READ the reply instead of assuming success.
       const txt = await res.text();
-      let ok = false, msg = '';
-      try {
-        const j = JSON.parse(txt);
-        ok = j.success !== false;
-        msg = j.message || '';
-      } catch (e) {
-        ok = res.ok && /success|true/i.test(txt);
-        msg = txt.slice(0, 120);
-      }
-      if (!ok) throw new Error(msg || ('HTTP ' + res.status));
+      const verdict = syncReply(txt, res.status);
+      if (!verdict.ok) throw new Error(verdict.message);
 
       syncQueue = syncQueue.filter(j => j.id !== job.id);
       syncSave();
@@ -238,9 +285,8 @@ async function pushBackupNow() {
       body: JSON.stringify(payload)
     });
     const txt = await res.text();
-    let ok = false;
-    try { ok = JSON.parse(txt).success !== false; } catch (e) { ok = res.ok; }
-    if (ok) return true;
+    // Same honesty as syncFlush: an HTML page is not a save even with a 200.
+    if (syncReply(txt, res.status).ok) return true;
   } catch (e) { /* fall through to the queue */ }
   cloudBackupNow(true);
   return false;

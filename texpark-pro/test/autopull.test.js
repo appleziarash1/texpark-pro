@@ -193,6 +193,60 @@ addMemo(ph, 'TXP/SM/1-PH001', 'Phone Customer', 3, 250);
     'two installs get different tags, so neither overwrites the other: ' + a.deviceTag() + ' vs ' + b.deviceTag());
   eq(a.deviceTag(), a.deviceTag(), 'a tag is minted once and kept, so memo numbers stay stable');
 
+  /* ------------------------------ a large db converges too ------------------------------ */
+  console.log('\n--- two devices converge with a large db ---');
+  /* The sheet stores chunks now, so the client must not care how big the snapshot
+     is. This is the case that used to fail forever: the owner's db grew past one
+     cell and no backup ever landed, so the phone and the PC stopped seeing each
+     other's work. */
+  const bigSheet = makeFakeSheet();
+  const bigA = makeDevice('PC', bigSheet);
+  const bigB = makeDevice('PH', bigSheet);
+  // Pad both databases well past one sheet cell.
+  bigA.db.customers.push({ id: 'padA', name: 'Pad', note: 'q'.repeat(120000) });
+  bigB.db.customers.push({ id: 'padB', name: 'Pad', note: 'r'.repeat(120000) });
+  addMemo(bigA, 'TXP/SM/BIG-PC001', 'Big A', 4, 500);
+  addMemo(bigB, 'TXP/SM/BIG-PH001', 'Big B', 2, 700);
+
+  await bigA.pullAndMerge();
+  ok((bigSheet.rows.PC || '').length > 50000, 'the big snapshot actually exceeded one cell (' +
+    Math.round((bigSheet.rows.PC || '').length / 1024) + ' KB)');
+  await bigB.pullAndMerge();
+  await bigA.pullAndMerge();
+  ok(bigA.db.memos.some(m => m.memoNo === 'TXP/SM/BIG-PH001'), 'the PC sees the phone memo in a large db');
+  ok(bigB.db.memos.some(m => m.memoNo === 'TXP/SM/BIG-PC001'), 'the phone sees the PC memo in a large db');
+  ok(bigA.db.customers.some(c => c.id === 'padB'), 'the PC kept the phone\'s other data too');
+
+  /* ------------------------------ superseded backups do not pile up ------------------------------ */
+  console.log('\n--- a newer backup replaces the older one in the queue ---');
+  const q = makeDevice('PC', bigSheet);
+  q.db.settings.autoPull = false;
+  q.db.settings.syncUrl = 'https://example.test/exec';
+  // Three backups queued before any can be sent (offline), then a fourth.
+  q.fetch = () => Promise.reject(new Error('offline'));
+  q.syncQueue = [];
+  q.syncPush('backup', { device: 'PC', date: '2026-10-09', json: '{"n":1}' }, 'Cloud backup (PC)');
+  q.syncPush('backup', { device: 'PC', date: '2026-10-09', json: '{"n":2}' }, 'Cloud backup (PC)');
+  q.syncPush('memo', { memoNo: 'KEEP-ME' }, 'Memo KEEP-ME');
+  q.syncPush('backup', { device: 'PC', date: '2026-10-09', json: '{"n":3}' }, 'Cloud backup (PC)');
+  const backupJobs = q.syncQueue.filter(j => j.type === 'backup');
+  eq(backupJobs.length, 1, 'only the newest backup job per device is kept');
+  eq(JSON.parse(backupJobs[0].data.json).n, 3, 'and it is the latest payload, not an older one');
+  eq(q.syncQueue.filter(j => j.type === 'memo').length, 1, 'a real data job (a memo) is never coalesced away');
+
+  /* A failed-as-too-large backup is retried once the chunking fix is in. */
+  console.log('\n--- a backup parked as "too large" is requeued ---');
+  const rq = makeDevice('PC', bigSheet);
+  rq.syncQueue = [
+    { id: 'b1', type: 'backup', data: { device: 'PC' }, state: 'failed', tries: 9, error: 'Backup too large for one sheet cell (52 KB)', reTried: false },
+    { id: 'm1', type: 'memo', data: { memoNo: 'X' }, state: 'failed', tries: 9, error: 'some other failure', reTried: false }
+  ];
+  rq.syncSave();
+  rq.syncLoad();
+  eq(rq.syncQueue.find(j => j.id === 'b1').state, 'pending', 'the oversize backup is pending again');
+  eq(rq.syncQueue.find(j => j.id === 'b1').tries, 0, 'with its retry count reset');
+  eq(rq.syncQueue.find(j => j.id === 'm1').state, 'failed', 'a memo that failed for another reason is left alone');
+
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
   console.log('=================');

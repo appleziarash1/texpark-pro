@@ -331,6 +331,12 @@ public class Driver {
       out.put("mergeNothingNew", Sync.mergeReport(true, 0, true, null));
       out.put("mergeSaveFailed", Sync.mergeReport(true, 2, false, "disk full"));
       out.put("mergePushFailedAndSaveFailed", Sync.mergeReport(false, 2, false, "disk full"));
+      // A device whose chunked backup could not be reassembled must be named, not
+      // silently dropped from the merge.
+      out.put("pullErrors", Sync.pullErrors("{\\"success\\":true,\\"errors\\":{\\"PC\\":\\"Backup for PC is incomplete: chunk 2 of 3 is missing.\\"}}"));
+      out.put("pullErrorsNone", Sync.pullErrors("{\\"success\\":true,\\"json\\":\\"{}\\"}"));
+      out.put("pullErrorsGarbage", Sync.pullErrors("<html>not json</html>"));
+      out.put("mergeWithPullErrors", Sync.mergeReport(true, 2, true, null, "PC: chunk missing"));
       out.put("pollFirst", Sync.pollDue(0, 1000));
       out.put("pollTooSoon", Sync.pollDue(1000, 1000 + Sync.POLL_EVERY_MS - 1));
       out.put("pollDueNow", Sync.pollDue(1000, 1000 + Sync.POLL_EVERY_MS));
@@ -813,6 +819,11 @@ test('native: a sync only counts as a success when the sheet accepted the upload
   assert.match(r.mergeSaveFailed, /Could not save the merge: disk full/, 'a failed save surfaces the reason');
   assert.match(r.mergePushFailedAndSaveFailed, /did not reach the sheet[\s\S]*Could not save the merge/,
     'both failures are reported, not just the last one');
+  assert.match(r.pullErrors, /PC: Backup for PC is incomplete/, 'a per-device reassembly error is surfaced');
+  assert.strictEqual(r.pullErrorsNone, '', 'a healthy pull has no error text');
+  assert.strictEqual(r.pullErrorsGarbage, '', 'a non-JSON reply yields no error text, not a crash');
+  assert.match(r.mergeWithPullErrors, /Some backups could not be read: PC: chunk missing/,
+    'a device whose backup could not be read is named in the merge report');
   assert.strictEqual(r.pollFirst, true, 'the first poll always runs');
   assert.strictEqual(r.pollTooSoon, false, 'a second screen open does not poll again');
   assert.strictEqual(r.pollDueNow, true, 'once the interval has passed it polls again');

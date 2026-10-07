@@ -49,8 +49,15 @@ const HEADERS = {
   expenses: ['Timestamp', 'Date', 'Head', 'Amount', 'Note'],
   profit: ['Timestamp', 'Date', 'Ref', 'Sales', 'COGS', 'Profit', 'Type'],
   /* Full app snapshots, so a lost PC or phone can be restored instead of lost.
-     Keyed on Device + Date by upsert, so one row per device per day. */
-  backup: ['Timestamp', 'Device', 'Date', 'App Version', 'JSON'],
+     Keyed on Device + Date by upsert, so one row per device per day.
+
+     A snapshot larger than one cell is split across rows: column 5 holds the chunk
+     and columns 6-9 describe the set (which chunk, how many, the total length and a
+     checksum). The old single-cell format - one row, whole JSON in column 5 and no
+     chunk marker - is still read, because the sheet already holds rows written by
+     the previous Code.gs. See chunked backup notes in AGENTS.md. */
+  backup: ['Timestamp', 'Device', 'Date', 'App Version', 'JSON',
+    'Chunk', 'Of', 'Total Len', 'Checksum'],
   appLog: ['Timestamp', 'Type', 'Data']
 };
 
@@ -79,6 +86,87 @@ function out_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
+/* ===================== backup storage: chunked, not one cell =====================
+   A Google Sheets cell holds 50,000 characters, so a whole db that grows past ~49 KB
+   could not be written at all and the backup failed forever. A snapshot is now split
+   across several rows of the Backup tab, CHUNK_CHARS at a time. The rows for one
+   backup share Device + Date and carry Chunk / Of / Total Len / Checksum, so a pull
+   can reassemble them and can tell a complete backup from a half-written one.
+
+   The old format - a single row whose column 5 is the whole JSON and whose chunk
+   columns are empty - is still read, because the owner's sheet already contains rows
+   written by the previous Code.gs and a restore must not break on them. */
+
+const CHUNK_CHARS = 40000;
+
+/* djb2 over UTF-16 code units. Cheap, runs in Apps Script, and good enough to catch
+   a sheet that dropped or reordered a chunk - which is the failure it has to detect. */
+function checksum_(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(16);
+}
+
+/* Chunk number as stored: 0 means "the old, unchunked format". */
+function chunkNum_(v) {
+  const x = Number(v);
+  return isFinite(x) && x > 0 ? Math.floor(x) : 0;
+}
+
+/* Rebuild one device's newest snapshot from all the Backup rows that belong to it.
+   `rows` is the grid with the header stripped. A set is identified by its row
+   timestamp (column 1) so two backups of the same device are never mixed; the newest
+   set is the one to return. Returns {json, date, at, bytes}; throws if the newest set
+   is incomplete, so a half-written backup is reported rather than silently restored. */
+function assembleBackup_(rows, wantDevice) {
+  // Group the device's rows into sets, newest set first.
+  const sets = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const dev = String(r[1] || 'unknown');
+    if (dev !== wantDevice) continue;
+    const key = String(r[0] === undefined || r[0] === null ? '' : r[0]);
+    let set = sets.filter(s => s.key === key)[0];
+    if (!set) { set = { key: key, at: r[0] ? new Date(r[0]).getTime() : 0, date: r[2] || '', parts: {} }; sets.push(set); }
+    const n = chunkNum_(r[5]);
+    if (n > 0) set.parts[n] = { text: String(r[4] === undefined || r[4] === null ? '' : r[4]), of: chunkNum_(r[6]), len: Number(r[7]), sum: String(r[8] || '') };
+    else set.parts[0] = { text: String(r[4] === undefined || r[4] === null ? '' : r[4]), of: 0, len: 0, sum: '' };
+  }
+  if (!sets.length) return null;
+  sets.sort((a, b) => b.at - a.at);
+  const set = sets[0];
+
+  const nums = Object.keys(set.parts).map(Number).sort((a, b) => a - b);
+  const isLegacy = nums.length === 1 && nums[0] === 0;
+
+  if (isLegacy) {
+    const row = set.parts[0];
+    return { json: row.text, date: set.date, at: set.at, bytes: row.text.length, chunks: 1 };
+  }
+
+  // Chunked: the count, the total length and the checksum must all agree.
+  const of = set.parts[1] ? set.parts[1].of : 0;
+  if (!of) throw new Error('Backup for ' + wantDevice + ' has no chunk count.');
+  const json = nums.map(n => set.parts[n].text).join('');
+
+  for (let n = 1; n <= of; n++) {
+    if (!set.parts[n]) {
+      throw new Error('Backup for ' + wantDevice + ' is incomplete: chunk ' + n + ' of ' + of +
+        ' is missing. Wait for the device to back up again.');
+    }
+  }
+  const total = Number(set.parts[1].len);
+  if (isFinite(total) && total > 0 && json.length !== total) {
+    throw new Error('Backup for ' + wantDevice + ' is corrupt: read ' + json.length +
+      ' of ' + total + ' characters. It will be overwritten by the next backup.');
+  }
+  const sum = set.parts[1].sum;
+  if (sum && checksum_(json) !== sum) {
+    throw new Error('Backup for ' + wantDevice + ' is corrupt: checksum mismatch. It will be overwritten by the next backup.');
+  }
+  return { json: json, date: set.date, at: set.at, bytes: json.length, chunks: of };
+}
+
 function doGet(e) {
   // ?action=pull returns the newest full snapshot per device so a new PC or
   // phone can be restored from the cloud instead of starting empty.
@@ -90,18 +178,39 @@ function doGet(e) {
       ensureAll_(ss);
       const sh = sheet_(ss, 'backup');
       const vals = sh.getDataRange().getValues();
-      const latest = {};
-      for (let i = 1; i < vals.length; i++) {
-        const dev = String(vals[i][1] || 'unknown');
-        const at = vals[i][0] ? new Date(vals[i][0]).getTime() : 0;
-        if (!latest[dev] || at >= latest[dev].at) {
-          latest[dev] = { at: at, device: dev, date: vals[i][2] || '', json: vals[i][4] || '' };
-        }
+      const rows = vals.slice(1);
+
+      // Every device that has at least one backup row, newest row time first.
+      const at = {};
+      for (let i = 0; i < rows.length; i++) {
+        const dev = String(rows[i][1] || 'unknown');
+        const t = rows[i][0] ? new Date(rows[i][0]).getTime() : 0;
+        if (!at[dev] || t > at[dev]) at[dev] = t;
       }
-      const devs = Object.keys(latest).map(k => ({
-        device: latest[k].device, date: latest[k].date, at: latest[k].at,
-        bytes: String(latest[k].json || '').length
-      }));
+      const devNames = Object.keys(at).sort((a, b) => at[b] - at[a]);
+
+      // Reassembling can fail (a half-written set), and in pullall one broken
+      // device must not hide every other device's good backup. The error is kept
+      // per device and returned in `errors`, not thrown past the whole reply.
+      const assembled = {};
+      const errors = {};
+      devNames.forEach(dev => {
+        try { assembled[dev] = assembleBackup_(rows, dev); }
+        catch (err) { errors[dev] = String((err && err.message) || err); }
+      });
+
+      const devs = devNames.map(dev => {
+        const a = assembled[dev];
+        return {
+          device: dev,
+          date: a ? a.date : '',
+          at: at[dev],
+          bytes: a ? a.bytes : 0,
+          chunks: a ? a.chunks || 0 : 0,
+          error: errors[dev] || ''
+        };
+      });
+
       // ?action=pullall returns every device's newest snapshot in one reply, keyed
       // by device. The new PC/phone needs all of them, not just one: its own data
       // may live on the phone, while the memos it entered last week live on the PC.
@@ -109,14 +218,21 @@ function doGet(e) {
       // read either side of a write and merged as if they were consistent.
       if (action === 'pullall') {
         const jsons = {};
-        Object.keys(latest).forEach(k => { if (latest[k].json) jsons[latest[k].device] = latest[k].json; });
-        return out_({ success: true, devices: devs, json: JSON.stringify(jsons) });
+        devNames.forEach(dev => { const a = assembled[dev]; if (a && a.json) jsons[dev] = a.json; });
+        const reply = { success: true, devices: devs, json: JSON.stringify(jsons) };
+        if (Object.keys(errors).length) reply.errors = errors;
+        return out_(reply);
       }
+
       const want = String(p.device || '').trim();
-      if (want && latest[want]) return out_({ success: true, device: want, date: latest[want].date, json: latest[want].json, devices: devs });
+      if (want) {
+        if (errors[want]) return out_({ success: false, message: errors[want], devices: devs });
+        const a = assembled[want];
+        if (a) return out_({ success: true, device: want, date: a.date, json: a.json, devices: devs });
+      }
       return out_({ success: true, devices: devs, json: '' });
     }
-    return out_({ success: true, message: 'Texpark Pro sync API is running', version: 3 });
+    return out_({ success: true, message: 'Texpark Pro sync API is running', version: 4 });
   } catch (err) {
     return out_({ success: false, message: String((err && err.message) || err) });
   }
@@ -168,31 +284,40 @@ function upsertMemoSummary_(ss, d) {
   else sh.appendRow(rec);
 }
 
-/* One row per device per day, replaced on re-send, so the Backup sheet holds the
-   latest restorable snapshot for every machine without growing without bound. */
-const CELL_MAX = 49000;   // a Google Sheets cell holds 50,000 characters
-
+/* A device's snapshot, split across rows. The whole previous backup for that device
+   is removed first, so the tab keeps exactly one backup per device and does not grow
+   without bound. The write is all-or-nothing from the reader's point of view: the
+   client only calls it a success when this returns, which is after every chunk landed. */
 function saveBackup_(ss, d) {
   const sh = sheet_(ss, 'backup');
   const dev = String(d.device || 'unknown');
   const date = String(d.date || '');
   const json = String(d.json || '');
   if (!json) throw new Error('Empty backup payload');
-  // Refuse oversized snapshots loudly. Google would otherwise truncate or reject
-  // the cell, and a silently half-saved backup is worse than an obvious error.
-  if (json.length > CELL_MAX) {
-    throw new Error('Backup too large for one sheet cell (' + Math.round(json.length / 1024) +
-      ' KB). Download the JSON backup file instead, or archive old years.');
-  }
+
+  const stamps = CHUNK_CHARS;
+  const chunks = Math.max(1, Math.ceil(json.length / stamps));
+  const sum = checksum_(json);
+  const now = new Date();
+
+  // 1. Drop every existing row for this device, so no stale chunk of a previous,
+  //    larger backup can be spliced onto the new one.
   const vals = sh.getDataRange().getValues();
-  let row = -1;
-  for (let i = 1; i < vals.length; i++) {
-    if (String(vals[i][1] || '') === dev && String(vals[i][2] || '') === date) { row = i + 1; break; }
+  for (let i = vals.length - 1; i >= 1; i--) {
+    if (String(vals[i][1] || '') === dev) sh.deleteRow(i + 1);
   }
-  const rec = [new Date(), dev, date, String(d.version || ''), json];
-  if (row > 0) sh.getRange(row, 1, 1, rec.length).setValues([rec]);
-  else sh.appendRow(rec);
-  return 'Backup saved for ' + dev + ' (' + Math.round(json.length / 1024) + ' KB)';
+
+  // 2. Write the new set - timestamp, device, date, version, chunk, n, of, total, sum.
+  for (let n = 1; n <= chunks; n++) {
+    const part = json.substring((n - 1) * stamps, n * stamps);
+    // The full integrity stamp rides on the first chunk; the others repeat `of`
+    // so a lone row still looks like part of a set rather than a legacy backup.
+    const total = n === 1 ? json.length : '';
+    const chk = n === 1 ? sum : '';
+    sh.appendRow([now, dev, date, String(d.version || ''), part, n, chunks, total, chk]);
+  }
+
+  return 'Backup saved for ' + dev + ' (' + Math.round(json.length / 1024) + ' KB in ' + chunks + ' chunk' + (chunks === 1 ? '' : 's') + ')';
 }
 
 function saveSale_(ss, d) {

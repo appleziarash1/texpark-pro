@@ -159,11 +159,41 @@ and `texpark-pro/sw.js`, not `version.txt`.
 Now:
 - `cloudBackupNow()` pushes the whole `db` as JSON into a new **Backup** tab.
 - `cloudRestore()` / `cloudListDevices()` pull it back — `Code.gs doGet?action=pull`.
-- One row per device per day (upsert), so the sheet does not grow without bound.
 - `Settings → Auto daily backup` pushes once a day on open.
 - Restore always takes a local `snapshot()` first, then reloads.
-- `saveBackup_` refuses payloads over ~49 KB (a Sheets cell holds 50,000 chars) loudly rather
-  than letting Google truncate a half-backup.
+
+### A backup is split into chunks, because one sheet cell holds only 50,000 chars
+A whole `db` written into a single Backup cell stopped working once the owner's books grew
+past ~49 KB: `saveBackup_` refused it ("Backup too large for one sheet cell"), so no backup
+reached the sheet, the queue filled with identical "Cloud backup (PC)" jobs that could never
+succeed, and the phone and the PC stopped seeing each other's work. The fix is server-side
+chunking, and the reasoning is worth keeping because the limit is Google's, not ours.
+
+- `saveBackup_(ss, d)` splits the JSON into `CHUNK_CHARS = 40000`-character pieces and writes
+  one row each in the **Backup** tab. Columns 6-9 (`Chunk`, `Of`, `Total Len`, `Checksum`)
+  describe the set; the whole set shares one Timestamp (column 1), which is its identity.
+- **Upsert means delete-then-append.** Every existing row for that device is removed first, so a
+  smaller backup over a larger one cannot leave a stale tail chunk that the assembler would glue
+  onto the new payload. One backup per device, no unbounded growth.
+- `assembleBackup_(rows, device)` finds the newest set (max Timestamp), joins chunks 1..Of, and
+  checks the total length and a djb2 checksum. A missing or wrong chunk throws a clear error
+  instead of returning a half-backup. **A row with no chunk number is the old single-cell
+  format** and is returned as-is, so sheets written by the previous `Code.gs` still restore.
+- `doGet ?action=pull|pullall` reassembles per device. One device that cannot be rebuilt is
+  reported in an `errors` map (pullall) or as `success:false` (single pull) rather than
+  hiding the other devices' good backups.
+- **Both clients only store and forward** — neither reassembles. `js/sync.js` and
+  `Sync.java` pass the JSON through untouched, so a format change stays in one place
+  (`Code.gs`) and the clients keep working with either the old or the new server.
+- Client-side pile-up fixes, in `js/sync.js`: `syncCoalesceBackups()` keeps only the newest
+  queued backup job **per device** (an older snapshot is worthless once a newer one exists), and
+  `syncRequeueBackups()` un-parks a job that failed with the "too large" error, once, so the
+  existing failed jobs retry after the server is redeployed. Real data jobs (memos, stock, …)
+  are never coalesced or dropped.
+- **The deployment is manual and the URL must not change.** Apps Script code is not served from
+  the repo: the owner has to paste the new `Code.gs` into the project and
+  *Deploy → Manage deployments → edit → New version*, keeping the same `/exec` URL and
+  *Who has access: Anyone*. `docs/SYNC_FIX_BANGLA.txt` walks through it.
 
 ### Auto-pull: the two devices converge without a button
 Manual restore was not enough in practice — the owner wrote a memo on the phone and the PC
@@ -329,11 +359,15 @@ so this symptom can never be "fixed" by changing what an unpaired device display
 - `node build.js` (in `texpark-pro/`) regenerates **both** the repo root and
   `../texpark-pro.html`. Always run this after changing source, or the shipped files drift.
   The script asserts the new cloud/device functions are present in the single file.
-- `npm test` runs `test/logic.test.js` (84), `test/sheet.test.js` (28), `test/e2e.test.js` (245),
-  `test/cost.test.js` (11), `test/journey.test.js` (19), `test/autopull.test.js` (22),
-  `test/return.test.js` (51), `test/pairing.test.js` (31), `test/repair.test.js` (30),
-  `test/ownerdata.test.js` (29), then `node --test test/android.test.js` (27) and
-  `node --test test/native.test.js` (30). Total 607.
+- `npm test` runs `test/logic.test.js` (84), `test/sheet.test.js` (48), `test/e2e.test.js` (251),
+  `test/cost.test.js` (11), `test/journey.test.js` (19), `test/autopull.test.js` (32),
+  `test/return.test.js` (51), `test/session.test.js` (25), `test/pairing.test.js` (31),
+  `test/repair.test.js` (30), `test/ownerdata.test.js` (29), then `node --test test/android.test.js`
+  (27) and `node --test test/native.test.js` (30). Total 668.
+- `test/sheet.test.js` now also pushes a >200 KB and a >2 MB payload through the real `Code.gs`,
+  pulls each back byte-identical, proves a smaller backup leaves no stale chunks, reads a
+  hand-written legacy single-cell row, and checks that a missing chunk and a wrong checksum are
+  each reported instead of returned as a half-backup.
 - `test/cost.test.js` and `test/journey.test.js` both drive the **real `app.js`** through the DOM
   shim: the first pins the buying price reaching the stock card, the second walks the owner's own
   path (add product, pick it on a memo, read the profit) so a UI-level regression is caught.
@@ -342,9 +376,12 @@ so this symptom can never be "fixed" by changing what an unpaired device display
   two databases rather than as one.
 - `test/sheet.test.js` loads the **real `Code.gs`** in a `vm` context with stubbed
   `SpreadsheetApp`/`ContentService`, so server-side backup/pull/upsert logic is actually executed.
-- Current version: `2027-01-01.9` in `sw.js`, `js/app.js`, `version.txt` and
+- Current version: `2027-01-01.11` in `sw.js`, `js/app.js`, `version.txt` and
   `MainActivity.java` (bump them together, then rebuild — the e2e test fails if the two js
   files drift apart, and `ci/check-site.py` fails if the Java or the APK drifts too).
+- `Code.gs` lives in **two** places and they are the same file: `texpark-pro/Code.gs` is the
+  source, and `build.js` copies it to the repo root (where Pages serves it for the owner to
+  copy from). Edit the source copy, never the root one, or the next build silently reverts it.
 
 ## The memo sheet (the document the customer is handed)
 A memo is the shop's main output, so it is drawn as a real document and not as a text dump:

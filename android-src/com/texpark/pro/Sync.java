@@ -67,6 +67,28 @@ public final class Sync {
         }
     }
 
+    /** The per-device reassembly errors a pullall reply may carry, as one sentence.
+     *
+     *  A backup that could not be rebuilt from its chunks (a half-written set) is
+     *  reported by the server in an `errors` map rather than silently omitted. It is
+     *  pulled out here so the owner sees which device's books did not arrive - a
+     *  device missing from a merge with no word said is data that looks synced and
+     *  is not. Returns "" when there is nothing to report. */
+    public static String pullErrors(String reply) {
+        try {
+            Map<String, Object> root = Json.obj(Json.read(reply));
+            Map<String, Object> errs = Json.obj(root.get("errors"));
+            StringBuilder b = new StringBuilder();
+            for (Map.Entry<String, Object> e : errs.entrySet()) {
+                if (b.length() > 0) b.append("; ");
+                b.append(e.getKey()).append(": ").append(String.valueOf(e.getValue()));
+            }
+            return b.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     /** What to tell the owner after an upload attempt. */
     public static String pushReport(boolean accepted, String reply, String device) {
         if (accepted) return "Cloud backup sent (" + device + ").";
@@ -80,12 +102,23 @@ public final class Sync {
      *  The push is reported separately and first, because a merge that succeeded
      *  while the upload failed is exactly the case that used to be reported as
      *  "synced": this device learned the cloud's news and the cloud never learned
-     *  this device's. */
+     *  this device's. A device whose backup could not be reassembled is named too:
+     *  its books stayed invisible, which is silence the owner must not mistake for
+     *  "nothing new". */
     public static String mergeReport(boolean pushOk, int merged, boolean committed, String saveError) {
+        return mergeReport(pushOk, merged, committed, saveError, null);
+    }
+
+    public static String mergeReport(boolean pushOk, int merged, boolean committed, String saveError,
+                                     String pullErrors) {
         StringBuilder b = new StringBuilder();
         if (!pushOk) {
             b.append("This device's data did not reach the sheet \u2014 it will retry.")
-             .append(" (Check the internet, the URL, or the sheet's JSON cell size.)");
+             .append(" (Check the internet and the URL.)");
+        }
+        if (pullErrors != null && !pullErrors.isEmpty()) {
+            b.append(b.length() > 0 ? "\n" : "")
+             .append("Some backups could not be read: ").append(pullErrors);
         }
         if (!committed) {
             b.append(b.length() > 0 ? "\n" : "")
@@ -157,6 +190,7 @@ public final class Sync {
 
         Object parsed = Json.read(res);
         Map<String, Object> root = Json.obj(parsed);
+        String pullErrors = pullErrors(res);
         /* ?action=pullall answers with one JSON object per device, keyed by tag,
            rather than a list: one round trip is one moment in time, so two
            snapshots cannot be read either side of a write and merged as if they
@@ -183,9 +217,9 @@ public final class Sync {
             store.mergeCloudInto(Store.cast(incoming));
             merged++;
         }
-        if (merged == 0) return mergeReport(pushed, 0, true, null);
+        if (merged == 0) return mergeReport(pushed, 0, true, null, pullErrors);
         boolean committed = store.commit();
-        return mergeReport(pushed, merged, committed, store.lastSaveError);
+        return mergeReport(pushed, merged, committed, store.lastSaveError, pullErrors);
     }
 
     /** A single-device pull, used to repair one machine from the sheet. */
