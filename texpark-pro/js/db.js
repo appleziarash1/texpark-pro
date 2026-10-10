@@ -24,7 +24,8 @@ const DEFAULT_SETTINGS = {
   autoBackup: true,
   autoPull: true,       // pull new data from the cloud by itself
   reminderDefaultLead: 1,  // days before a delivery date to remind, unless an order overrides it
-  orderPrefix: 'TP-'
+  orderPrefix: 'TP-',
+  memoOrderEnabled: false  // off by default; the owner turns it on to mirror new memos as orders
 };
 
 function blankDB() {

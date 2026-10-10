@@ -39,7 +39,7 @@ calendar, reminders, full board, lifecycle).
 
 ### Verified
 Full suite green: logic 84, sheet 87, e2e 262, receivable 31, cost 11, journey 19, autopull 39,
-return 51, cloud 33, orders 49, session 25, pairing 31, repair 30, ownerdata 29. (android/native
+return 51, cloud 33, orders 69, session 25, pairing 31, repair 30, ownerdata 29. (android/native
 need a JDK for `javac`; not available in this sandbox, unchanged by this work.)
 
 ### Open risks (unchanged)
@@ -47,6 +47,18 @@ need a JDK for `javac`; not available in this sandbox, unchanged by this work.)
   stale orders. No APK rebuild, no signing change.
 - Orders travel through Firestore via `MERGE_KEYS`; no new read pattern was added, so the Spark
   read budget is unaffected.
+
+### Follow-up (2026-10-06)
+- The memo page gained a collapsed, off-by-default "Add to Orders (optional)" card
+  (`settings.memoOrderEnabled`); when on, a new memo also opens an order linked by `memoId`.
+- Memo History gained an SL column (1, 2, 3 …) and a total-count pill, plus a per-row
+  order link / one-click **Create Order**.
+- `test/orders.test.js` grew to 69 checks. All suites still green.
+- No version bump: the tracked `TexparkPro.apk` is signed with a keystore that is not on
+  this machine, so a bump plus APK rebuild would change the signing and break
+  install-over-update (forbidden). `sw.js` serves `js/` network-first, so the new JS
+  reaches installed clients without a bump — the version stays `2027-01-01.10`.
+
 
 ---
 

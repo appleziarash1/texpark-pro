@@ -200,5 +200,72 @@ mergeRecsInto_(dev1, dev2);
 eq(dev1.orders.length, 2, 'the merge added the order the first device had never seen');
 eq(dev1.orders.find(o => o.id === 'x1').status, 'ready', 'the newer status won');
 
+console.log('\n=== orders: a memo can open an order when the memo switch is on ===');
+db.orders = [];
+db.settings.memoOrderEnabled = false;
+db.memos = db.memos.filter(m => m.customerName !== 'Order Memo Cust');
+nav('memo');
+newMemo();
+el('memoDate').value = T;
+el('customerName').value = 'Order Memo Cust';
+memoDraft.items = [{ productId: 'seed-k3s', qty: 5, rate: 200, cost: 100, vat: 0, amount: 1000 }];
+renderMemoLines();
+calcMemo();
+saveMemo();
+eq((db.orders || []).length, 0, 'with the switch off, saving a memo creates no order');
+
+/* Turn the switch on the way the memo page does, then save another memo. */
+newMemo();
+el('customerName').value = 'Order Memo Cust2';
+memoDraft.items = [{ productId: 'seed-k3s', qty: 3, rate: 150, cost: 100, vat: 0, amount: 450 }];
+renderMemoLines();
+calcMemo();
+el('memoOrderEnable').checked = true;
+onMemoOrderEnable();
+eq(db.settings.memoOrderEnabled, true, 'the switch persists on the setting');
+el('memoOrderDate').value = addDays_(T, 5);
+el('memoOrderPriority').value = 'urgent';
+triggers.alert.length = 0;
+saveMemo();
+eq((db.orders || []).length, 1, 'with the switch on, saving a memo opens exactly one order');
+const mo = db.orders[0];
+eq(mo.customerName, 'Order Memo Cust2', 'the order carries the memo customer');
+eq(mo.qty, 3, 'the order carries the memo total qty');
+eq(mo.deliveryDate, addDays_(T, 5), 'the order uses the date chosen on the memo page');
+eq(mo.priority, 'urgent', 'the order uses the chosen priority');
+ok(!!mo.memoId, 'the order is linked back to the memo');
+eq(memoOrderLink(db.orders[0].memoId).id, mo.id, 'memoOrderLink finds the order by memo id');
+
+console.log('\n--- editing the memo again does not open a second order ---');
+const memoForEdit = db.memos.find(m => m.id === mo.memoId);
+editingMemoId = memoForEdit.id;
+Object.assign(memoDraft, { items: (memoForEdit.items || []).map(i => ({ productId: i.productId, qty: i.qty, rate: i.rate, cost: i.cost, vat: i.vat })) });
+renderMemoLines();
+saveMemo();
+eq((db.orders || []).length, 1, 'a second save of the same memo adds no order');
+
+console.log('\n--- a one-click order from Memo History links the other memo ---');
+const oldMemo = db.memos.find(m => m.customerName === 'Order Memo Cust');
+createOrderForMemo(oldMemo.id);
+eq((db.orders || []).length, 2, 'the history action opened an order for the memo that had none');
+ok(!!memoOrderLink(oldMemo.id), 'the new order is linked to its memo');
+const before = db.orders.length;
+createOrderForMemo(oldMemo.id);
+eq((db.orders || []).length, before, 'clicking again reuses the link instead of duplicating');
+
+console.log('\n=== orders: Memo History numbers every row and shows its order ===');
+nav('history');
+renderHistory();
+const histHtml = el('historyTable').innerHTML;
+ok(histHtml.indexOf('<th style="width:44px">SL</th>') !== -1, 'the history table has an SL column');
+ok(histHtml.indexOf('<td class="right">1</td>') !== -1, 'row 1 is numbered');
+ok(/<td class="right">2<\/td>/.test(histHtml), 'row 2 is numbered');
+ok(el('hCount').textContent.indexOf('memos') !== -1, 'the history shows a total count');
+ok(histHtml.indexOf('Create Order') !== -1 || histHtml.indexOf('Order ') !== -1, 'each memo row offers its order state');
+ok(histHtml.indexOf('#TP-') !== -1 || histHtml.indexOf('#') !== -1, 'a linked order is shown on its memo row');
+
+deleteMemo(oldMemo.id);
+ok(!memoOrderLink(oldMemo.id), 'deleting a memo unlinks its order');
+
 console.log('\n' + (fail ? 'FAILED ' + fail : 'All ' + pass + ' order checks passed') + ' (' + pass + ' passed, ' + fail + ' failed)');
 process.exit(fail ? 1 : 0);
