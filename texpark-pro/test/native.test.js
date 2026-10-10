@@ -332,6 +332,88 @@ public class Driver {
       st = new Store(st.dbDir());
       st.load();
       out.put("receivableAfterReload", st.totalReceivable());
+    } else if (op.equals("returnMoney")) {
+      /* The money side of a return: a parcel coming back must take what it was worth
+         off the memo, full or partial, so the customer stops owing for goods the shop
+         holds again. This is the owner's complaint, driven through the real Store. */
+      st.list("returns").clear(); st.list("deliveries").clear();
+      st.list("payments").clear(); st.list("memos").clear(); st.list("expenses").clear();
+      Map<String,Object> card = st.stockOf("seed-k3s");
+      card.put("opening", 100.0); card.put("sold", 0.0);
+      card.put("available", Store.stockAvailable(card));
+
+      // Full return of an undelivered 1000 memo: the whole charge drops.
+      Map<String,Object> d1 = new LinkedHashMap<String,Object>();
+      d1.put("customerName", "Full Return");
+      d1.put("discount", "0"); d1.put("delivery", "0"); d1.put("advance", "0");
+      List<Object> items1 = new ArrayList<Object>();
+      Map<String,Object> i1 = new LinkedHashMap<String,Object>();
+      i1.put("productId", "seed-k3s"); i1.put("qty", 10.0); i1.put("rate", 100.0);
+      i1.put("cost", 60.0); i1.put("vat", 0.0);
+      items1.add(i1);
+      Map<String,Object> full = st.saveMemo(d1, items1);
+      out.put("grandTotal", full.get("grandTotal"));
+      out.put("dueFresh", st.memoRemainingDue(full));
+      out.put("receivableFresh", st.totalReceivable());
+
+      Map<String,Object> r1 = new LinkedHashMap<String,Object>();
+      r1.put("id", Store.id()); r1.put("memoId", Store.str(full, "id"));
+      r1.put("memoNo", Store.str(full, "memoNo")); r1.put("date", Store.today());
+      r1.put("qty", 10.0); r1.put("condition", "good"); r1.put("note", "full");
+      List<Object> l1 = new ArrayList<Object>();
+      Map<String,Object> ln1 = new LinkedHashMap<String,Object>();
+      ln1.put("productId", "seed-k3s"); ln1.put("qty", 10.0);
+      l1.add(ln1);
+      r1.put("lines", l1);
+      st.saveReturn(r1);
+      out.put("dueAfterFull", st.memoRemainingDue(full));
+      out.put("receivableAfterFull", st.totalReceivable());
+
+      // Partial return: only the returned pieces come off.
+      Map<String,Object> d2 = new LinkedHashMap<String,Object>();
+      d2.put("customerName", "Partial Return");
+      d2.put("discount", "0"); d2.put("delivery", "0"); d2.put("advance", "0");
+      List<Object> items2 = new ArrayList<Object>();
+      Map<String,Object> i2 = new LinkedHashMap<String,Object>();
+      i2.put("productId", "seed-k3s"); i2.put("qty", 10.0); i2.put("rate", 100.0);
+      i2.put("cost", 60.0); i2.put("vat", 0.0);
+      items2.add(i2);
+      Map<String,Object> part = st.saveMemo(d2, items2);
+      Map<String,Object> r2 = new LinkedHashMap<String,Object>();
+      r2.put("id", Store.id()); r2.put("memoId", Store.str(part, "id"));
+      r2.put("memoNo", Store.str(part, "memoNo")); r2.put("date", Store.today());
+      r2.put("qty", 4.0); r2.put("condition", "good"); r2.put("note", "part");
+      List<Object> l2 = new ArrayList<Object>();
+      Map<String,Object> ln2 = new LinkedHashMap<String,Object>();
+      ln2.put("productId", "seed-k3s"); ln2.put("qty", 4.0);
+      l2.add(ln2);
+      r2.put("lines", l2);
+      st.saveReturn(r2);
+      out.put("dueAfterPartial", st.memoRemainingDue(part));
+      out.put("collectableAfterPartial", st.collectableOnMemo(part));
+      // Undo it: the charge comes back.
+      st.reverseReturnFromStock(r2);
+      st.list("returns").remove(r2);
+      out.put("dueAfterUndo", st.memoRemainingDue(part));
+
+      // A memo already delivered and fully collected, then partly returned: due stays
+      // at zero and never reads as money owed for goods that came back.
+      String dlId = Store.id();
+      Map<String,Object> dl = new LinkedHashMap<String,Object>();
+      dl.put("id", dlId); dl.put("memoId", Store.str(part, "id"));
+      dl.put("memoNo", Store.str(part, "memoNo")); dl.put("date", Store.today());
+      dl.put("qty", 10.0); dl.put("delivered", 0.0);
+      st.list("deliveries").add(dl);
+      st.recordCollection(part, dlId, 1000.0);
+      out.put("dueAfterPay", st.memoRemainingDue(part));
+      Map<String,Object> r3 = new LinkedHashMap<String,Object>();
+      r3.put("id", Store.id()); r3.put("memoId", Store.str(part, "id"));
+      r3.put("memoNo", Store.str(part, "memoNo")); r3.put("date", Store.today());
+      r3.put("qty", 4.0); r3.put("condition", "good"); r3.put("note", "part2");
+      r3.put("lines", l2);
+      st.saveReturn(r3);
+      out.put("dueAfterPaidReturn", st.memoRemainingDue(part));
+      out.put("collectableAfterPaidReturn", st.collectableOnMemo(part));
     } else if (op.equals("deleteMemo")) {
       /* Deleting a memo that had a return filed against it. reverseSaleFromStock used
          to clamp sold at zero, so the returned qty was swallowed and the shelf read
@@ -990,6 +1072,50 @@ test('native: deleting a memo with a return restores stock exactly, like the web
   rebaseStockFromLedger();
   assert.strictEqual(num(findStock(p.id).available), beforeRebase,
     'web: a sync leaves the same figure');
+});
+
+test('native: a parcel return deducts the money, full and partial, like the web', () => {
+  const r = runNative({ op: 'returnMoney' });
+  assert.strictEqual(r.grandTotal, 1000, 'the memo is 10 x 100');
+  assert.strictEqual(r.dueFresh, 1000, 'a fresh memo owes the whole 1000');
+  assert.strictEqual(r.receivableFresh, 1000, 'and the dashboard agrees');
+  assert.strictEqual(r.dueAfterFull, 0, 'a full return clears the whole charge');
+  assert.strictEqual(r.receivableAfterFull, 0, 'so the receivable drops to zero');
+  assert.strictEqual(r.dueAfterPartial, 600, 'a 4-of-10 return leaves 600 owed');
+  assert.strictEqual(r.collectableAfterPartial, 600, 'and only 600 can still be collected');
+  assert.strictEqual(r.dueAfterUndo, 1000, 'undoing the return restores the full charge');
+  assert.strictEqual(r.dueAfterPay, 0, 'a fully collected memo owes nothing');
+  assert.strictEqual(r.dueAfterPaidReturn, 0, 'a later return never pushes the due negative');
+  assert.strictEqual(r.collectableAfterPaidReturn, 0, 'and never re-opens money for returned goods');
+
+  /* The web build must say exactly the same, so the two cannot drift apart again. */
+  db = blankDB();
+  const p = db.products[0];
+  stockOf(p.id).opening = 100;
+  function webMemo(qty) {
+    return {
+      id: 'm-' + Math.random().toString(36).slice(2, 7), memoNo: 'TXP/SM/RET',
+      date: today(), customerName: 'Web Return',
+      items: [{ productId: p.id, productName: p.name, qty, rate: 100, cost: 60, vat: 0, amount: qty * 100 }],
+      totalQty: qty, subtotal: qty * 100, discount: 0, deliveryCharge: 0, vat: 0,
+      grandTotal: qty * 100, advance: 0, due: qty * 100, cogs: qty * 60, profit: qty * 40, note: ''
+    };
+  }
+  const wf = webMemo(10);
+  db.memos.push(wf);
+  assert.strictEqual(memoRemainingDue(wf), 1000, 'web: a fresh 1000 memo owes 1000');
+  db.returns.push({ id: 'wr1', memoId: wf.id, memoNo: wf.memoNo, date: today(),
+    items: [{ productId: p.id, qty: 10 }], qty: 10, condition: 'good', note: '' });
+  applyReturnToStock(db.returns[db.returns.length - 1]);
+  assert.strictEqual(memoRemainingDue(wf), 0, 'web: a full return clears the charge');
+  assert.strictEqual(totalReceivable(), 0, 'web: and the receivable');
+
+  const wp = webMemo(10);
+  db.memos.push(wp);
+  db.returns.push({ id: 'wr2', memoId: wp.id, memoNo: wp.memoNo, date: today(),
+    items: [{ productId: p.id, qty: 4 }], qty: 4, condition: 'good', note: '' });
+  applyReturnToStock(db.returns[db.returns.length - 1]);
+  assert.strictEqual(memoRemainingDue(wp), 600, 'web: a 4-of-10 return leaves 600 owed');
 });
 
 test('native: the memo says the same thing on the phone as on the PC', () => {

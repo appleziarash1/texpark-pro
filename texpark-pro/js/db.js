@@ -882,12 +882,19 @@ function plSummary(from, to) {
   let sales = 0, cogs = 0, discount = 0, deliveryIncome = 0, vatCollected = 0, grossProfit = 0;
   db.memos.forEach(m => {
     if (!dateInRange(m.date, from, to)) return;
-    sales = round2(sales + num(m.subtotal));
+    /* Goods that came back are not a sale: their share of the goods value and its cost
+       come out of the report, so a returned parcel cannot inflate turnover or profit.
+       Discount, delivery income and VAT are left as charged. */
+    const soldValue = (m.items || []).reduce((a, it) => a + num(it.qty) * num(it.rate), 0);
+    const ratio = soldValue > 0 ? Math.min(1, returnedValueOnMemo_(m) / soldValue) : 0;
+    const mSales = round2(num(m.subtotal) * (1 - ratio));
+    const mCogs = round2(num(m.cogs) * (1 - ratio));
+    sales = round2(sales + mSales);
     discount = round2(discount + num(m.discount));
     deliveryIncome = round2(deliveryIncome + num(m.deliveryCharge));
     vatCollected = round2(vatCollected + num(m.vat));
-    cogs = round2(cogs + num(m.cogs));
-    grossProfit = round2(grossProfit + num(m.profit));
+    cogs = round2(cogs + mCogs);
+    grossProfit = round2(grossProfit + round2(mSales - num(m.discount) + num(m.deliveryCharge) - mCogs));
   });
   const expense = db.expenses
     .filter(e => dateInRange(e.date, from, to))
@@ -912,12 +919,58 @@ function paidOnMemo_(memo) {
   return round2(num(memo.advance) + collectedOnMemo_(memo));
 }
 
-/* What is still owed on one memo: grand total minus advance minus receipts, floored
-   at zero. This is a DERIVED figure and is never hand-edited; recording a payment is
-   the only way to move it. For a memo with no payments it can differ from m.due by at
-   most a rounding of the stored field, which keeps old data reading exactly as before. */
+/* The money value of the goods that came back from a memo: each returned piece valued
+   at the rate the memo charged for it. An old return record with no product lines is
+   valued at the memo's average rate, so it still comes off the charge. */
+function returnedValueOnMemo_(memo) {
+  const rets = (db.returns || []).filter(r => r.memoId === memo.id);
+  if (!rets.length) return 0;
+  const soldValue = (memo.items || []).reduce((a, it) => a + num(it.qty) * num(it.rate), 0);
+  const soldQty = num(memo.totalQty);
+  let value = 0;
+  rets.forEach(r => {
+    const lines = (r.items && r.items.length) ? r.items : ((r.lines && r.lines.length) ? r.lines : null);
+    if (lines) {
+      lines.forEach(it => {
+        const line = (memo.items || []).find(x => x.productId && x.productId === it.productId);
+        value += num(it.qty) * (line ? num(line.rate) : 0);
+      });
+    } else if (soldQty > 0) {
+      value += num(r.qty) * (soldValue / soldQty);
+    }
+  });
+  return round2(value);
+}
+
+/* What the customer is charged on a memo: the goods they kept, at memo rates. Returned
+   pieces are no longer kept, so what they were worth comes off the grand total. A memo
+   with no returns is charged its whole grand total, so every existing figure is
+   untouched. */
+function memoCharge_(memo) {
+  const grand = num(memo.grandTotal);
+  if (!(grand > 0)) return grand;
+  const back = returnedValueOnMemo_(memo);
+  if (!(back > 0)) return grand;
+  const soldValue = (memo.items || []).reduce((a, it) => a + num(it.qty) * num(it.rate), 0);
+  if (!(soldValue > 0)) return grand;
+  const kept = Math.max(0, soldValue - back);
+  return round2(grand * kept / soldValue);
+}
+
+/* The most a memo can still collect. It is the remaining due, which already nets
+   returns, advance and receipts, so a receipt can never be recorded against goods the
+   shop holds again. Named for the call site (the collection clamp) and mirrored by the
+   native Store.collectableOnMemo so the two builds cannot drift. */
+function collectableOnMemo_(memo) {
+  return memoRemainingDue(memo);
+}
+
+/* What is still owed on one memo: the charge for the goods kept, minus advance and
+   receipts, floored at zero. This is a DERIVED figure and is never hand-edited;
+   recording a payment — or returning a parcel — is the only way to move it. A memo
+   with no returns or receipts reads exactly its stored due, so old data is untouched. */
 function memoRemainingDue(memo) {
-  return Math.max(0, round2(num(memo.grandTotal) - paidOnMemo_(memo)));
+  return Math.max(0, round2(memoCharge_(memo) - paidOnMemo_(memo)));
 }
 
 /* Customers' total due: the sum over live memos of what each still owes. A memo with

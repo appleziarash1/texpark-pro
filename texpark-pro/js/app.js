@@ -373,7 +373,13 @@ function renderDashboard() {
   }
   const per = days.map(d => {
     let s = 0, pr = 0;
-    db.memos.forEach(x => { if (x.date === d) { s += num(x.grandTotal); pr += num(x.profit); } });
+    db.memos.forEach(x => {
+      if (x.date !== d) return;
+      const soldValue = (x.items || []).reduce((a, it) => a + num(it.qty) * num(it.rate), 0);
+      const ratio = soldValue > 0 ? Math.min(1, returnedValueOnMemo_(x) / soldValue) : 0;
+      s += round2(num(x.grandTotal) * (1 - ratio) - num(x.advance));
+      pr += round2(num(x.profit) * (1 - ratio));
+    });
     return { d, s, pr };
   });
   const maxS = Math.max(1, ...per.map(x => x.s));
@@ -1534,6 +1540,9 @@ function memoSheet(m) {
         '<tr><td>Delivery Charge</td><td class="right">+ ' + money(m.deliveryCharge) + '</td></tr>' +
         (num(m.vat) ? '<tr><td>VAT</td><td class="right">+ ' + money(m.vat) + '</td></tr>' : '') +
         '<tr class="memo-grand"><td>Grand Total</td><td class="right">' + money(m.grandTotal) + '</td></tr>' +
+        (returnedValueOnMemo_(m) > 0
+          ? '<tr><td>Less: Returned goods</td><td class="right">- ' + money(returnedValueOnMemo_(m)) + '</td></tr>'
+          : '') +
         '<tr><td>Advance</td><td class="right">- ' + money(m.advance) + '</td></tr>' +
         (collectedOnMemo_(m) > 0
           ? '<tr><td>Received (delivery)</td><td class="right">- ' + money(collectedOnMemo_(m)) + '</td></tr>'
@@ -1612,7 +1621,7 @@ function customerIdForMemo_(m) {
    it, including to 0. */
 function collectedPrefill_(m, qty) {
   const remaining = memoRemainingDue(m);
-  const sold = num(m.totalQty) || 0;
+  const sold = pendingQtyOf(m) + deliveredQtyOf(m.id) || num(m.totalQty) || 0;
   if (sold <= 0) return remaining;
   const share = Math.min(1, Math.max(0, num(qty) / sold));
   return round2(remaining * share);
@@ -1665,10 +1674,10 @@ function saveDelivery() {
   const already = deliveredQtyOf(mid);
 
   /* What the customer paid. Floored at 0; an over-payment is allowed but clamped down
-     to what is actually still owed, with a warning, so the dashboard cannot show a
-     negative due and no money is counted against a paid memo. */
+     to what is actually still owed on the goods kept, with a warning, so the dashboard
+     cannot show a negative due and no money is counted against returned goods. */
   let collected = Math.max(0, num(document.getElementById('dlCollect').value));
-  const owed = memoRemainingDue(m);
+  const owed = collectableOnMemo_(m);
   if (collected > owed) {
     alert('Collected ' + money(collected) + ' is more than the ' + money(owed) +
       ' still due on this memo, so it is recorded as ' + money(owed) + '.');
@@ -1852,14 +1861,17 @@ function deleteReturn(rid) {
 /* ===================== customers ===================== */
 function customerDue(c) {
   const ms = db.memos.filter(m => m.customerName === c.name && (m.customerPhone || '') === (c.phone || ''));
-  const sales = ms.reduce((a, m) => a + num(m.grandTotal), 0);
+  /* Goods that came back are no longer sold, so their value comes off the customer's
+     business. Netting each memo's charge keeps the ledger in step with the memo and
+     the dashboard the moment a parcel is returned. */
+  const sales = ms.reduce((a, m) => round2(a + memoCharge_(m)), 0);
   const adv = ms.reduce((a, m) => a + num(m.advance), 0);
   /* Live receipts only, so a receipt removed with its delivery or memo stops counting.
      Both the old customer-level receipts and the new memo-linked ones carry a
      customerId, so they are covered here; a tombstoned one is filtered by `del`. */
   const paid = db.payments.filter(p => p && !p.del && p.customerId === c.id)
     .reduce((a, p) => a + num(p.amount), 0);
-  return { sales, adv, paid, due: round2(sales - adv - paid), memos: ms };
+  return { sales, adv, paid, due: Math.max(0, round2(sales - adv - paid)), memos: ms };
 }
 
 function renderCustomers() {
@@ -2394,13 +2406,20 @@ function profitRows(from, to) {
   const map = {};
   db.memos.forEach(m => {
     if (!dateInRange(m.date, from, to)) return;
+    /* Returned pieces are not sales, so their qty, value and cost leave the item
+       report. Per-product so the right line drops, not the whole memo's. */
+    const soldValue = (m.items || []).reduce((a, it) => a + num(it.qty) * num(it.rate), 0);
+    const ratio = soldValue > 0 ? Math.min(1, returnedValueOnMemo_(m) / soldValue) : 0;
     m.items.forEach(it => {
       const k = it.productId || it.productName;
       map[k] = map[k] || { name: it.productName, qty: 0, sales: 0, cost: 0, profit: 0 };
-      map[k].qty += num(it.qty);
-      map[k].sales += round2(num(it.amount));
-      map[k].cost += round2(num(it.qty) * num(it.cost));
-      map[k].profit += round2(num(it.amount) - num(it.qty) * num(it.cost));
+      const q = num(it.qty) * (1 - ratio);
+      const sales = round2(num(it.amount) * (1 - ratio));
+      const cost = round2(num(it.qty) * num(it.cost) * (1 - ratio));
+      map[k].qty += q;
+      map[k].sales += sales;
+      map[k].cost += cost;
+      map[k].profit += round2(sales - cost);
     });
   });
   return Object.values(map).sort((a, b) => b.profit - a.profit);
@@ -2470,9 +2489,14 @@ function monthlyPLHTML() {
     const k = (m.date || '').slice(0, 7);
     if (!k) return;
     months[k] = months[k] || { sales: 0, cogs: 0, profit: 0, exp: 0 };
-    months[k].sales = round2(months[k].sales + num(m.subtotal));
-    months[k].cogs = round2(months[k].cogs + num(m.cogs));
-    months[k].profit = round2(months[k].profit + num(m.profit));
+    /* Net of returned goods so a returned parcel does not show as month sales. */
+    const soldValue = (m.items || []).reduce((a, it) => a + num(it.qty) * num(it.rate), 0);
+    const ratio = soldValue > 0 ? Math.min(1, returnedValueOnMemo_(m) / soldValue) : 0;
+    const sales = round2(num(m.subtotal) * (1 - ratio));
+    const cogs = round2(num(m.cogs) * (1 - ratio));
+    months[k].sales = round2(months[k].sales + sales);
+    months[k].cogs = round2(months[k].cogs + cogs);
+    months[k].profit = round2(months[k].profit + round2(sales - cogs));
   });
   db.expenses.forEach(e => {
     const k = (e.date || '').slice(0, 7);
