@@ -89,6 +89,7 @@ vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'db.js'), 'utf8'), { f
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'sync.js'), 'utf8'), { filename: 'sync.js' });
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'voice.js'), 'utf8'), { filename: 'voice.js' });
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'memoexport.js'), 'utf8'), { filename: 'memoexport.js' });
+vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'courier.js'), 'utf8'), { filename: 'courier.js' });
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js', 'app.js'), 'utf8'), { filename: 'app.js' });
 
 /* app.js waits for DOMContentLoaded to boot; the shim never fires it, so boot here

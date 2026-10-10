@@ -25,7 +25,10 @@ const DEFAULT_SETTINGS = {
   autoPull: true,       // pull new data from the cloud by itself
   reminderDefaultLead: 1,  // days before a delivery date to remind, unless an order overrides it
   orderPrefix: 'TP-',
-  memoOrderEnabled: false  // off by default; the owner turns it on to mirror new memos as orders
+  memoOrderEnabled: false, // off by default; the owner turns it on to mirror new memos as orders
+  courierEnabled: true,    // Steadfast status sync (needs the per-device key + secret)
+  courierAutoCod: true,    // take a delivered parcel's COD off the memo's due
+  courierAutoReturnGood: true  // a returned parcel's goods go back into available stock
 };
 
 function blankDB() {

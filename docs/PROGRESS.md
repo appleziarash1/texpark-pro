@@ -241,3 +241,42 @@ journey 19, autopull 39, return 51, cloud 33, session 25, pairing 31, repair 30,
   contract, and the Bangla guide tells the owner how to paste keys and deploy the rules.
 - Android still uses the Sheet; the web app mirrors every record to the Sheet `Records` tab so
   Android never sees stale data. No APK rebuild, no signing change.
+
+---
+
+## Phase 6 — Steadfast courier: auto status, per-memo tracking link
+
+### What shipped
+- `js/courier.js` — a new module (loaded before `app.js`, bundled by `build.js` and precached
+  by `sw.js`). It speaks to Steadfast over its REST API (`portal.packzy.com/api/v1`), which
+  answers with `Access-Control-Allow-Origin: *`, so the browser calls it directly — no server,
+  no new plan cost.
+- Settings → **Courier (Steadfast)**: API key + secret, a sync on/off switch, "COD off the due
+  on delivery", "Returned parcel adds stock (Good)", plus a **Test connection** (balance call).
+  The key and secret are stored **per device** in localStorage under their own keys and are
+  deliberately NOT part of `db`/`LOCAL_SETTING_KEYS`, so no backup or sync path can pick them up.
+- Order modal gained a **Courier Tracking Link** and **Consignment ID**; the id is read out of a
+  pasted link or a raw code. The card shows a courier badge and a **Track ↗** link off the
+  parcel's own Steadfast page.
+- **Auto-detection**, on open, on tab-visible, and a 15-minute timer (visible tab only), capped
+  at 8 active unsynced orders per pass. `delivered` marks the order Delivered and creates the
+  memo delivery (+ a COD receipt off the due, when the setting is on); `returned` adds the
+  returned pieces back to stock (Good) and records a Parcel Return; other statuses are stored
+  and shown.
+- Approval-pending statuses (`*_approval_pending`) are stored but not treated as final, so a
+  balance that has not settled cannot move stock or a due.
+
+### Honest limits (surfaced in the UI, not hidden)
+- Steadfast reports delivery at the **parcel** level; it does not report how many pieces came
+  back. A `returned` status adds back the memo's still-pending quantity (capped at what was
+  sold) rather than inventing a number; the owner's Parcel Return form remains the override.
+- Whether returned goods are sellable (Good) or damaged is the owner's call — a setting.
+
+### Tests
+`test/courier.test.js` — 41 checks: consignment-id extraction from four link/id shapes, endpoint
+routing (cid vs tracking code), documented status parsing incl. approval-pending, the poll-target
+filter and cap, and the record mapping (delivered → delivery + COD receipt with idempotent
+re-sync; COD-off respects the switch; returned → return + stock back; errors collected, not
+thrown; the board badge). Full suite green: logic 84, sheet 87, e2e 264, receivable, cost,
+journey, autopull 39, return 51, cloud, orders 69, courier 41, session, pairing, repair,
+ownerdata, android, native.

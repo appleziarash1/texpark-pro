@@ -478,6 +478,7 @@ function orderCardHTML(o, ref) {
     '<div class="odate"><span>Delivery date</span><b>' + ordDateLabel(o.deliveryDate) + '</b></div>' +
     (o.priority && o.priority !== 'normal'
       ? '<div class="oprio">' + esc(o.priority) + ' priority</div>' : '') +
+    (typeof ordCourierBadgeHTML === 'function' ? ordCourierBadgeHTML(o) : '') +
   '</div>';
 }
 
@@ -688,6 +689,10 @@ function openOrder(oid) {
   document.getElementById('ordPriority').value = o ? (o.priority || 'normal') : 'normal';
   document.getElementById('ordRemindLead').value = (o && o.remindLeadDays !== undefined && o.remindLeadDays !== null && o.remindLeadDays !== '') ? o.remindLeadDays : '';
   document.getElementById('ordNote').value = o ? (o.note || '') : '';
+  const tu = document.getElementById('ordTrackingUrl');
+  if (tu) tu.value = o ? (o.trackingUrl || '') : '';
+  const cs = document.getElementById('ordConsignment');
+  if (cs) cs.value = o ? (o.consignmentId || '') : '';
   document.getElementById('ordDeleteBtn').style.display = o ? '' : 'none';
   const info = document.getElementById('ordModalInfo');
   if (info) info.textContent = o ? ('Created ' + ordDateLabel((o.createdAt || '').slice(0, 10)) + (o.status === 'delivered' ? ' · Delivered' : '')) : 'Fill in the order details.';
@@ -699,6 +704,7 @@ function openOrder(oid) {
         h.map(x => '<div class="hrow"><b>' + ordDateLabel((x.at || '').slice(0, 10)) + '</b> — ' + esc(x.text || '') + '</div>').join('')
       : '';
   }
+  if (typeof renderOrderCourier === 'function') renderOrderCourier();
   document.getElementById('orderModal').classList.add('show');
 }
 function closeOrder() { document.getElementById('orderModal').classList.remove('show'); }
@@ -725,7 +731,9 @@ function saveOrder() {
     status: document.getElementById('ordStatus').value || 'received',
     priority: document.getElementById('ordPriority').value || 'normal',
     remindLeadDays: document.getElementById('ordRemindLead').value === '' ? null : num(document.getElementById('ordRemindLead').value),
-    note: document.getElementById('ordNote').value.trim()
+    note: document.getElementById('ordNote').value.trim(),
+    trackingUrl: valueOfEl_('ordTrackingUrl').trim(),
+    consignmentId: valueOfEl_('ordConsignment').trim() || extractConsignment_(valueOfEl_('ordTrackingUrl'))
   };
   if (o) {
     Object.assign(o, fields);
@@ -2667,6 +2675,16 @@ function renderSettings() {
   if (rl) rl.value = db.settings.reminderDefaultLead === undefined ? 1 : db.settings.reminderDefaultLead;
   document.getElementById('stShortWarn').checked = db.settings.warnOnShortStock !== false;
   document.getElementById('stAutoBackup').checked = db.settings.autoBackup !== false;
+  const ck = document.getElementById('stCourierKey');
+  if (ck && typeof courierKey === 'function') ck.value = courierKey();
+  const csec = document.getElementById('stCourierSecret');
+  if (csec && typeof courierSecret === 'function') csec.value = courierSecret();
+  const cen = document.getElementById('stCourierEnabled');
+  if (cen) cen.checked = db.settings.courierEnabled !== false;
+  const ccod = document.getElementById('stCourierAutoCod');
+  if (ccod) ccod.checked = db.settings.courierAutoCod !== false;
+  const cret = document.getElementById('stCourierAutoReturn');
+  if (cret) cret.checked = db.settings.courierAutoReturnGood !== false;
   const v = document.getElementById('appVersion');
   if (v) v.textContent = APP_VERSION;
   syncStatusRender();
@@ -3102,6 +3120,7 @@ window.addEventListener('DOMContentLoaded', function () {
       return;
     }
     cloudAutoSync('visible');
+    if (typeof courierAutoSync === 'function') courierAutoSync();
   });
   window.addEventListener('pagehide', function () { if (cloudDirty) flushCloudPush(); });
   /* The tab staying open is the normal way this app is used, and until now a change
@@ -3110,6 +3129,12 @@ window.addEventListener('DOMContentLoaded', function () {
      polling the sheet would spend the owner's data to update a screen nobody is
      looking at. cloudAutoSync() itself keeps the once-per-8s floor. */
   setInterval(function () { if (!document.hidden) cloudAutoSync('timer'); }, 30000);
+  /* Steadfast status, the same way: on open, when the tab comes back, and on a slow
+     timer. courierAutoSync() no-ops unless the owner set the keys, and it never
+     blocks the app; it is the only path that turns a delivered parcel into a memo
+     delivery without anyone typing it. */
+  setTimeout(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 6000);
+  setInterval(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 15 * 60 * 1000);
 });
 
 const CLOUD_DAY_KEY = 'texpark_pro_cloud_backup_day';

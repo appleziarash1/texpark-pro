@@ -613,6 +613,42 @@
         </div>
 
         <div class="card">
+          <h2>Courier (Steadfast)</h2>
+          <div class="note">
+            Link a parcel's Steadfast tracking to its memo/order and the delivery status can come
+            back by itself — <b>delivered</b> marks the memo delivered, <b>returned</b> notes the
+            parcel came back. The keys stay <b>on this device only</b> and are never sent to the
+            Google Sheet or the cloud.
+          </div>
+          <div class="formgrid" style="margin-top:10px">
+            <div><label>API Key</label><input id="stCourierKey" autocomplete="off" placeholder="Steadfast API Key"></div>
+            <div><label>Secret Key</label><input id="stCourierSecret" type="password" autocomplete="off" placeholder="Steadfast Secret Key"></div>
+          </div>
+          <div class="formgrid" style="margin-top:11px">
+            <div style="display:flex;align-items:flex-end">
+              <label style="display:flex;gap:8px;align-items:center;font-weight:600">
+                <input id="stCourierEnabled" type="checkbox" style="width:auto"> Courier sync on
+              </label>
+            </div>
+            <div style="display:flex;align-items:flex-end">
+              <label style="display:flex;gap:8px;align-items:center;font-weight:600">
+                <input id="stCourierAutoCod" type="checkbox" style="width:auto"> COD off the due on delivery
+              </label>
+            </div>
+            <div style="display:flex;align-items:flex-end">
+              <label style="display:flex;gap:8px;align-items:center;font-weight:600">
+                <input id="stCourierAutoReturn" type="checkbox" style="width:auto"> Returned parcel adds stock (Good)
+              </label>
+            </div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn-pink" onclick="saveCourierSettings()">Save Courier</button>
+            <button class="btn-light" onclick="testCourierSettings()">Test connection</button>
+            <span class="muted" id="courierTestOut"></span>
+          </div>
+        </div>
+
+        <div class="card">
           <h2>App Update</h2>
           <div class="note">Shown here when the phone is stuck on an old version. Note the
           <b>Version</b> shown in Settings — it changes when a new version arrives.</div>
@@ -844,10 +880,19 @@
         <div class="hint">Leave blank to use the shop default</div>
       </div>
       <div class="wide"><label>Note</label><textarea id="ordNote"></textarea></div>
+      <div><label>Courier Tracking Link</label>
+        <input id="ordTrackingUrl" placeholder="https://steadfast.com.bd/t/..." oninput="orderTrackingChanged()">
+        <div class="hint">Paste the tracking link; the consignment id is read from it. Click to open it and see the parcel's live status yourself.</div>
+      </div>
+      <div><label>Consignment ID</label><input id="ordConsignment" placeholder="Steadfast consignment id">
+        <div class="hint">Saved for the status sync. Usually filled automatically from the tracking link or after “Send to Steadfast”.</div>
+      </div>
     </div>
+    <div id="ordCourier" class="ordhistory"></div>
     <div id="ordHistory" class="ordhistory"></div>
     <div class="modal-actions">
       <button class="btn-light" onclick="closeOrder()">Cancel</button>
+      <button class="btn-light" id="ordCourierSyncBtn" onclick="syncOrderCourier()" style="display:none">Sync Courier Status</button>
       <button class="btn-light" id="ordDeleteBtn" onclick="deleteOrderRecord()" style="display:none">Delete</button>
       <button class="btn-pink" onclick="saveOrder()">Save Order</button>
     </div>
@@ -957,6 +1002,7 @@
 <script src="js/firebase-config.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/memoexport.js"></script>
+<script src="js/courier.js"></script>
 <script src="js/app.js"></script>
 <script>
 // Offline + installable on a phone. Needs http(s); the service worker stays
