@@ -327,6 +327,82 @@ eq(num(findStock(regProd.id).available), beforeRebase,
 eq(num(findStock(regProd.id).sold), soldBeforeRebase,
   'and they agree on the sold counter too');
 
+console.log('\n--- a return takes the money off the memo, full and partial ---');
+/* The owner's complaint: a parcel (full or partial) came back but the money was not
+   deducted. A return is goods the shop holds again, so the customer cannot still owe
+   for them. Drives the real openReturn/saveReturn path. */
+db = blankDB();
+const rp = db.products[0];
+stockOf(rp.id).opening = 100;
+function saleFor(name, qty) {
+  nav('memo');
+  newMemo();
+  el('customerName').value = name;
+  el('customerPhone').value = '';
+  memoDraft = { items: [{ productId: rp.id, qty: qty, rate: 100, cost: 60, vat: 0 }] };
+  saveMemo();
+  return db.memos[db.memos.length - 1];
+}
+
+/* Full return of an undelivered memo: the whole charge drops. */
+const full = saleFor('Full Return', 10);
+eq(memoRemainingDue(full), 1000, 'a fresh 1000 memo owes 1000');
+openReturn(full.id);
+el('rtQty').value = 10;
+returnQtyChanged();
+el('rtCondition').value = 'good';
+saveReturn();
+eq(memoRemainingDue(full), 0, 'a full return clears the whole 1000 charge');
+eq(totalReceivable(), 0, 'and the dashboard receivable drops to 0');
+
+/* Partial return: only the returned pieces come off, the kept goods still count. */
+const part = saleFor('Partial Return', 10);
+openReturn(part.id);
+el('rtQty').value = 4;
+returnQtyChanged();
+el('rtCondition').value = 'good';
+saveReturn();
+eq(memoRemainingDue(part), 600, 'a 4-of-10 return leaves 600 of the 1000 owed');
+eq(totalReceivable(), 600, 'the dashboard agrees with the memo');
+const partCust = db.customers.find(c => c.name === 'Partial Return');
+eq(customerDue(partCust).due, 600, 'the customer ledger shows the reduced 600, not 1000');
+
+/* Deleting the return puts the money back where it was. */
+deleteReturn(db.returns.find(r => r.memoId === part.id).id);
+eq(memoRemainingDue(part), 1000, 'undoing the return restores the full charge');
+
+/* A memo already delivered and collected, then partly returned: due never goes
+   negative, and no money is counted against goods that came back. */
+const paid = saleFor('Paid Then Return', 10);
+openDelivery(paid.id);
+el('dlQty').value = 10;
+el('dlCollect').value = 1000;
+el('dlDriver').value = 'Jamal';
+saveDelivery();
+eq(memoRemainingDue(paid), 0, 'fully delivered and collected, nothing owed');
+openReturn(paid.id);
+el('rtQty').value = 4;
+returnQtyChanged();
+el('rtCondition').value = 'good';
+saveReturn();
+eq(memoRemainingDue(paid), 0, 'a later return never pushes the due below zero');
+eq(customerDue(db.customers.find(c => c.name === 'Paid Then Return')).due, 0,
+  'and the customer ledger stays at zero, not negative');
+
+/* The profit report must not call a returned parcel a sale. Isolated so the figure
+   is the one memo's contribution, not the sum of every memo the section created. */
+db = blankDB();
+stockOf(db.products[0].id).opening = 100;
+const plMemo = saleFor('P&L Return', 10);
+eq(plSummary(today(), today()).sales, 1000, 'P&L counts the full 1000 before any return');
+openReturn(plMemo.id);
+el('rtQty').value = 5;
+returnQtyChanged();
+el('rtCondition').value = 'good';
+saveReturn();
+eq(plSummary(today(), today()).sales, 500, 'P&L drops to the 500 of goods kept, not the full sale');
+eq(plSummary(today(), today()).grossProfit, 200, 'and profit drops with it (300 to 200)');
+
 console.log('\n--- returns sync to the sheet ---');
 const syncSrc = fs.readFileSync(path.join(root, 'js', 'sync.js'), 'utf8');
 ok(/function pushRecord|function syncPush/.test(syncSrc), 'the push path exists for a return');

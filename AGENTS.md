@@ -96,6 +96,40 @@ Two more native-only divergences were hiding behind that one:
 Native memo delete now goes through `Store.deleteMemo()`, which takes the memo's returns and
 deliveries with it, matching the web build's `deleteMemo()`.
 
+### Fourth bug the owner named: a return did not deduct the money
+A parcel came back (full or partial) and the customer's due/receivable did not move — the money
+for goods the shop now holds again was still being owed. The stock side was already right; the
+money side never netted returns at all. The rule, now shared by web and native:
+
+- `returnedValueOnMemo(memo)` values each returned piece at the rate the memo charged for it
+  (walking the return's own lines against the memo lines, so a partial return drops only the
+  right products). A return record with no lines — an older Android record, which stores `lines`
+  not `items` — falls back to the memo's average rate, so it still comes off. **The web helper
+  reads both `items` and `lines`, because both keys are in the wild on merged data.**
+- `memoCharge(memo)` = `grandTotal` scaled by the value of goods kept, so a memo with no returns
+  reads exactly its stored grand total (every existing figure is untouched).
+- `memoRemainingDue` = `memoCharge − advance − collected`, floored at 0. This is the ONE place the
+  due moves, so the dashboard, customer ledger, ageing and print sheet all follow automatically.
+  A later return on an already-collected memo therefore stays at 0, never negative.
+- `collectableOnMemo` (the delivery collection clamp) and the Android `recordCollection` /
+  `collectableOnMemo` now use the remaining due, which already nets returns — a return can never
+  re-open money for goods that came back.
+- `customerDue` (web) nets `memoCharge` per memo, so the customer ledger drops the moment a
+  parcel is returned.
+- **Profit must not count a returned parcel as a sale.** `plSummary`, `profitRows`,
+  `monthlyPLHTML` and the dashboard 14-day chart scale each memo's subtotal/cogs/profit by
+  `(1 − returnedValue/soldValue)`, per-product where the report is per-product. Gross profit
+  keeps `+ deliveryCharge` (existing behaviour) — dropping it silently moved the P&L by the
+  delivery charge. Mirrored in native `Store.plSummary`.
+- The memo print sheet shows a "Less: Returned goods" line (the stored `grandTotal` is a record
+  of the sale and is left as-is; the *Due* line uses the charge, so the printed bill settles).
+- `collectedPrefill` (web and native) now splits the remaining due over the memo's **deliverable**
+  qty (`totalQty − returnedQty`), not `totalQty`, so a partial memo prefills sensibly.
+
+Tests: `texpark-pro/test/return.test.js` ("a return takes the money off the memo, full and
+partial") and `texpark-pro/test/native.test.js` ("a parcel return deducts the money…"), both
+also asserting the web and native figures match.
+
 ### Second bug the owner named: the caret jumped out of the box
 `memoSet()` called `renderMemoLines()`, which replaced `memoRows.innerHTML` on every keystroke —
 so after the first digit the box lost focus and typing stopped. Now:

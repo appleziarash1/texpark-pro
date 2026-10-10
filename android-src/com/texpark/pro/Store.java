@@ -900,7 +900,10 @@ public class Store {
      *  three tenths of what is owed. The owner can overwrite it. */
     public double collectedPrefill(Map<String, Object> memo, double qty) {
         double remaining = memoRemainingDue(memo);
-        double sold = num(memo == null ? null : memo.get("totalQty"));
+        double sold = 0;
+        if (memo != null) {
+            sold = Math.max(0, num(memo.get("totalQty")) - returnedQtyOf(str(memo, "id")));
+        }
         if (sold <= 0) return remaining;
         double share = Math.min(1, Math.max(0, qty / sold));
         return round2(remaining * share);
@@ -925,7 +928,7 @@ public class Store {
      *  still owed is clamped down so no memo reads a negative due. The receipt is
      *  saved in the same commit as the delivery, so every screen moves together. */
     public Map<String, Object> recordCollection(Map<String, Object> memo, String deliveryId, double amount) {
-        double owed = memoRemainingDue(memo);
+        double owed = collectableOnMemo(memo);
         double amt = Math.max(0, Math.min(amount, owed));
         if (amt <= 0) return null;
         Map<String, Object> pay = new LinkedHashMap<String, Object>();
@@ -1081,12 +1084,22 @@ public class Store {
         for (Object o : list("memos")) {
             Map<String, Object> m = rec(o);
             if (!dateInRange(str(m, "date"), from, to)) continue;
-            sales = round2(sales + num(m.get("subtotal")));
+            /* Net of returned goods so a returned parcel cannot inflate turnover or
+               profit. Mirrors the web P&L. */
+            double soldValue = 0;
+            for (Object io : Json.arr(m.get("items"))) {
+                Map<String, Object> it = rec(io);
+                soldValue += num(it.get("qty")) * num(it.get("rate"));
+            }
+            double ratio = soldValue > 0 ? Math.min(1, returnedValueOnMemo(m) / soldValue) : 0;
+            double mSales = round2(num(m.get("subtotal")) * (1 - ratio));
+            double mCogs = round2(num(m.get("cogs")) * (1 - ratio));
+            sales = round2(sales + mSales);
             discount = round2(discount + num(m.get("discount")));
             deliveryIncome = round2(deliveryIncome + num(m.get("deliveryCharge")));
             vatCollected = round2(vatCollected + num(m.get("vat")));
-            cogs = round2(cogs + num(m.get("cogs")));
-            grossProfit = round2(grossProfit + num(m.get("profit")));
+            cogs = round2(cogs + mCogs);
+            grossProfit = round2(grossProfit + round2(mSales - num(m.get("discount")) + num(m.get("deliveryCharge")) - mCogs));
         }
         double expense = 0;
         for (Object o : list("expenses")) {
@@ -1120,12 +1133,78 @@ public class Store {
         return a;
     }
 
-    /** What a memo still owes: grand total minus advance minus what its deliveries
-     *  have collected, floored at zero. Derived, never hand-edited, so a delivery
-     *  marked delivered drops the customer's due the moment it is saved. */
+    /** The money value of the goods that came back from a memo: each returned piece
+     *  valued at the rate the memo charged. An old return with no lines is valued at
+     *  the memo's average rate, so it still comes off the charge. Mirrors the web. */
+    public double returnedValueOnMemo(Map<String, Object> memo) {
+        if (memo == null) return 0;
+        String memoId = str(memo, "id");
+        double soldValue = 0;
+        for (Object io : Json.arr(memo.get("items"))) {
+            Map<String, Object> it = rec(io);
+            soldValue += num(it.get("qty")) * num(it.get("rate"));
+        }
+        List<Object> items = Json.arr(memo.get("items"));
+        double soldQty = num(memo.get("totalQty"));
+        double value = 0;
+        boolean any = false;
+        for (Object o : list("returns")) {
+            Map<String, Object> r = rec(o);
+            if (!str(r, "memoId").equals(memoId)) continue;
+            any = true;
+            List<Object> lines = Json.arr(r.get("items"));
+            if (lines.isEmpty()) lines = Json.arr(r.get("lines"));
+            if (!lines.isEmpty()) {
+                for (Object lo : lines) {
+                    Map<String, Object> ln = rec(lo);
+                    double rate = 0;
+                    for (Object io : items) {
+                        Map<String, Object> it = rec(io);
+                        if (!str(it, "productId").isEmpty()
+                            && str(it, "productId").equals(str(ln, "productId"))) { rate = num(it.get("rate")); break; }
+                    }
+                    value += num(ln.get("qty")) * rate;
+                }
+            } else if (soldQty > 0) {
+                value += num(r.get("qty")) * (soldValue / soldQty);
+            }
+        }
+        if (!any) return 0;
+        return round2(value);
+    }
+
+    /** What the customer is charged: the goods they kept, at memo rates. Returned
+     *  pieces come off the grand total, so a returned parcel stops being owed. */
+    public double memoCharge(Map<String, Object> memo) {
+        if (memo == null) return 0;
+        double grand = num(memo.get("grandTotal"));
+        if (grand <= 0) return grand;
+        double back = returnedValueOnMemo(memo);
+        if (back <= 0) return grand;
+        double soldValue = 0;
+        for (Object io : Json.arr(memo.get("items"))) {
+            Map<String, Object> it = rec(io);
+            soldValue += num(it.get("qty")) * num(it.get("rate"));
+        }
+        if (soldValue <= 0) return grand;
+        double kept = Math.max(0, soldValue - back);
+        return round2(grand * kept / soldValue);
+    }
+
+    /** The most a memo can still collect: its charge less the advance already taken.
+     *  A receipt is clamped to this so a return cannot leave a delivered memo reading
+     *  as if the customer still owed for goods that came back. */
+    public double collectableOnMemo(Map<String, Object> memo) {
+        return memoRemainingDue(memo);
+    }
+
+    /** What a memo still owes: the charge for the goods kept, minus advance and what
+     *  its deliveries have collected, floored at zero. Derived, never hand-edited, so
+     *  a delivery marked delivered — or a parcel that came back — drops the due the
+     *  moment it is saved. Mirrors the web. */
     public double memoRemainingDue(Map<String, Object> memo) {
         if (memo == null) return 0;
-        return Math.max(0, round2(num(memo.get("grandTotal"))
+        return Math.max(0, round2(memoCharge(memo)
             - num(memo.get("advance")) - collectedOnMemo(str(memo, "id"))));
     }
 
