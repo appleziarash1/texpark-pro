@@ -27,7 +27,8 @@ const SHEETS = {
   profit: 'Profit',
   backup: 'Backup',
   records: 'Records',
-  appLog: 'App_Log'
+  appLog: 'App_Log',
+  orders: 'Orders'
 };
 
 const HEADERS = {
@@ -68,6 +69,10 @@ const HEADERS = {
      duplicated. A record larger than one cell is split like a backup. */
   records: ['Timestamp', 'Collection', 'Record ID', 'At', 'Deleted',
     'JSON', 'Chunk', 'Of', 'Checksum'],
+  /* The Sheet fallback for orders, for devices without Firestore (the Android app).
+     Keyed on Order No so a re-sent update replaces its row rather than duplicating. */
+  orders: ['Timestamp', 'Order No', 'Order Date', 'Customer', 'Phone', 'Product', 'Qty',
+    'Delivery Date', 'Status', 'Priority', 'Note'],
   appLog: ['Timestamp', 'Type', 'Data']
 };
 
@@ -281,6 +286,7 @@ function doPost(e) {
     else if (type === 'expense') saveExpense_(ss, d);
     else if (type === 'backup') result = saveBackup_(ss, d);
     else if (type === 'record') result = saveRecord_(ss, d);
+    else if (type === 'order') result = saveOrder_(ss, d);
     else if (type === 'customer') sheet_(ss, 'customers').appendRow([new Date(), d.name || '', d.phone || '', d.address || '']);
     else if (type === 'supplier') sheet_(ss, 'suppliers').appendRow([new Date(), d.name || '', d.contact || '', d.phone || '', d.address || '']);
     else { sheet_(ss, 'appLog').appendRow([new Date(), type || 'unknown', JSON.stringify(d)]); result = 'Logged'; }
@@ -437,6 +443,30 @@ function saveRecord_(ss, d) {
   ensureRows_(sh, last + chunks);
   sh.getRange(last + 1, 1, chunks, cols).setValues(block);
   return 'Record ' + coll + '/' + rid + ' saved (' + chunks + ' chunk' + (chunks === 1 ? '' : 's') + ')';
+}
+
+/* Order Command Center, written to the Sheet as a fallback for devices without
+   Firestore. Keyed on Order No so an update replaces its row instead of stacking a
+   duplicate, and read back by the Android app and by sheet-based catch-up. */
+function saveOrder_(ss, d) {
+  const sh = sheet_(ss, 'orders');
+  const no = String(d.orderNo || '');
+  if (!no) throw new Error('Order needs an Order No.');
+  const rec = [new Date(), no, d.orderDate || '', d.customerName || d.customer || '',
+    d.phone || '', d.productName || d.product || '', n_(d.qty), d.deliveryDate || '',
+    d.status || 'received', d.priority || 'normal', d.note || ''];
+  ensureCols_(sh, HEADERS.orders.length);
+  const vals = sh.getDataRange().getValues();
+  for (let i = 1; i < vals.length; i++) {
+    if (String(vals[i][1] || '') === no) {
+      sh.getRange(i + 1, 1, 1, rec.length).setValues([rec]);
+      return 'Order ' + no + ' updated';
+    }
+  }
+  const last = sh.getLastRow();
+  ensureRows_(sh, last + 1);
+  sh.getRange(last + 1, 1, 1, rec.length).setValues([rec]);
+  return 'Order ' + no + ' saved';
 }
 
 /* Read back every record newer than `since`, reassembled per Collection + Record ID,

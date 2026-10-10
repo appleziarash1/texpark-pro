@@ -98,6 +98,85 @@
           <div class="card"><h2>Recent Memos</h2><div id="dashMemos"></div></div>
           <div class="card"><h2>Delivery Pending</h2><div id="dashDeliveries"></div></div>
         </div>
+
+        <!-- Order Command Center entry: the owner asked for a button at the top of
+             the dashboard that opens the order overview. The counts come from the
+             same orderSummary() the Orders page uses, so they can never disagree. -->
+        <div class="card" style="margin-top:13px">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <div>
+              <h2 style="margin:0">Order Command Center</h2>
+              <div class="muted" style="font-size:12.5px">Urgent orders, delivery calendar, reminders and the full order journey</div>
+            </div>
+            <button class="btn-primary" onclick="nav('orders')">Open Orders &#8594;</button>
+          </div>
+          <div class="order-summary" id="dashOrderSummary"></div>
+        </div>
+      </section>
+
+      <!-- ===== ORDERS (Command Center) ===== -->
+      <section id="page-orders" class="page">
+        <h1>Order Command Center</h1>
+        <div class="muted">Every order from entry to delivery — overdue work first, so nothing is missed</div>
+
+        <div class="order-summary" id="ordSummary"></div>
+
+        <div class="two" style="margin-top:13px">
+          <div class="card">
+            <div class="cardhead"><h2 style="margin:0">Needs Your Attention</h2><span class="pill warn" id="ordAttnCount">0</span></div>
+            <div id="ordAttention"></div>
+          </div>
+          <div class="card">
+            <div class="cardhead"><h2 style="margin:0">Reminder Center</h2><span class="pill" id="ordRemindCount">0</span></div>
+            <div class="muted" style="font-size:12.5px">Preparation, dispatch and overdue alerts</div>
+            <div id="ordReminders"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:13px">
+          <div class="cardhead">
+            <h2 style="margin:0">All Orders</h2>
+            <button class="btn-primary btn-sm" onclick="openOrder()">+ New Order</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <input id="ordSearch" oninput="renderOrders()" placeholder="Search order no / customer / product...">
+            <select id="ordFilterStatus" onchange="renderOrders()"></select>
+            <select id="ordFilterTime" onchange="renderOrders()">
+              <option value="">All time</option>
+              <option value="overdue">Overdue</option>
+              <option value="today">Due today</option>
+              <option value="week">Next 7 days</option>
+              <option value="month">This month</option>
+            </select>
+          </div>
+          <div id="ordBoard" class="ordboard"></div>
+        </div>
+
+        <div class="card" style="margin-top:13px">
+          <div class="cardhead">
+            <h2 style="margin:0">Delivery Calendar</h2>
+            <div class="row" style="gap:6px">
+              <button class="btn-light btn-sm" onclick="ordCalShift(-1)">&#8592; Prev</button>
+              <button class="btn-light btn-sm" onclick="ordCalToday()">Today</button>
+              <button class="btn-light btn-sm" onclick="ordCalShift(1)">Next &#8594;</button>
+            </div>
+          </div>
+          <div class="muted" id="ordCalTitle" style="margin-top:6px"></div>
+          <div id="ordCalendar" class="ordcal"></div>
+          <div id="ordCalDay" class="ordcalday"></div>
+        </div>
+
+        <div class="card" style="margin-top:13px">
+          <h2>Order Lifecycle</h2>
+          <div class="muted">An order moves through these stages. Its delivery date decides overdue, and completing it clears the warning.</div>
+          <div class="lifecycle">
+            <div class="lc"><span>01</span><b>Order Received</b><i>The customer has confirmed the order.</i></div>
+            <div class="lc"><span>02</span><b>In Progress</b><i>Preparation or production is running.</i></div>
+            <div class="lc"><span>03</span><b>Ready to Deliver</b><i>Goods are ready for dispatch.</i></div>
+            <div class="lc"><span>04</span><b>Dispatched</b><i>Goods have been sent.</i></div>
+            <div class="lc"><span>05</span><b>Delivered</b><i>The customer has received the goods.</i></div>
+          </div>
+        </div>
       </section>
 
       <!-- ===== MEMO ===== -->
@@ -483,6 +562,9 @@
           </div>
           <div class="formgrid" style="margin-top:11px">
             <div><label>Default Low-Stock Level</label><input id="stLowStock" type="number"></div>
+            <div><label>Order No. Prefix</label><input id="stOrderPrefix" maxlength="8" placeholder="TP-"></div>
+            <div><label>Reminder — days before delivery</label><input id="stReminderLead" type="number" min="0" max="30">
+              <div class="hint">Used unless an order sets its own lead time</div></div>
             <div style="display:flex;align-items:flex-end">
               <label style="display:flex;gap:8px;align-items:center;font-weight:600">
                 <input id="stAutoBackup" type="checkbox" style="width:auto"> Auto daily backup on
@@ -687,6 +769,49 @@
     <div class="modal-actions">
       <button class="btn-light" onclick="closeReturn()">Cancel</button>
       <button class="btn-pink" onclick="saveReturn()">Save Return</button>
+    </div>
+  </div>
+</div>
+
+<div id="orderModal" class="modal" onclick="if(event.target===this)closeOrder()">
+  <div class="modal-card">
+    <h2 id="ordModalTitle">New Order</h2>
+    <div class="muted" id="ordModalInfo"></div>
+    <input id="ordId" type="hidden">
+    <div class="formgrid" style="margin-top:12px">
+      <div><label>Order No.</label><input id="ordNo"></div>
+      <div><label>Order Date</label><input id="ordDate" type="date"></div>
+      <div><label>Select saved customer</label><select id="ordCustList" onchange="ordPickCustomer(this.value)"></select></div>
+      <div><label>Customer Name *</label>
+        <input id="ordCustomer" list="ordCustomerNames" autocomplete="off" placeholder="Type a name — matched automatically">
+        <datalist id="ordCustomerNames"></datalist>
+      </div>
+      <div><label>Phone</label><input id="ordPhone"></div>
+      <div class="wide"><label>Product / Description *</label>
+        <input id="ordProduct" list="ordProductNames" placeholder="e.g. Girls L/S T-shirt">
+        <datalist id="ordProductNames"></datalist>
+      </div>
+      <div><label>Quantity</label><input id="ordQty" type="number" min="0" step="1"></div>
+      <div><label>Delivery Date *</label><input id="ordDeliveryDate" type="date"></div>
+      <div><label>Status</label><select id="ordStatus"></select></div>
+      <div><label>Priority</label>
+        <select id="ordPriority">
+          <option value="normal">Normal</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </div>
+      <div><label>Reminder — days before delivery</label>
+        <input id="ordRemindLead" type="number" min="0" max="30" placeholder="default">
+        <div class="hint">Leave blank to use the shop default</div>
+      </div>
+      <div class="wide"><label>Note</label><textarea id="ordNote"></textarea></div>
+    </div>
+    <div id="ordHistory" class="ordhistory"></div>
+    <div class="modal-actions">
+      <button class="btn-light" onclick="closeOrder()">Cancel</button>
+      <button class="btn-light" id="ordDeleteBtn" onclick="deleteOrderRecord()" style="display:none">Delete</button>
+      <button class="btn-pink" onclick="saveOrder()">Save Order</button>
     </div>
   </div>
 </div>

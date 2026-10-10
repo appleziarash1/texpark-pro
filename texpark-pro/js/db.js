@@ -22,7 +22,9 @@ const DEFAULT_SETTINGS = {
   lowStockLevel: 10,
   vatPercent: 0,
   autoBackup: true,
-  autoPull: true        // pull new data from the cloud by itself
+  autoPull: true,       // pull new data from the cloud by itself
+  reminderDefaultLead: 1,  // days before a delivery date to remind, unless an order overrides it
+  orderPrefix: 'TP-'
 };
 
 function blankDB() {
@@ -45,6 +47,7 @@ function blankDB() {
     expenses: [],     // {date, head, amount, note}
     memos: [],
     deliveries: [],
+    orders: [],       // order command center: {orderNo, customerId, customerName, productName, qty, deliveryDate, status, priority, reminders, history[]}
     returns: [],      // parcels sent back: {memoId, qty, date, condition, ...}
     payments: [],     // customer receipts: {date, customerId, amount, method, note}
     users: defaultUsers(),  // a fresh install always has a way in
@@ -83,7 +86,7 @@ function migrate(d) {
   const base = blankDB();
   if (!d || typeof d !== 'object') return base;
   d.version = 2;
-  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments', 'users']
+  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'orders', 'returns', 'payments', 'users']
     .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
   if (!Array.isArray(d.tombstones)) d.tombstones = [];
   d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
@@ -171,7 +174,7 @@ const SNAP_KEY = 'texpark_pro_snapshots';
    and the format is fixed-width, so a plain string compare is correct and does not
    depend on which machine's clock does the merging. */
 const MERGE_KEYS = ['products', 'suppliers', 'customers', 'stock', 'ledger',
-                    'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments',
+                    'purchases', 'expenses', 'memos', 'deliveries', 'orders', 'returns', 'payments',
                     'users'];
 const TOMB_MAX = 4000;                 // plenty of history; stops unbounded growth
 
@@ -691,6 +694,101 @@ function pendingQtyOf(memo) {
   return Math.max(0, num(memo.totalQty) - deliveredQtyOf(memo.id) - returnedQtyOf(memo.id));
 }
 
+/* ============================ Orders (Command Center) ============================
+   An order is the promise the shop made to a customer: what was ordered, and when it
+   is due. It is deliberately NOT a memo - a memo is what was actually sold. Several
+   orders can be settled by one memo, one order can be split across deliveries, and an
+   order exists before any sale does. Status is stored, not derived, because the owner
+   moves it as the work progresses (received → in progress → ready → dispatched →
+   delivered); 'overdue' is derived from the date, so it can never go stale. */
+
+const ORDER_STATUSES = ['received', 'in_progress', 'ready', 'dispatched', 'delivered'];
+const ORDER_STATUS_LABEL = {
+  received: 'Order Received', in_progress: 'In Progress', ready: 'Ready to Deliver',
+  dispatched: 'Dispatched', delivered: 'Delivered'
+};
+const ORDER_ACTIVE_STATUSES = ['received', 'in_progress', 'ready', 'dispatched'];
+/* Whole days from a to b, on the YYYY-MM-DD prefix. Both sides are the same UTC
+   format, so this is a plain calendar-day difference with no timezone drift. */
+function daysBetween_(a, b) {
+  const da = new Date(String(a).slice(0, 10) + 'T00:00:00Z');
+  const db_ = new Date(String(b).slice(0, 10) + 'T00:00:00Z');
+  if (isNaN(da) || isNaN(db_)) return 0;
+  return Math.round((db_ - da) / 86400000);
+}
+function addDays_(dateStr, n) {
+  const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + num(n));
+  return d.toISOString().slice(0, 10);
+}
+function isOrderActive(o) { return ORDER_ACTIVE_STATUSES.indexOf(o && o.status) !== -1; }
+/* Overdue means the delivery date is behind today and the goods are not delivered. */
+function isOrderOverdue(o, ref) {
+  if (!o || !o.deliveryDate) return false;
+  if (!isOrderActive(o)) return false;
+  return String(o.deliveryDate).slice(0, 10) < String(ref || today()).slice(0, 10);
+}
+function orderDaysLate_(o, ref) {
+  return Math.max(0, daysBetween_(o.deliveryDate, ref || today()));
+}
+/* The single place a status label is decided, so the board, calendar and priority
+   list always agree. */
+function orderDisplayStatus(o, ref) {
+  if (o.status === 'delivered') return 'delivered';
+  if (isOrderOverdue(o, ref)) return 'overdue';
+  return o.status || 'received';
+}
+function orderSummary(ref) {
+  const r = ref || today();
+  const list = db.orders || [];
+  const active = list.filter(isOrderActive);
+  const up = addDays_(r, 7);
+  const out = {
+    active: active.length,
+    upcoming7: active.filter(o => o.deliveryDate >= r && o.deliveryDate <= up).length,
+    overdue: active.filter(o => isOrderOverdue(o, r)).length,
+    ready: (db.orders || []).filter(o => o.status === 'ready').length
+  };
+  return out;
+}
+/* Sorted most-urgent-first: overdue (most days late) then soonest delivery date. */
+function ordersByUrgency(ref) {
+  const r = ref || today();
+  return (db.orders || []).slice().sort((a, b) => {
+    const ao = isOrderOverdue(a, r) ? 0 : 1, bo = isOrderOverdue(b, r) ? 0 : 1;
+    if (ao !== bo) return ao - bo;
+    const ad = String(a.deliveryDate || ''), bd = String(b.deliveryDate || '');
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return String(a.orderNo || '') < String(b.orderNo || '') ? -1 : 1;
+  });
+}
+function ordersOnDate(date, ref) {
+  return (db.orders || []).filter(o => String(o.deliveryDate || '').slice(0, 10) === String(date).slice(0, 10));
+}
+/* Per-order reminder lead time wins over the shop default, so one order can remind 3
+   days out while another reminds 1 day out, as the owner asked. */
+function orderRemindLead_(o) {
+  const v = num(o && o.remindLeadDays);
+  if (o && o.remindLeadDays !== undefined && o.remindLeadDays !== null && String(o.remindLeadDays) !== '') return Math.max(0, v);
+  const d = num(db.settings && db.settings.reminderDefaultLead);
+  return d || 1;
+}
+/* The reminders due for an order as of `ref`: preparation N days before, dispatch on
+   the day, and one overdue alert per day late. Pure, so the same logic drives the
+   Reminder Center and the test. */
+function orderRemindersFor(o, ref) {
+  const r = ref || today();
+  const out = [];
+  if (!o || !o.deliveryDate || o.status === 'delivered') return out;
+  const lead = orderRemindLead_(o);
+  const dd = String(o.deliveryDate).slice(0, 10);
+  const prepFrom = addDays_(dd, -lead);
+  if (r >= prepFrom && r <= dd) out.push({ kind: 'prep', date: r, text: 'Check preparation for ' + (o.orderNo || '') });
+  if (r === dd) out.push({ kind: 'dispatch', date: r, text: 'Confirm dispatch today for ' + (o.orderNo || '') });
+  if (isOrderOverdue(o, r)) out.push({ kind: 'overdue', date: r, text: 'Overdue by ' + orderDaysLate_(o, r) + ' day(s): ' + (o.orderNo || '') });
+  return out;
+}
+
 /* A return puts the goods back into the stock book. `condition` decides whether they
    can be sold again: 'good' frees the sale, 'damaged' records the loss and keeps the
    goods out of available, so a damaged parcel never looks like sellable stock. */
@@ -944,10 +1042,10 @@ function hash(s) {
 }
 
 const PERMS = {
-  admin:     ['dashboard', 'memo', 'history', 'purchase', 'supplier', 'products', 'stock', 'delivery', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'users', 'settings', 'backup'],
-  manager:   ['dashboard', 'memo', 'history', 'purchase', 'supplier', 'products', 'stock', 'delivery', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'backup'],
-  salesman:  ['dashboard', 'memo', 'history', 'products', 'stock', 'delivery', 'customers', 'ledger', 'backup'],
-  accountant:['dashboard', 'history', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'supplier', 'backup']
+  admin:     ['dashboard', 'orders', 'memo', 'history', 'purchase', 'supplier', 'products', 'stock', 'delivery', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'users', 'settings', 'backup'],
+  manager:   ['dashboard', 'orders', 'memo', 'history', 'purchase', 'supplier', 'products', 'stock', 'delivery', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'backup'],
+  salesman:  ['dashboard', 'orders', 'memo', 'history', 'products', 'stock', 'delivery', 'customers', 'ledger', 'backup'],
+  accountant:['dashboard', 'orders', 'history', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'supplier', 'backup']
 };
 
 /* A fresh install always has a way in; a merge that emptied users must not lock the

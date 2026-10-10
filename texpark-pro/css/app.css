@@ -279,3 +279,103 @@ tbody tr:hover td{background:#f7fafd}
   padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-top:6px;background:#fff}
 .rtline>span:first-child{font-weight:600;font-size:13.5px}
 .rtline input{width:90px;text-align:right}
+
+/* ============ Order Command Center ============
+   Premium, calm, information-first: summary tiles up top, urgent work next, then
+   the full board, calendar and lifecycle. Colors carry meaning (overdue red, due
+   today/attention amber, ready green, in-progress violet, delivered muted), so the
+   owner reads priority before he reads text. */
+.cardhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.order-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-top:13px}
+.ostile{position:relative;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fff;
+  box-shadow:var(--shadow);overflow:hidden}
+.ostile::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--navy)}
+.ostile .olabel{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;color:var(--muted)}
+.ostile .ovalue{font-size:30px;font-weight:800;line-height:1.1;margin-top:6px;color:var(--navy)}
+.ostile .osub{font-size:11.5px;color:var(--muted);margin-top:3px}
+.ostile.blue::before{background:#2b7fff}
+.ostile.violet::before{background:var(--violet)}
+.ostile.danger::before{background:var(--red)}
+.ostile.danger .ovalue{color:var(--red)}
+.ostile.green::before{background:var(--green)}
+.ostile.green .ovalue{color:var(--green)}
+.ostile.violet .ovalue{color:var(--violet)}
+
+/* Priority list — the reason the dashboard exists */
+.attn{border:1px solid var(--line);border-left:4px solid var(--line);border-radius:10px;padding:11px 13px;margin-top:9px;background:#fff}
+.attn.overdue{border-left-color:var(--red);background:#fff7fa}
+.attn.soon{border-left-color:var(--orange);background:#fffdf5}
+.attn .arow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.attn .ano{font-weight:800;color:var(--navy)}
+.attn .acust{font-weight:600}
+.attn .ameta{font-size:12.5px;color:var(--muted);margin-top:4px}
+.attn .aact{float:right}
+.attn .aact button{margin-left:6px}
+.remitem{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line)}
+.remitem:last-child{border-bottom:0}
+.remitem .rdot{width:9px;height:9px;border-radius:99px;margin-top:5px;flex:none;background:var(--navy)}
+.remitem.prep .rdot{background:#2b7fff}
+.remitem.dispatch .rdot{background:var(--green)}
+.remitem.overdue .rdot{background:var(--red)}
+.remitem .rtext{font-size:13px}
+.remitem .rsub{font-size:11.5px;color:var(--muted)}
+
+/* Order board cards */
+.ordboard{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+.ocard{border:1px solid var(--line);border-radius:12px;padding:13px 14px;background:#fff;box-shadow:var(--shadow);
+  border-top:4px solid var(--line);transition:.15s;cursor:pointer}
+.ocard:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(16,32,64,.12)}
+.ocard.s-overdue{border-top-color:var(--red)}
+.ocard.s-ready{border-top-color:var(--green)}
+.ocard.s-in_progress{border-top-color:var(--violet)}
+.ocard.s-dispatched{border-top-color:#2b7fff}
+.ocard.s-received{border-top-color:var(--orange)}
+.ocard.s-delivered{border-top-color:#9fb0c8;opacity:.75}
+.ocard .ohead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ocard .ono{font-weight:800;color:var(--navy);font-size:14.5px}
+.ocard .ocust{font-weight:600;margin-top:7px;font-size:13.5px}
+.ocard .oprod{font-size:13px;color:#33475f;margin-top:2px}
+.ocard .odate{font-size:12px;color:var(--muted);margin-top:8px;display:flex;justify-content:space-between}
+.ocard .oprio{font-size:10.5px;font-weight:800;color:var(--red);text-transform:uppercase}
+.badge{display:inline-block;border-radius:99px;padding:3px 9px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+.badge.overdue{background:#ffe8ef;color:var(--red)}
+.badge.ready{background:#e5f7ee;color:#087b43}
+.badge.in_progress{background:#efe9fe;color:var(--violet)}
+.badge.dispatched{background:#e8f0ff;color:#1d5fd6}
+.badge.received{background:#fff4dc;color:#a05b00}
+.badge.delivered{background:#eef1f6;color:#5b6b82}
+
+/* Calendar */
+.ordcal{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-top:11px}
+.ordcal .cdow{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;text-align:center;padding:4px 0}
+.ordcal .cday{min-height:74px;border:1px solid var(--line);border-radius:10px;padding:7px;background:#fff;cursor:pointer;transition:.12s}
+.ordcal .cday:hover{border-color:#b9c8dc;background:#f8fbff}
+.ordcal .cday.out{opacity:.42}
+.ordcal .cday.today{border-color:var(--pink);box-shadow:0 0 0 2px #f22b7015}
+.ordcal .cday.sel{background:#edf2fb;border-color:var(--navy)}
+.ordcal .cnum{font-size:12px;font-weight:700;color:#33475f}
+.ordcal .cbar{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+.ordcal .ccount{font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 6px;display:inline-block;width:max-content}
+.ordcal .ccount.ok{background:#e5f7ee;color:#087b43}
+.ordcal .ccount.warn{background:#fff4dc;color:#a05b00}
+.ordcal .ccount.danger{background:#ffe8ef;color:var(--red)}
+.ordcalday{margin-top:12px}
+.ordcalday h3{font-size:13px;color:var(--navy);margin:0 0 6px}
+
+/* Lifecycle */
+.lifecycle{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin-top:12px}
+.lc{border:1px solid var(--line);border-radius:11px;padding:12px;background:#fff;position:relative}
+.lc span{display:inline-block;font-size:11px;font-weight:800;color:#fff;background:var(--navy);border-radius:99px;padding:2px 8px}
+.lc b{display:block;margin-top:8px;color:var(--navy);font-size:13px}
+.lc i{display:block;margin-top:4px;font-size:12px;color:var(--muted);font-style:normal}
+.ordhistory{margin-top:12px;font-size:12.5px}
+.ordhistory .hrow{padding:6px 0;border-bottom:1px dashed var(--line);color:var(--muted)}
+.ordhistory .hrow b{color:var(--navy)}
+
+@media(max-width:900px){
+  .order-summary{grid-template-columns:repeat(2,1fr)}
+  .ordboard{grid-template-columns:1fr}
+  .lifecycle{grid-template-columns:1fr 1fr}
+  .ordcal{grid-template-columns:repeat(7,1fr);gap:4px}
+  .ordcal .cday{min-height:60px;padding:5px}
+}

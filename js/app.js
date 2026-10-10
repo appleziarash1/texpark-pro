@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.10';
+const APP_VERSION = '2027-01-01.11';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -22,6 +22,7 @@ function versionNewer(a, b) {
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
+  { id: 'orders',     label: 'Orders',         ic: '\u26A1', group: 'Overview' },
   { id: 'memo',       label: 'New Sales Memo', ic: '\uFF0B', group: 'Sales' },
   { id: 'history',    label: 'Memo History',   ic: '\u25F7', group: 'Sales' },
   { id: 'delivery',   label: 'Delivery',       ic: '\u2713', group: 'Sales' },
@@ -194,6 +195,7 @@ function renderAll() {
   const p = currentPage;
   try {
     if (p === 'dashboard') renderDashboard();
+    if (p === 'orders') renderOrders();
     if (p === 'memo') calcMemo();
     if (p === 'history') renderHistory();
     if (p === 'delivery') renderDelivery();
@@ -408,8 +410,16 @@ function renderDashboard() {
     : '<div class="empty">No sales yet</div>';
 
   document.getElementById('dashDeliveries').innerHTML = pendingDeliveryHTML();
+  renderDashOrderSummary();
   renderSyncWarning();
   renderCostWarn();
+}
+
+/* The dashboard's Order Command Center entry: the same four tiles the Orders page
+   shows, from the same orderSummary(), so the two can never disagree. */
+function renderDashOrderSummary() {
+  const el = document.getElementById('dashOrderSummary');
+  if (el) el.innerHTML = orderSummaryTilesHTML();
 }
 
 function pendingDeliveryHTML() {
@@ -421,6 +431,343 @@ function pendingDeliveryHTML() {
   return '<div class="tablewrap"><table><thead><tr><th>Memo</th><th>Customer</th><th>Pending</th></tr></thead><tbody>' +
     rows.map(x => '<tr><td>' + esc(x.m.memoNo) + '</td><td>' + esc(x.m.customerName) +
       '</td><td><span class="pill warn">' + x.pend + '</span></td></tr>').join('') + '</tbody></table></div>';
+}
+
+/* ===================== Order Command Center =====================
+   The dashboard the owner asked for: a business summary, the orders that need
+   attention first, a delivery calendar, reminders, and the full order board. All
+   of the counts and colours come from the pure helpers in db.js, so the dashboard
+   banner, the Orders page and the calendar always tell the same story. */
+var orderCalMonth = null;      // 'YYYY-MM' being shown in the calendar
+var orderCalSel = null;        // 'YYYY-MM-DD' the owner last clicked
+
+function orderSummaryTilesHTML() {
+  const s = orderSummary();
+  return tile('All active', s.active, 'Active Orders', 'blue') +
+    tile('Upcoming', s.upcoming7, 'Next 7 Days', 'violet') +
+    tile('Attention', s.overdue, 'Overdue Orders', 'danger') +
+    tile('Ready', s.ready, 'Ready to Deliver', 'green');
+  function tile(label, v, sub, cls) {
+    return '<div class="ostile ' + cls + '"><div class="olabel">' + label + '</div>' +
+      '<div class="ovalue">' + String(v).padStart(2, '0') + '</div>' +
+      '<div class="osub">' + sub + '</div></div>';
+  }
+}
+
+function ordStatusBadgeHTML(status) {
+  const label = status === 'overdue' ? 'Overdue' : (ORDER_STATUS_LABEL[status] || status);
+  return '<span class="badge ' + status + '">' + esc(label) + '</span>';
+}
+
+function ordDateLabel(d) {
+  if (!d) return 'No date';
+  const parts = String(d).slice(0, 10).split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return parts[2] + ' ' + (months[num(parts[1]) - 1] || '') + ' ' + parts[0];
+}
+
+function orderCardHTML(o, ref) {
+  const st = orderDisplayStatus(o, ref);
+  return '<div class="ocard s-' + st + '" onclick="openOrder(\'' + o.id + '\')">' +
+    '<div class="ohead"><span class="ono">' + esc(o.orderNo || '(no number)') + '</span>' + ordStatusBadgeHTML(st) + '</div>' +
+    '<div class="ocust">' + esc(o.customerName || '-') + '</div>' +
+    '<div class="oprod">' + esc(o.productName || '-') + (num(o.qty) ? ' · ' + num(o.qty) + ' pcs' : '') + '</div>' +
+    '<div class="odate"><span>Delivery date</span><b>' + ordDateLabel(o.deliveryDate) + '</b></div>' +
+    (o.priority && o.priority !== 'normal'
+      ? '<div class="oprio">' + esc(o.priority) + ' priority</div>' : '') +
+  '</div>';
+}
+
+function renderOrders() {
+  const sumEl = document.getElementById('ordSummary');
+  if (sumEl) sumEl.innerHTML = orderSummaryTilesHTML();
+  ordFillStatusFilter();
+  renderOrderAttention();
+  renderOrderReminders();
+  renderOrderBoard();
+  if (!orderCalMonth) orderCalMonth = today().slice(0, 7);
+  renderOrderCalendar();
+}
+
+function ordFillStatusFilter() {
+  const sel = document.getElementById('ordFilterStatus');
+  if (!sel) return;
+  const cur = sel.value;
+  let html = '<option value="">All statuses</option><option value="overdue">Overdue</option>';
+  ORDER_STATUSES.forEach(s => { html += '<option value="' + s + '">' + ORDER_STATUS_LABEL[s] + '</option>'; });
+  sel.innerHTML = html;
+  sel.value = cur;
+}
+
+/* Needs Your Attention: overdue first, then anything due within three days. The
+   owner should not have to scroll the whole list to find the fire. */
+function renderOrderAttention() {
+  const ref = today();
+  const box = document.getElementById('ordAttention');
+  if (!box) return;
+  const soonCut = addDays_(ref, 3);
+  const items = ordersByUrgency(ref).filter(o => {
+    if (!isOrderActive(o)) return false;
+    return isOrderOverdue(o, ref) || (o.deliveryDate >= ref && o.deliveryDate <= soonCut);
+  }).slice(0, 8);
+  const cnt = document.getElementById('ordAttnCount');
+  if (cnt) cnt.textContent = String(items.length);
+  if (!items.length) { box.innerHTML = '<div class="empty">Nothing urgent. Every active order is on schedule.</div>'; return; }
+  box.innerHTML = items.map(o => {
+    const late = orderDaysLate_(o, ref);
+    const over = isOrderOverdue(o, ref);
+    const dueToday = String(o.deliveryDate || '').slice(0, 10) === ref;
+    const tag = over ? ('OVERDUE — ' + late + ' day' + (late === 1 ? '' : 's') + ' late')
+      : (dueToday ? 'DUE TODAY' : 'DUE ' + ordDateLabel(o.deliveryDate).toUpperCase());
+    return '<div class="attn ' + (over ? 'overdue' : 'soon') + '">' +
+      '<div class="arow"><span class="badge ' + (over ? 'overdue' : 'received') + '">' + esc(tag) + '</span>' +
+      '<span class="ano">' + esc(o.orderNo || '') + '</span><span class="acust">' + esc(o.customerName || '') + '</span>' +
+      '<span class="aact"><button class="btn-light btn-sm" onclick="openOrder(\'' + o.id + '\')">Open</button>' +
+      (o.status !== 'delivered' ? '<button class="btn-green btn-sm" onclick="setOrderStatus(\'' + o.id + '\',\'delivered\')">Mark Delivered</button>' : '') +
+      '</span></div>' +
+      '<div class="ameta">' + esc(o.productName || '') + (num(o.qty) ? ' · ' + num(o.qty) + ' pcs' : '') +
+      ' · Expected: ' + ordDateLabel(o.deliveryDate) + '</div></div>';
+  }).join('');
+}
+
+/* Reminder Center: everything due today across active orders, plus their own lead
+   time. Same pure orderRemindersFor() the tests exercise. */
+function renderOrderReminders() {
+  const ref = today();
+  const box = document.getElementById('ordReminders');
+  if (!box) return;
+  const rows = [];
+  (db.orders || []).forEach(o => {
+    orderRemindersFor(o, ref).forEach(r => rows.push({ o, r }));
+  });
+  rows.sort((a, b) => (a.r.kind === 'overdue' ? 0 : 1) - (b.r.kind === 'overdue' ? 0 : 1));
+  const cnt = document.getElementById('ordRemindCount');
+  if (cnt) cnt.textContent = String(rows.length);
+  if (!rows.length) { box.innerHTML = '<div class="empty">No reminders for today.</div>'; return; }
+  const seen = {};
+  box.innerHTML = rows.slice(0, 12).map(x => {
+    seen[x.r.kind] = true;
+    return '<div class="remitem ' + x.r.kind + '"><span class="rdot"></span><div>' +
+      '<div class="rtext">' + esc(x.r.text) + '</div>' +
+      '<div class="rsub">' + esc(x.o.customerName || '') + ' · ' + ordDateLabel(x.o.deliveryDate) + '</div></div></div>';
+  }).join('');
+}
+
+function ordSearchText(o) {
+  return [o.orderNo, o.customerName, o.phone, o.productName, o.note].map(v => String(v || '').toLowerCase()).join(' | ');
+}
+
+function renderOrderBoard() {
+  const box = document.getElementById('ordBoard');
+  if (!box) return;
+  const ref = today();
+  const q = (document.getElementById('ordSearch')?.value || '').trim().toLowerCase();
+  const fs = document.getElementById('ordFilterStatus')?.value || '';
+  const ft = document.getElementById('ordFilterTime')?.value || '';
+  const weekEnd = addDays_(ref, 7);
+  const monthEnd = ref.slice(0, 8) + '31';
+  let list = ordersByUrgency(ref);
+  if (q) list = list.filter(o => ordSearchText(o).indexOf(q) !== -1);
+  if (fs === 'overdue') list = list.filter(o => isOrderOverdue(o, ref));
+  else if (fs) list = list.filter(o => o.status === fs);
+  if (ft === 'overdue') list = list.filter(o => isOrderOverdue(o, ref));
+  if (ft === 'today') list = list.filter(o => String(o.deliveryDate || '').slice(0, 10) === ref);
+  if (ft === 'week') list = list.filter(o => o.deliveryDate >= ref && o.deliveryDate <= weekEnd);
+  if (ft === 'month') list = list.filter(o => o.deliveryDate >= ref.slice(0, 8) + '01' && o.deliveryDate <= monthEnd);
+  if (!list.length) {
+    box.innerHTML = '<div class="empty">No orders match. ' +
+      ((db.orders || []).length ? 'Try clearing the search or filters.' : 'Tap “+ New Order” to add the first one.') + '</div>';
+    return;
+  }
+  box.innerHTML = list.map(o => orderCardHTML(o, ref)).join('');
+}
+
+/* ---------- calendar ---------- */
+function ordCalShift(n) {
+  const d = new Date(orderCalMonth + '-01T00:00:00Z');
+  d.setUTCMonth(d.getUTCMonth() + n);
+  orderCalMonth = d.toISOString().slice(0, 7);
+  orderCalSel = null;
+  renderOrderCalendar();
+}
+function ordCalToday() { orderCalMonth = today().slice(0, 7); orderCalSel = null; renderOrderCalendar(); }
+function ordCalPickDate(date) { orderCalSel = date; renderOrderCalendar(); }
+
+function renderOrderCalendar() {
+  const grid = document.getElementById('ordCalendar');
+  const title = document.getElementById('ordCalTitle');
+  if (!grid) return;
+  const ref = today();
+  const [y, m] = orderCalMonth.split('-').map(x => num(x));
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  const startDow = first.getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  if (title) title.textContent = months[m - 1] + ' ' + y;
+  const dows = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  let html = dows.map(d => '<div class="cdow">' + d + '</div>').join('');
+  const cells = Math.ceil((startDow + daysInMonth) / 7) * 7;
+  for (let i = 0; i < cells; i++) {
+    const dayNum = i - startDow + 1;
+    if (dayNum < 1 || dayNum > daysInMonth) { html += '<div class="cday out"></div>'; continue; }
+    const ds = orderCalMonth + '-' + String(dayNum).padStart(2, '0');
+    const list = ordersOnDate(ds, ref);
+    const hasOver = list.some(o => isOrderOverdue(o, ref));
+    const cls = hasOver ? 'danger' : (list.length >= 5 ? 'warn' : 'ok');
+    const label = list.length
+      ? (list.length >= 5 ? list.length + ' Deliveries' : list.length + ' order' + (list.length > 1 ? 's' : ''))
+      : '';
+    html += '<div class="cday' + (ds === ref ? ' today' : '') + (ds === orderCalSel ? ' sel' : '') +
+      '" onclick="ordCalPickDate(\'' + ds + '\')"><div class="cnum">' + dayNum + '</div>' +
+      (label ? '<div class="cbar"><span class="ccount ' + cls + '">' + label + '</span></div>' : '') + '</div>';
+  }
+  grid.innerHTML = html;
+  renderOrderDay(ref);
+}
+
+function renderOrderDay(ref) {
+  const box = document.getElementById('ordCalDay');
+  if (!box) return;
+  if (!orderCalSel) { box.innerHTML = ''; return; }
+  const list = ordersOnDate(orderCalSel, ref);
+  box.innerHTML = '<h3>' + ordDateLabel(orderCalSel) + ' — ' + list.length + ' delivery' + (list.length === 1 ? '' : 'ies') + '</h3>' +
+    (list.length
+      ? '<div class="ordboard">' + list.map(o => orderCardHTML(o, ref)).join('') + '</div>'
+      : '<div class="empty">No delivery scheduled on this date.</div>');
+}
+
+/* ---------- create / edit ---------- */
+function nextOrderNo() {
+  const prefix = db.settings.orderPrefix || 'TP-';
+  let max = 0;
+  (db.orders || []).forEach(o => {
+    const mm = String(o.orderNo || '').match(/(\d+)\s*$/);
+    if (mm) max = Math.max(max, num(mm[1]));
+  });
+  return prefix + String(max + 1).padStart(4, '0');
+}
+
+function ordRenderCustomerOptions() {
+  const sel = document.getElementById('ordCustList');
+  if (sel) {
+    sel.innerHTML = '<option value="">- select saved customer -</option>' +
+      (db.customers || []).map(c => '<option value="' + c.id + '">' + esc(c.name) + (c.phone ? ' · ' + esc(c.phone) : '') + '</option>').join('');
+  }
+  const dl = document.getElementById('ordCustomerNames');
+  if (dl) dl.innerHTML = (db.customers || []).map(c => '<option value="' + esc(c.name) + '">').join('');
+  const dp = document.getElementById('ordProductNames');
+  if (dp) dp.innerHTML = (db.products || []).map(p => '<option value="' + esc(p.name) + '">').join('');
+}
+
+function ordPickCustomer(cid) {
+  const c = (db.customers || []).find(x => x.id === cid);
+  if (!c) return;
+  const n = document.getElementById('ordCustomer'); if (n) n.value = c.name || '';
+  const p = document.getElementById('ordPhone'); if (p) p.value = c.phone || '';
+}
+
+function openOrder(oid) {
+  ordRenderCustomerOptions();
+  const sel = document.getElementById('ordStatus');
+  if (sel) sel.innerHTML = ORDER_STATUSES.map(s => '<option value="' + s + '">' + ORDER_STATUS_LABEL[s] + '</option>').join('');
+  const o = oid ? (db.orders || []).find(x => x.id === oid) : null;
+  document.getElementById('ordId').value = o ? o.id : '';
+  document.getElementById('ordModalTitle').textContent = o ? 'Edit Order' : 'New Order';
+  document.getElementById('ordNo').value = o ? (o.orderNo || '') : nextOrderNo();
+  document.getElementById('ordDate').value = o ? (o.orderDate || today()) : today();
+  document.getElementById('ordCustomer').value = o ? (o.customerName || '') : '';
+  document.getElementById('ordPhone').value = o ? (o.phone || '') : '';
+  document.getElementById('ordProduct').value = o ? (o.productName || '') : '';
+  document.getElementById('ordQty').value = o ? num(o.qty) : '';
+  document.getElementById('ordDeliveryDate').value = o ? (o.deliveryDate || '') : addDays_(today(), 7);
+  const st = document.getElementById('ordStatus');
+  if (st) st.value = o ? (o.status || 'received') : 'received';
+  document.getElementById('ordPriority').value = o ? (o.priority || 'normal') : 'normal';
+  document.getElementById('ordRemindLead').value = (o && o.remindLeadDays !== undefined && o.remindLeadDays !== null && o.remindLeadDays !== '') ? o.remindLeadDays : '';
+  document.getElementById('ordNote').value = o ? (o.note || '') : '';
+  document.getElementById('ordDeleteBtn').style.display = o ? '' : 'none';
+  const info = document.getElementById('ordModalInfo');
+  if (info) info.textContent = o ? ('Created ' + ordDateLabel((o.createdAt || '').slice(0, 10)) + (o.status === 'delivered' ? ' · Delivered' : '')) : 'Fill in the order details.';
+  const hist = document.getElementById('ordHistory');
+  if (hist) {
+    const h = (o && Array.isArray(o.history)) ? o.history.slice().reverse() : [];
+    hist.innerHTML = h.length
+      ? '<div class="muted" style="font-weight:700;margin-bottom:4px">History</div>' +
+        h.map(x => '<div class="hrow"><b>' + ordDateLabel((x.at || '').slice(0, 10)) + '</b> — ' + esc(x.text || '') + '</div>').join('')
+      : '';
+  }
+  document.getElementById('orderModal').classList.add('show');
+}
+function closeOrder() { document.getElementById('orderModal').classList.remove('show'); }
+
+function saveOrder() {
+  const oid = document.getElementById('ordId').value;
+  const customer = document.getElementById('ordCustomer').value.trim();
+  const product = document.getElementById('ordProduct').value.trim();
+  const deliveryDate = document.getElementById('ordDeliveryDate').value;
+  if (!customer) return alert('Customer name is required.');
+  if (!product) return alert('Product / description is required.');
+  if (!deliveryDate) return alert('Delivery date is required.');
+  const now = new Date().toISOString();
+  const o = oid ? db.orders.find(x => x.id === oid) : null;
+  const prevStatus = o ? o.status : null;
+  const fields = {
+    orderNo: document.getElementById('ordNo').value.trim() || nextOrderNo(),
+    orderDate: document.getElementById('ordDate').value || today(),
+    customerName: customer,
+    phone: document.getElementById('ordPhone').value.trim(),
+    productName: product,
+    qty: num(document.getElementById('ordQty').value),
+    deliveryDate: deliveryDate,
+    status: document.getElementById('ordStatus').value || 'received',
+    priority: document.getElementById('ordPriority').value || 'normal',
+    remindLeadDays: document.getElementById('ordRemindLead').value === '' ? null : num(document.getElementById('ordRemindLead').value),
+    note: document.getElementById('ordNote').value.trim()
+  };
+  if (o) {
+    Object.assign(o, fields);
+    o.history = o.history || [];
+    if (prevStatus && prevStatus !== fields.status) {
+      o.history.push({ at: now, text: 'Status: ' + (ORDER_STATUS_LABEL[prevStatus] || prevStatus) + ' → ' + (ORDER_STATUS_LABEL[fields.status] || fields.status) });
+    } else {
+      o.history.push({ at: now, text: 'Order details updated' });
+    }
+  } else {
+    db.orders.push(Object.assign({ id: id(), createdAt: now, history: [{ at: now, text: 'Order created' }] }, fields));
+  }
+  if (!commit()) return;
+  const rec = o || db.orders[db.orders.length - 1];
+  syncPush('order', {
+    orderId: rec.id, orderNo: rec.orderNo, customerName: rec.customerName,
+    productName: rec.productName, qty: rec.qty, deliveryDate: rec.deliveryDate, status: rec.status
+  }, 'Order ' + rec.orderNo);
+  closeOrder();
+}
+
+function deleteOrderRecord() {
+  const oid = document.getElementById('ordId').value;
+  if (!oid) return;
+  if (!confirm('Delete this order? This cannot be undone.')) return;
+  db.orders = db.orders.filter(x => x.id !== oid);
+  if (!commit()) return;
+  closeOrder();
+}
+
+/* Quick status moves from the priority list and the board. Kept as one path so the
+   history line and the cloud push are never skipped. */
+function setOrderStatus(oid, status) {
+  const o = (db.orders || []).find(x => x.id === oid);
+  if (!o) return;
+  const prev = o.status;
+  if (prev === status) return;
+  o.status = status;
+  o.history = o.history || [];
+  o.history.push({ at: new Date().toISOString(), text: 'Status: ' + (ORDER_STATUS_LABEL[prev] || prev) + ' → ' + (ORDER_STATUS_LABEL[status] || status) });
+  if (!commit()) return;
+  syncPush('order', {
+    orderId: o.id, orderNo: o.orderNo, customerName: o.customerName,
+    productName: o.productName, qty: o.qty, deliveryDate: o.deliveryDate, status: o.status
+  }, 'Order ' + o.orderNo);
 }
 
 /* ===================== memo (the fixed screen) ===================== */
@@ -2180,6 +2527,10 @@ function renderSettings() {
   const dt = document.getElementById('stDeviceTag');
   if (dt) dt.value = db.settings.deviceTag || '';
   document.getElementById('stLowStock').value = db.settings.lowStockLevel || 10;
+  const op = document.getElementById('stOrderPrefix');
+  if (op) op.value = db.settings.orderPrefix || 'TP-';
+  const rl = document.getElementById('stReminderLead');
+  if (rl) rl.value = db.settings.reminderDefaultLead === undefined ? 1 : db.settings.reminderDefaultLead;
   document.getElementById('stShortWarn').checked = db.settings.warnOnShortStock !== false;
   document.getElementById('stAutoBackup').checked = db.settings.autoBackup !== false;
   const v = document.getElementById('appVersion');
@@ -2241,6 +2592,10 @@ function saveCompany() {
   const dtEl = document.getElementById('stDeviceTag');
   db.settings.deviceTag = dtEl ? dtEl.value.trim() : '';
   db.settings.lowStockLevel = num(document.getElementById('stLowStock').value) || 10;
+  const opEl = document.getElementById('stOrderPrefix');
+  if (opEl) db.settings.orderPrefix = opEl.value.trim() || 'TP-';
+  const rlEl = document.getElementById('stReminderLead');
+  if (rlEl) db.settings.reminderDefaultLead = Math.max(0, num(rlEl.value));
   db.settings.autoBackup = document.getElementById('stAutoBackup').checked;
   // Stamp the edit, so the other machine can tell this settings value is newer than
   // its own instead of the two of them trading the same field back and forth.
