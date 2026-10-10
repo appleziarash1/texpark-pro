@@ -652,3 +652,21 @@ of the Dashboard.
   counts, save/number/validate, a status move plus persistence, board/attention/reminder/calendar
   rendering through the real `app.js`, the dashboard banner, and a two-device merge.
 
+### Memo → Order bridge, and SL numbering (2026-10-06, follow-up)
+
+- **The memo page can open the order, but only when asked.** A collapsed "Add to Orders (optional)"
+  card sits under the memo. It is off unless the owner turns the switch on
+  (`settings.memoOrderEnabled`, default `false`). Turned on, `saveMemo` also calls the one
+  `createOrderFromMemo`, so the order's history line and `syncPush('order', ...)` are never
+  skipped. Editing an existing memo never opens a second order — `createOrderFromMemo` is keyed on
+  `memoId` and returns the existing link.
+- **The bridge is a link, not a copy.** The order stores `memoId` + `memoNo` and is shown in Memo
+  History as `#TP-0001`; a memo with no order offers a one-click **Create Order**. Deleting a memo
+  keeps its order (it is a separate promise) and only drops the link, so no order points at a dead
+  memo. `memoOrderLink(memoId)` is the single lookup.
+- **Memo History numbers every row.** An SL column (1, 2, 3 …) is the row's position in the
+  displayed, search-filtered list, so the owner can see how many memos there are. A count pill
+  (`hCount`) states the total ("N memos in total" / "N memos matching").
+- **Test grows to 69 checks** covering the switch off/on, the linked order's fields, the
+  no-duplicate edit, the history one-click path, unlink-on-delete, and the SL/count rendering.
+

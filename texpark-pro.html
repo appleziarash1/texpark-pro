@@ -646,6 +646,43 @@ tbody tr:hover td{background:#f7fafd}
             without printing. You can also print with Ctrl+P.
           </div>
         </div>
+
+        <!-- Optional: put this sale on the Order Command Center too. Closed by default —
+             nothing is created unless the switch below is turned on. -->
+        <div class="card" style="margin-top:13px">
+          <div class="cardhead" style="cursor:pointer" onclick="toggleMemoOrderBlock()">
+            <h2 style="margin:0">Add to Orders (optional)</h2>
+            <button class="btn-light btn-sm" type="button" id="memoOrderToggle">Show</button>
+          </div>
+          <div id="memoOrderBlock" style="display:none">
+            <div class="muted" style="font-size:12.5px;margin-top:6px">
+              Off by default. Turn the switch on and every memo you save also opens an order on the
+              Order Command Center, with the memo's delivery date and quantity.
+            </div>
+            <label class="row" style="margin-top:10px;gap:8px;align-items:center">
+              <input type="checkbox" id="memoOrderEnable" onchange="onMemoOrderEnable()" style="width:auto">
+              <span>Create an order for new memos</span>
+            </label>
+            <div id="memoOrderFields" style="display:none">
+              <div class="formgrid" style="margin-top:8px">
+                <div><label>Order Delivery Date</label><input id="memoOrderDate" type="date"></div>
+                <div><label>Quantity</label><input id="memoOrderQty" type="number" min="0" step="1" placeholder="use memo total"></div>
+                <div><label>Priority</label>
+                  <select id="memoOrderPriority">
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+                <div><label>Order No. Prefix</label><input id="memoOrderPrefix" placeholder="TP-"></div>
+              </div>
+              <div class="hint" style="margin-top:6px">
+                The order is linked to the saved memo, so you can open it from the Order Command
+                Center or from Memo History.
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ===== HISTORY ===== -->
@@ -655,6 +692,7 @@ tbody tr:hover td{background:#f7fafd}
         <div class="card" style="margin-top:13px">
           <div class="row">
             <input id="hSearch" oninput="renderHistory()" placeholder="Search memo / customer / phone...">
+            <span class="pill" id="hCount" style="white-space:nowrap">0 memos</span>
             <button class="btn-light" onclick="exportMemosCSV()">Export CSV</button>
           </div>
           <div id="historyTable"></div>
@@ -1332,7 +1370,8 @@ const DEFAULT_SETTINGS = {
   autoBackup: true,
   autoPull: true,       // pull new data from the cloud by itself
   reminderDefaultLead: 1,  // days before a delivery date to remind, unless an order overrides it
-  orderPrefix: 'TP-'
+  orderPrefix: 'TP-',
+  memoOrderEnabled: false  // off by default; the owner turns it on to mirror new memos as orders
 };
 
 function blankDB() {
@@ -4226,7 +4265,7 @@ function toast(msg) {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.11';
+const APP_VERSION = '2027-01-01.10';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -4275,6 +4314,9 @@ var purchaseDraft = { items: [] };
 var currentPage = "dashboard";
 
 function set(elId, v) { const e = document.getElementById(elId); if (e) e.textContent = v; }
+/* Read an optional input's value without crashing when the element is absent
+   (e.g. a stripped-down build or a test shim that never created it). */
+function valueOfEl_(elId) { const e = document.getElementById(elId); return e ? (e.value || '') : ''; }
 function statBox(label, value, sub) {
   return '<div class="card stat"><div class="label">' + label + '</div><div class="value">' + value + '</div>' +
     (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
@@ -4420,7 +4462,7 @@ function renderAll() {
   try {
     if (p === 'dashboard') renderDashboard();
     if (p === 'orders') renderOrders();
-    if (p === 'memo') calcMemo();
+    if (p === 'memo') { calcMemo(); renderMemoOrderBlock(); }
     if (p === 'history') renderHistory();
     if (p === 'delivery') renderDelivery();
     if (p === 'customers') renderCustomers();
@@ -4861,14 +4903,14 @@ function renderOrderDay(ref) {
 }
 
 /* ---------- create / edit ---------- */
-function nextOrderNo() {
-  const prefix = db.settings.orderPrefix || 'TP-';
+function nextOrderNo(prefix) {
+  const p = prefix || db.settings.orderPrefix || 'TP-';
   let max = 0;
   (db.orders || []).forEach(o => {
     const mm = String(o.orderNo || '').match(/(\d+)\s*$/);
     if (mm) max = Math.max(max, num(mm[1]));
   });
-  return prefix + String(max + 1).padStart(4, '0');
+  return p + String(max + 1).padStart(4, '0');
 }
 
 function ordRenderCustomerOptions() {
@@ -5011,6 +5053,7 @@ function newMemo() {
   document.getElementById('memoAdvance').value = 0;
   addMemoLine(); addMemoLine(); addMemoLine();
   calcMemo();
+  renderMemoOrderBlock();
 }
 
 function addMemoLine(data) {
@@ -5290,6 +5333,16 @@ function saveMemo() {
     if (!c.address && memo.customerAddress) c.address = memo.customerAddress;
   }
 
+  /* Optional: when the switch on the memo page is on, a new memo also opens an order
+     on the Order Command Center. Editing an existing memo does not add a second one. */
+  let newOrder = null;
+  if (db.settings.memoOrderEnabled === true && !prev && can('orders')) {
+    const dd = valueOfEl_('memoOrderDate') || addDays_(today(), 7);
+    const pr = valueOfEl_('memoOrderPriority') || 'normal';
+    const pfx = valueOfEl_('memoOrderPrefix');
+    newOrder = createOrderFromMemo(memo, { deliveryDate: dd, priority: pr, orderNo: pfx ? nextOrderNo(pfx) : undefined });
+  }
+
   if (!commit()) return;
 
   memo.items.forEach(it => syncPush('sale', {
@@ -5311,27 +5364,142 @@ function saveMemo() {
     cogs: memo.cogs, profit: memo.profit, status: prev ? 'Updated' : 'Saved'
   }, 'Memo ' + memo.memoNo);
 
+  if (newOrder) {
+    syncPush('order', {
+      orderId: newOrder.id, orderNo: newOrder.orderNo, customerName: newOrder.customerName,
+      productName: newOrder.productName, qty: newOrder.qty, deliveryDate: newOrder.deliveryDate,
+      status: newOrder.status
+    }, 'Order ' + newOrder.orderNo);
+  }
+
   alert('Memo ' + memo.memoNo + ' saved.\n' +
+    (newOrder ? 'Order ' + newOrder.orderNo + ' created on the Order Command Center.\n' : '') +
     'Stock cards were created for these products. Enter the received/opening qty from the Stock page.');
   newMemo();
+  renderMemoOrderBlock();
 }
 
 /* ===================== history ===================== */
+/* ---------- optional: mirror a memo as an order ---------- */
+/* The "Add to Orders" card on the memo page is off by default. Turned on, saving a
+   memo also opens an order on the Order Command Center, linked back by `memoId` so
+   either page can reach the other. While it is off nothing extra is created. */
+function toggleMemoOrderBlock() {
+  const box = document.getElementById('memoOrderBlock');
+  const btn = document.getElementById('memoOrderToggle');
+  if (!box) return;
+  const show = box.style.display === 'none';
+  box.style.display = show ? '' : 'none';
+  if (btn) btn.textContent = show ? 'Hide' : 'Show';
+}
+
+function onMemoOrderEnable() {
+  const on = !!document.getElementById('memoOrderEnable').checked;
+  db.settings.memoOrderEnabled = on;
+  const fields = document.getElementById('memoOrderFields');
+  if (fields) fields.style.display = on ? '' : 'none';
+  commit();
+}
+
+function renderMemoOrderBlock() {
+  const box = document.getElementById('memoOrderBlock');
+  if (!box) return;
+  const on = db.settings.memoOrderEnabled === true;
+  const cb = document.getElementById('memoOrderEnable');
+  if (cb) cb.checked = on;
+  const fields = document.getElementById('memoOrderFields');
+  if (fields) fields.style.display = on ? '' : 'none';
+  const d = document.getElementById('memoOrderDate');
+  if (d && !d.value) d.value = addDays_(today(), 7);
+  const q = document.getElementById('memoOrderQty');
+  if (q && !q.value) {
+    const total = memoDraft.items.filter(x => x.productId && num(x.qty) > 0).reduce((a, x) => a + num(x.qty), 0);
+    q.value = total ? String(total) : '';
+  }
+  const p = document.getElementById('memoOrderPrefix');
+  if (p && !p.value) p.value = db.settings.orderPrefix || 'TP-';
+}
+
+/* The order linked to a memo, if any. Keyed on `memoId`, so a memo can never
+   silently open two orders. */
+function memoOrderLink(memoId) {
+  return (db.orders || []).find(o => o.memoId === memoId) || null;
+}
+
+/* The one path that turns a saved memo into an order, so the history line and the
+   cloud push are never skipped. A memo with a single product takes that product's
+   name; a multi-line memo shows its line count. */
+function createOrderFromMemo(memo, opts) {
+  const o = opts || {};
+  const existing = memoOrderLink(memo.id);
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const items = memo.items || [];
+  const productName = items.length === 1 ? (items[0].productName || '') : (items.length + ' items');
+  const order = {
+    id: id(),
+    orderNo: o.orderNo || nextOrderNo(),
+    orderDate: memo.date || today(),
+    customerName: memo.customerName || '',
+    phone: memo.customerPhone || '',
+    productName: productName,
+    qty: num(memo.totalQty),
+    deliveryDate: o.deliveryDate || addDays_(today(), 7),
+    status: 'received',
+    priority: o.priority || 'normal',
+    remindLeadDays: null,
+    note: 'From memo ' + memo.memoNo,
+    memoId: memo.id,
+    memoNo: memo.memoNo,
+    createdAt: now,
+    history: [{ at: now, text: 'Order created from memo ' + memo.memoNo }]
+  };
+  db.orders.push(order);
+  return order;
+}
+
+/* A one-click order from Memo History, so an old memo can be put on the board
+   without re-typing it. Opens the link if the memo already has one. */
+function createOrderForMemo(mid) {
+  const m = db.memos.find(x => x.id === mid);
+  if (!m) return;
+  if (!can('orders')) return alert('You do not have permission.');
+  const existing = memoOrderLink(m.id);
+  if (existing) { nav('orders'); openOrder(existing.id); return; }
+  const o = createOrderFromMemo(m, {});
+  if (!commit()) return;
+  syncPush('order', {
+    orderId: o.id, orderNo: o.orderNo, customerName: o.customerName,
+    productName: o.productName, qty: o.qty, deliveryDate: o.deliveryDate, status: o.status
+  }, 'Order ' + o.orderNo);
+  renderHistory();
+  alert('Order ' + o.orderNo + ' created for memo ' + m.memoNo + '.');
+}
+
 function renderHistory() {
   const q = (document.getElementById('hSearch').value || '').toLowerCase();
   const arr = db.memos.filter(m =>
     (m.memoNo + ' ' + m.customerName + ' ' + (m.customerPhone || '')).toLowerCase().includes(q)).slice().reverse();
+  const cnt = document.getElementById('hCount');
+  if (cnt) cnt.textContent = arr.length + (arr.length === 1 ? ' memo' : ' memos') +
+    (q ? ' matching' : ' in total');
   document.getElementById('historyTable').innerHTML = arr.length
-    ? '<div class="tablewrap"><table><thead><tr><th>Memo No</th><th>Date</th><th>Customer</th><th class="right">Qty</th>' +
-      '<th class="right">Grand</th><th class="right">Profit</th><th class="right">Due</th><th>Delivery</th><th></th></tr></thead><tbody>' +
-      arr.map(m => {
+    ? '<div class="tablewrap"><table><thead><tr><th style="width:44px">SL</th><th>Memo No</th><th>Date</th><th>Customer</th><th class="right">Qty</th>' +
+      '<th class="right">Grand</th><th class="right">Profit</th><th class="right">Due</th><th>Delivery</th><th>Orders</th><th></th></tr></thead><tbody>' +
+      arr.map((m, i) => {
         const d = deliveredQtyOf(m.id), r = returnedQtyOf(m.id);
         const st = pendingQtyOf(m) <= 0 ? 'ok' : (d || r) ? 'warn' : 'danger';
-        return '<tr><td>' + esc(m.memoNo) + '</td><td>' + m.date + '</td><td>' + esc(m.customerName) + '</td>' +
+        const lnk = memoOrderLink(m.id);
+        const ordCell = lnk
+          ? '<span class="pill ok" title="Order ' + esc(lnk.orderNo) + '">#' + esc(lnk.orderNo) + '</span>'
+          : '<button class="btn-light btn-sm" onclick="createOrderForMemo(\'' + m.id + '\')">Create Order</button>';
+        return '<tr><td class="right">' + (i + 1) + '</td>' +
+          '<td>' + esc(m.memoNo) + '</td><td>' + m.date + '</td><td>' + esc(m.customerName) + '</td>' +
           '<td class="right">' + m.totalQty + '</td><td class="right">' + money(m.grandTotal) + '</td>' +
           '<td class="right"><b class="' + (num(m.profit) >= 0 ? 'green' : 'red') + '">' + money(m.profit) + '</b></td>' +
           '<td class="right">' + money(memoRemainingDue(m)) + '</td>' +
           '<td><span class="pill ' + st + '">' + d + '/' + m.totalQty + (r ? ' <b class="red">R' + r + '</b>' : '') + '</span></td>' +
+          '<td>' + ordCell + '</td>' +
           '<td><button class="btn-light btn-sm" onclick="viewMemo(\'' + m.id + '\')">View</button> ' +
           '<button class="btn-light btn-sm" onclick="printMemoById(\'' + m.id + '\')">Print</button> ' +
           '<button class="btn-light btn-sm" onclick="exportMemoById(\'' + m.id + '\',\'png\')">Image</button> ' +
@@ -5379,6 +5547,11 @@ function deleteMemo(mid) {
   (db.returns || []).filter(r => r.memoId === m.id).forEach(reverseReturnFromStock);
   db.returns = (db.returns || []).filter(r => r.memoId !== m.id);
   db.memos = db.memos.filter(x => x.id !== mid);
+  /* An order that was opened from this memo is a separate promise to the customer;
+     keep it, but drop the link so it no longer points at a deleted memo. */
+  (db.orders || []).forEach(o => {
+    if (o.memoId === mid) { delete o.memoId; delete o.memoNo; }
+  });
   if (editingMemoId === mid) newMemo();
   if (!commit()) return;
   syncPush('memo_delete', { memoNo: m.memoNo }, 'Delete ' + m.memoNo);

@@ -264,6 +264,43 @@
             without printing. You can also print with Ctrl+P.
           </div>
         </div>
+
+        <!-- Optional: put this sale on the Order Command Center too. Closed by default —
+             nothing is created unless the switch below is turned on. -->
+        <div class="card" style="margin-top:13px">
+          <div class="cardhead" style="cursor:pointer" onclick="toggleMemoOrderBlock()">
+            <h2 style="margin:0">Add to Orders (optional)</h2>
+            <button class="btn-light btn-sm" type="button" id="memoOrderToggle">Show</button>
+          </div>
+          <div id="memoOrderBlock" style="display:none">
+            <div class="muted" style="font-size:12.5px;margin-top:6px">
+              Off by default. Turn the switch on and every memo you save also opens an order on the
+              Order Command Center, with the memo's delivery date and quantity.
+            </div>
+            <label class="row" style="margin-top:10px;gap:8px;align-items:center">
+              <input type="checkbox" id="memoOrderEnable" onchange="onMemoOrderEnable()" style="width:auto">
+              <span>Create an order for new memos</span>
+            </label>
+            <div id="memoOrderFields" style="display:none">
+              <div class="formgrid" style="margin-top:8px">
+                <div><label>Order Delivery Date</label><input id="memoOrderDate" type="date"></div>
+                <div><label>Quantity</label><input id="memoOrderQty" type="number" min="0" step="1" placeholder="use memo total"></div>
+                <div><label>Priority</label>
+                  <select id="memoOrderPriority">
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+                <div><label>Order No. Prefix</label><input id="memoOrderPrefix" placeholder="TP-"></div>
+              </div>
+              <div class="hint" style="margin-top:6px">
+                The order is linked to the saved memo, so you can open it from the Order Command
+                Center or from Memo History.
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ===== HISTORY ===== -->
@@ -273,6 +310,7 @@
         <div class="card" style="margin-top:13px">
           <div class="row">
             <input id="hSearch" oninput="renderHistory()" placeholder="Search memo / customer / phone...">
+            <span class="pill" id="hCount" style="white-space:nowrap">0 memos</span>
             <button class="btn-light" onclick="exportMemosCSV()">Export CSV</button>
           </div>
           <div id="historyTable"></div>
