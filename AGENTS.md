@@ -620,3 +620,35 @@ document write and one document read — not the whole book — and it arrives i
   `saveBackup_` applies — grow rows/cols before writing.
 - **No APK/signing change.** Android keeps using the Sheet; the web app mirrors to it. Do not
   rebuild or re-sign the APK for this.
+
+## Orders Command Center (2026-10-06)
+
+The owner asked for a dashboard section with a button that opens an order overview, styled as a
+premium enterprise screen: summary tiles, urgent work first, a delivery calendar, reminders, the
+full board and the lifecycle. It lives on its own `orders` page, reached from a card at the bottom
+of the Dashboard.
+
+- **An order is not a memo.** A memo is what was actually sold; an order is the promise before any
+  sale (a memo can settle several orders, one order can split across deliveries, and an order
+  exists before stock does). `db.orders` is a first-class collection, added to `MERGE_KEYS`,
+  `migrate()` and `blankDB()` so it travels between devices through the same one "newer wins"
+  merge as every other record. Never make an order a memo to reuse code.
+- **Lifecycle, with overdue derived.** Stored status is `received -> in_progress -> ready ->
+  dispatched -> delivered`. `overdue` is never stored: `orderDisplayStatus()` turns an active
+  order whose `deliveryDate` is behind today into `overdue` at read time, so a date that passes
+  turns red on its own and a delivered order never goes overdue. `isOrderOverdue`,
+  `orderDaysLate_` and `ordersByUrgency` are the pure rules and are covered directly in the test.
+- **One source for every count.** `orderSummary()` feeds the dashboard card, the Orders tiles and
+  the tests, so the dashboard and the Orders page can never disagree. Reminders come from the pure
+  `orderRemindersFor()` (preparation N days before, dispatch on the day, overdue alert daily);
+  the per-order `remindLeadDays` overrides the shop default `settings.reminderDefaultLead`.
+- **Entry + sync.** `saveOrder` / `setOrderStatus` are the only write paths, so the history line
+  and the `syncPush('order', ...)` are never skipped. Code.gs gained an `Orders` tab and the
+  `order` route (upsert keyed on Order No) as the Sheet fallback for the Android app; Firestore
+  carries it through `MERGE_KEYS` with no extra work.
+- **Settings.** `orderPrefix` (default `TP-`) and `reminderDefaultLead` (default 1) live in
+  `DEFAULT_SETTINGS` and are edited in Settings -> Company.
+- **Test.** `test/orders.test.js` (49 checks): overdue/urgency/reminders as pure rules, summary
+  counts, save/number/validate, a status move plus persistence, board/attention/reminder/calendar
+  rendering through the real `app.js`, the dashboard banner, and a two-device merge.
+

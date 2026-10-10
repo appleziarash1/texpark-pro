@@ -13,6 +13,43 @@ Constraints in force for all three phases (from the owner + AGENTS.md):
 
 ---
 
+## Phase 4 — Orders Command Center (2026-10-06)
+
+**Status: DONE (web layer).** Owner request: a dashboard section with a button that opens an order
+overview, designed as a premium enterprise screen (summary tiles, urgent work first, delivery
+calendar, reminders, full board, lifecycle).
+
+### What shipped
+- `js/db.js` — `orders` added to `blankDB()`, `migrate()` and `MERGE_KEYS`; the lifecycle constants
+  and the pure rules `isOrderOverdue`, `orderDaysLate_`, `orderDisplayStatus`, `orderSummary`,
+  `ordersByUrgency`, `ordersOnDate`, `orderRemindersFor`; `orderPrefix` and `reminderDefaultLead`
+  settings; `orders` added to every role in `PERMS`.
+- `index.html` — the Dashboard entry card + button, the full `page-orders` section (tiles, priority
+  list, reminder center, board, calendar, lifecycle), the New/Edit Order modal, and two Settings
+  fields.
+- `js/app.js` — the Orders page: summary, priority list, reminder center, the board with search and
+  status/time filters, the month calendar with a per-day list, and the New/Edit order modal with a
+  history trail. `saveOrder` / `setOrderStatus` are the only write paths.
+- `css/app.css` — the premium order styling (accent tiles, meaning-bearing colors, cards, calendar,
+  lifecycle), responsive at 900px.
+- `Code.gs` — an `Orders` tab and the `order` route (upsert keyed on Order No) as the Sheet fallback
+  for the Android app.
+- `test/orders.test.js` — 49 checks, wired into `npm test`.
+- `sw.js` / `js/app.js` APP_VERSION -> `2027-01-01.11`; `build.js` rebuilt.
+
+### Verified
+Full suite green: logic 84, sheet 87, e2e 262, receivable 31, cost 11, journey 19, autopull 39,
+return 51, cloud 33, orders 49, session 25, pairing 31, repair 30, ownerdata 29. (android/native
+need a JDK for `javac`; not available in this sandbox, unchanged by this work.)
+
+### Open risks (unchanged)
+- Android still uses the Sheet; orders mirror to the `Orders` tab so an Android device never sees
+  stale orders. No APK rebuild, no signing change.
+- Orders travel through Firestore via `MERGE_KEYS`; no new read pattern was added, so the Spark
+  read budget is unaffected.
+
+---
+
 ## Phase 1 — Sheet backup "Those rows are out of bounds."
 
 **Status: DONE** (commit `eae8e75`, plus `5ac4799`/`1d87ac6` for the earlier chunked-backup work

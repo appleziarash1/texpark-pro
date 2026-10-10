@@ -292,6 +292,106 @@ tbody tr:hover td{background:#f7fafd}
 .rtline>span:first-child{font-weight:600;font-size:13.5px}
 .rtline input{width:90px;text-align:right}
 
+/* ============ Order Command Center ============
+   Premium, calm, information-first: summary tiles up top, urgent work next, then
+   the full board, calendar and lifecycle. Colors carry meaning (overdue red, due
+   today/attention amber, ready green, in-progress violet, delivered muted), so the
+   owner reads priority before he reads text. */
+.cardhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.order-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-top:13px}
+.ostile{position:relative;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fff;
+  box-shadow:var(--shadow);overflow:hidden}
+.ostile::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--navy)}
+.ostile .olabel{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;color:var(--muted)}
+.ostile .ovalue{font-size:30px;font-weight:800;line-height:1.1;margin-top:6px;color:var(--navy)}
+.ostile .osub{font-size:11.5px;color:var(--muted);margin-top:3px}
+.ostile.blue::before{background:#2b7fff}
+.ostile.violet::before{background:var(--violet)}
+.ostile.danger::before{background:var(--red)}
+.ostile.danger .ovalue{color:var(--red)}
+.ostile.green::before{background:var(--green)}
+.ostile.green .ovalue{color:var(--green)}
+.ostile.violet .ovalue{color:var(--violet)}
+
+/* Priority list — the reason the dashboard exists */
+.attn{border:1px solid var(--line);border-left:4px solid var(--line);border-radius:10px;padding:11px 13px;margin-top:9px;background:#fff}
+.attn.overdue{border-left-color:var(--red);background:#fff7fa}
+.attn.soon{border-left-color:var(--orange);background:#fffdf5}
+.attn .arow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.attn .ano{font-weight:800;color:var(--navy)}
+.attn .acust{font-weight:600}
+.attn .ameta{font-size:12.5px;color:var(--muted);margin-top:4px}
+.attn .aact{float:right}
+.attn .aact button{margin-left:6px}
+.remitem{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line)}
+.remitem:last-child{border-bottom:0}
+.remitem .rdot{width:9px;height:9px;border-radius:99px;margin-top:5px;flex:none;background:var(--navy)}
+.remitem.prep .rdot{background:#2b7fff}
+.remitem.dispatch .rdot{background:var(--green)}
+.remitem.overdue .rdot{background:var(--red)}
+.remitem .rtext{font-size:13px}
+.remitem .rsub{font-size:11.5px;color:var(--muted)}
+
+/* Order board cards */
+.ordboard{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+.ocard{border:1px solid var(--line);border-radius:12px;padding:13px 14px;background:#fff;box-shadow:var(--shadow);
+  border-top:4px solid var(--line);transition:.15s;cursor:pointer}
+.ocard:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(16,32,64,.12)}
+.ocard.s-overdue{border-top-color:var(--red)}
+.ocard.s-ready{border-top-color:var(--green)}
+.ocard.s-in_progress{border-top-color:var(--violet)}
+.ocard.s-dispatched{border-top-color:#2b7fff}
+.ocard.s-received{border-top-color:var(--orange)}
+.ocard.s-delivered{border-top-color:#9fb0c8;opacity:.75}
+.ocard .ohead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ocard .ono{font-weight:800;color:var(--navy);font-size:14.5px}
+.ocard .ocust{font-weight:600;margin-top:7px;font-size:13.5px}
+.ocard .oprod{font-size:13px;color:#33475f;margin-top:2px}
+.ocard .odate{font-size:12px;color:var(--muted);margin-top:8px;display:flex;justify-content:space-between}
+.ocard .oprio{font-size:10.5px;font-weight:800;color:var(--red);text-transform:uppercase}
+.badge{display:inline-block;border-radius:99px;padding:3px 9px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+.badge.overdue{background:#ffe8ef;color:var(--red)}
+.badge.ready{background:#e5f7ee;color:#087b43}
+.badge.in_progress{background:#efe9fe;color:var(--violet)}
+.badge.dispatched{background:#e8f0ff;color:#1d5fd6}
+.badge.received{background:#fff4dc;color:#a05b00}
+.badge.delivered{background:#eef1f6;color:#5b6b82}
+
+/* Calendar */
+.ordcal{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-top:11px}
+.ordcal .cdow{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;text-align:center;padding:4px 0}
+.ordcal .cday{min-height:74px;border:1px solid var(--line);border-radius:10px;padding:7px;background:#fff;cursor:pointer;transition:.12s}
+.ordcal .cday:hover{border-color:#b9c8dc;background:#f8fbff}
+.ordcal .cday.out{opacity:.42}
+.ordcal .cday.today{border-color:var(--pink);box-shadow:0 0 0 2px #f22b7015}
+.ordcal .cday.sel{background:#edf2fb;border-color:var(--navy)}
+.ordcal .cnum{font-size:12px;font-weight:700;color:#33475f}
+.ordcal .cbar{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+.ordcal .ccount{font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 6px;display:inline-block;width:max-content}
+.ordcal .ccount.ok{background:#e5f7ee;color:#087b43}
+.ordcal .ccount.warn{background:#fff4dc;color:#a05b00}
+.ordcal .ccount.danger{background:#ffe8ef;color:var(--red)}
+.ordcalday{margin-top:12px}
+.ordcalday h3{font-size:13px;color:var(--navy);margin:0 0 6px}
+
+/* Lifecycle */
+.lifecycle{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin-top:12px}
+.lc{border:1px solid var(--line);border-radius:11px;padding:12px;background:#fff;position:relative}
+.lc span{display:inline-block;font-size:11px;font-weight:800;color:#fff;background:var(--navy);border-radius:99px;padding:2px 8px}
+.lc b{display:block;margin-top:8px;color:var(--navy);font-size:13px}
+.lc i{display:block;margin-top:4px;font-size:12px;color:var(--muted);font-style:normal}
+.ordhistory{margin-top:12px;font-size:12.5px}
+.ordhistory .hrow{padding:6px 0;border-bottom:1px dashed var(--line);color:var(--muted)}
+.ordhistory .hrow b{color:var(--navy)}
+
+@media(max-width:900px){
+  .order-summary{grid-template-columns:repeat(2,1fr)}
+  .ordboard{grid-template-columns:1fr}
+  .lifecycle{grid-template-columns:1fr 1fr}
+  .ordcal{grid-template-columns:repeat(7,1fr);gap:4px}
+  .ordcal .cday{min-height:60px;padding:5px}
+}
+
 </style>
 </head><body>
 
@@ -379,6 +479,85 @@ tbody tr:hover td{background:#f7fafd}
         <div class="two" style="margin-top:13px">
           <div class="card"><h2>Recent Memos</h2><div id="dashMemos"></div></div>
           <div class="card"><h2>Delivery Pending</h2><div id="dashDeliveries"></div></div>
+        </div>
+
+        <!-- Order Command Center entry: the owner asked for a button at the top of
+             the dashboard that opens the order overview. The counts come from the
+             same orderSummary() the Orders page uses, so they can never disagree. -->
+        <div class="card" style="margin-top:13px">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <div>
+              <h2 style="margin:0">Order Command Center</h2>
+              <div class="muted" style="font-size:12.5px">Urgent orders, delivery calendar, reminders and the full order journey</div>
+            </div>
+            <button class="btn-primary" onclick="nav('orders')">Open Orders &#8594;</button>
+          </div>
+          <div class="order-summary" id="dashOrderSummary"></div>
+        </div>
+      </section>
+
+      <!-- ===== ORDERS (Command Center) ===== -->
+      <section id="page-orders" class="page">
+        <h1>Order Command Center</h1>
+        <div class="muted">Every order from entry to delivery — overdue work first, so nothing is missed</div>
+
+        <div class="order-summary" id="ordSummary"></div>
+
+        <div class="two" style="margin-top:13px">
+          <div class="card">
+            <div class="cardhead"><h2 style="margin:0">Needs Your Attention</h2><span class="pill warn" id="ordAttnCount">0</span></div>
+            <div id="ordAttention"></div>
+          </div>
+          <div class="card">
+            <div class="cardhead"><h2 style="margin:0">Reminder Center</h2><span class="pill" id="ordRemindCount">0</span></div>
+            <div class="muted" style="font-size:12.5px">Preparation, dispatch and overdue alerts</div>
+            <div id="ordReminders"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:13px">
+          <div class="cardhead">
+            <h2 style="margin:0">All Orders</h2>
+            <button class="btn-primary btn-sm" onclick="openOrder()">+ New Order</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <input id="ordSearch" oninput="renderOrders()" placeholder="Search order no / customer / product...">
+            <select id="ordFilterStatus" onchange="renderOrders()"></select>
+            <select id="ordFilterTime" onchange="renderOrders()">
+              <option value="">All time</option>
+              <option value="overdue">Overdue</option>
+              <option value="today">Due today</option>
+              <option value="week">Next 7 days</option>
+              <option value="month">This month</option>
+            </select>
+          </div>
+          <div id="ordBoard" class="ordboard"></div>
+        </div>
+
+        <div class="card" style="margin-top:13px">
+          <div class="cardhead">
+            <h2 style="margin:0">Delivery Calendar</h2>
+            <div class="row" style="gap:6px">
+              <button class="btn-light btn-sm" onclick="ordCalShift(-1)">&#8592; Prev</button>
+              <button class="btn-light btn-sm" onclick="ordCalToday()">Today</button>
+              <button class="btn-light btn-sm" onclick="ordCalShift(1)">Next &#8594;</button>
+            </div>
+          </div>
+          <div class="muted" id="ordCalTitle" style="margin-top:6px"></div>
+          <div id="ordCalendar" class="ordcal"></div>
+          <div id="ordCalDay" class="ordcalday"></div>
+        </div>
+
+        <div class="card" style="margin-top:13px">
+          <h2>Order Lifecycle</h2>
+          <div class="muted">An order moves through these stages. Its delivery date decides overdue, and completing it clears the warning.</div>
+          <div class="lifecycle">
+            <div class="lc"><span>01</span><b>Order Received</b><i>The customer has confirmed the order.</i></div>
+            <div class="lc"><span>02</span><b>In Progress</b><i>Preparation or production is running.</i></div>
+            <div class="lc"><span>03</span><b>Ready to Deliver</b><i>Goods are ready for dispatch.</i></div>
+            <div class="lc"><span>04</span><b>Dispatched</b><i>Goods have been sent.</i></div>
+            <div class="lc"><span>05</span><b>Delivered</b><i>The customer has received the goods.</i></div>
+          </div>
         </div>
       </section>
 
@@ -765,6 +944,9 @@ tbody tr:hover td{background:#f7fafd}
           </div>
           <div class="formgrid" style="margin-top:11px">
             <div><label>Default Low-Stock Level</label><input id="stLowStock" type="number"></div>
+            <div><label>Order No. Prefix</label><input id="stOrderPrefix" maxlength="8" placeholder="TP-"></div>
+            <div><label>Reminder — days before delivery</label><input id="stReminderLead" type="number" min="0" max="30">
+              <div class="hint">Used unless an order sets its own lead time</div></div>
             <div style="display:flex;align-items:flex-end">
               <label style="display:flex;gap:8px;align-items:center;font-weight:600">
                 <input id="stAutoBackup" type="checkbox" style="width:auto"> Auto daily backup on
@@ -973,6 +1155,49 @@ tbody tr:hover td{background:#f7fafd}
   </div>
 </div>
 
+<div id="orderModal" class="modal" onclick="if(event.target===this)closeOrder()">
+  <div class="modal-card">
+    <h2 id="ordModalTitle">New Order</h2>
+    <div class="muted" id="ordModalInfo"></div>
+    <input id="ordId" type="hidden">
+    <div class="formgrid" style="margin-top:12px">
+      <div><label>Order No.</label><input id="ordNo"></div>
+      <div><label>Order Date</label><input id="ordDate" type="date"></div>
+      <div><label>Select saved customer</label><select id="ordCustList" onchange="ordPickCustomer(this.value)"></select></div>
+      <div><label>Customer Name *</label>
+        <input id="ordCustomer" list="ordCustomerNames" autocomplete="off" placeholder="Type a name — matched automatically">
+        <datalist id="ordCustomerNames"></datalist>
+      </div>
+      <div><label>Phone</label><input id="ordPhone"></div>
+      <div class="wide"><label>Product / Description *</label>
+        <input id="ordProduct" list="ordProductNames" placeholder="e.g. Girls L/S T-shirt">
+        <datalist id="ordProductNames"></datalist>
+      </div>
+      <div><label>Quantity</label><input id="ordQty" type="number" min="0" step="1"></div>
+      <div><label>Delivery Date *</label><input id="ordDeliveryDate" type="date"></div>
+      <div><label>Status</label><select id="ordStatus"></select></div>
+      <div><label>Priority</label>
+        <select id="ordPriority">
+          <option value="normal">Normal</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </div>
+      <div><label>Reminder — days before delivery</label>
+        <input id="ordRemindLead" type="number" min="0" max="30" placeholder="default">
+        <div class="hint">Leave blank to use the shop default</div>
+      </div>
+      <div class="wide"><label>Note</label><textarea id="ordNote"></textarea></div>
+    </div>
+    <div id="ordHistory" class="ordhistory"></div>
+    <div class="modal-actions">
+      <button class="btn-light" onclick="closeOrder()">Cancel</button>
+      <button class="btn-light" id="ordDeleteBtn" onclick="deleteOrderRecord()" style="display:none">Delete</button>
+      <button class="btn-pink" onclick="saveOrder()">Save Order</button>
+    </div>
+  </div>
+</div>
+
 <div id="deliveryModal" class="modal" onclick="if(event.target===this)closeDelivery()">
   <div class="modal-card">
     <h2>Update Delivery</h2>
@@ -1105,7 +1330,9 @@ const DEFAULT_SETTINGS = {
   lowStockLevel: 10,
   vatPercent: 0,
   autoBackup: true,
-  autoPull: true        // pull new data from the cloud by itself
+  autoPull: true,       // pull new data from the cloud by itself
+  reminderDefaultLead: 1,  // days before a delivery date to remind, unless an order overrides it
+  orderPrefix: 'TP-'
 };
 
 function blankDB() {
@@ -1128,6 +1355,7 @@ function blankDB() {
     expenses: [],     // {date, head, amount, note}
     memos: [],
     deliveries: [],
+    orders: [],       // order command center: {orderNo, customerId, customerName, productName, qty, deliveryDate, status, priority, reminders, history[]}
     returns: [],      // parcels sent back: {memoId, qty, date, condition, ...}
     payments: [],     // customer receipts: {date, customerId, amount, method, note}
     users: defaultUsers(),  // a fresh install always has a way in
@@ -1166,7 +1394,7 @@ function migrate(d) {
   const base = blankDB();
   if (!d || typeof d !== 'object') return base;
   d.version = 2;
-  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments', 'users']
+  ['products', 'suppliers', 'customers', 'stock', 'ledger', 'purchases', 'expenses', 'memos', 'deliveries', 'orders', 'returns', 'payments', 'users']
     .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
   if (!Array.isArray(d.tombstones)) d.tombstones = [];
   d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
@@ -1254,7 +1482,7 @@ const SNAP_KEY = 'texpark_pro_snapshots';
    and the format is fixed-width, so a plain string compare is correct and does not
    depend on which machine's clock does the merging. */
 const MERGE_KEYS = ['products', 'suppliers', 'customers', 'stock', 'ledger',
-                    'purchases', 'expenses', 'memos', 'deliveries', 'returns', 'payments',
+                    'purchases', 'expenses', 'memos', 'deliveries', 'orders', 'returns', 'payments',
                     'users'];
 const TOMB_MAX = 4000;                 // plenty of history; stops unbounded growth
 
@@ -1774,6 +2002,101 @@ function pendingQtyOf(memo) {
   return Math.max(0, num(memo.totalQty) - deliveredQtyOf(memo.id) - returnedQtyOf(memo.id));
 }
 
+/* ============================ Orders (Command Center) ============================
+   An order is the promise the shop made to a customer: what was ordered, and when it
+   is due. It is deliberately NOT a memo - a memo is what was actually sold. Several
+   orders can be settled by one memo, one order can be split across deliveries, and an
+   order exists before any sale does. Status is stored, not derived, because the owner
+   moves it as the work progresses (received → in progress → ready → dispatched →
+   delivered); 'overdue' is derived from the date, so it can never go stale. */
+
+const ORDER_STATUSES = ['received', 'in_progress', 'ready', 'dispatched', 'delivered'];
+const ORDER_STATUS_LABEL = {
+  received: 'Order Received', in_progress: 'In Progress', ready: 'Ready to Deliver',
+  dispatched: 'Dispatched', delivered: 'Delivered'
+};
+const ORDER_ACTIVE_STATUSES = ['received', 'in_progress', 'ready', 'dispatched'];
+/* Whole days from a to b, on the YYYY-MM-DD prefix. Both sides are the same UTC
+   format, so this is a plain calendar-day difference with no timezone drift. */
+function daysBetween_(a, b) {
+  const da = new Date(String(a).slice(0, 10) + 'T00:00:00Z');
+  const db_ = new Date(String(b).slice(0, 10) + 'T00:00:00Z');
+  if (isNaN(da) || isNaN(db_)) return 0;
+  return Math.round((db_ - da) / 86400000);
+}
+function addDays_(dateStr, n) {
+  const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + num(n));
+  return d.toISOString().slice(0, 10);
+}
+function isOrderActive(o) { return ORDER_ACTIVE_STATUSES.indexOf(o && o.status) !== -1; }
+/* Overdue means the delivery date is behind today and the goods are not delivered. */
+function isOrderOverdue(o, ref) {
+  if (!o || !o.deliveryDate) return false;
+  if (!isOrderActive(o)) return false;
+  return String(o.deliveryDate).slice(0, 10) < String(ref || today()).slice(0, 10);
+}
+function orderDaysLate_(o, ref) {
+  return Math.max(0, daysBetween_(o.deliveryDate, ref || today()));
+}
+/* The single place a status label is decided, so the board, calendar and priority
+   list always agree. */
+function orderDisplayStatus(o, ref) {
+  if (o.status === 'delivered') return 'delivered';
+  if (isOrderOverdue(o, ref)) return 'overdue';
+  return o.status || 'received';
+}
+function orderSummary(ref) {
+  const r = ref || today();
+  const list = db.orders || [];
+  const active = list.filter(isOrderActive);
+  const up = addDays_(r, 7);
+  const out = {
+    active: active.length,
+    upcoming7: active.filter(o => o.deliveryDate >= r && o.deliveryDate <= up).length,
+    overdue: active.filter(o => isOrderOverdue(o, r)).length,
+    ready: (db.orders || []).filter(o => o.status === 'ready').length
+  };
+  return out;
+}
+/* Sorted most-urgent-first: overdue (most days late) then soonest delivery date. */
+function ordersByUrgency(ref) {
+  const r = ref || today();
+  return (db.orders || []).slice().sort((a, b) => {
+    const ao = isOrderOverdue(a, r) ? 0 : 1, bo = isOrderOverdue(b, r) ? 0 : 1;
+    if (ao !== bo) return ao - bo;
+    const ad = String(a.deliveryDate || ''), bd = String(b.deliveryDate || '');
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return String(a.orderNo || '') < String(b.orderNo || '') ? -1 : 1;
+  });
+}
+function ordersOnDate(date, ref) {
+  return (db.orders || []).filter(o => String(o.deliveryDate || '').slice(0, 10) === String(date).slice(0, 10));
+}
+/* Per-order reminder lead time wins over the shop default, so one order can remind 3
+   days out while another reminds 1 day out, as the owner asked. */
+function orderRemindLead_(o) {
+  const v = num(o && o.remindLeadDays);
+  if (o && o.remindLeadDays !== undefined && o.remindLeadDays !== null && String(o.remindLeadDays) !== '') return Math.max(0, v);
+  const d = num(db.settings && db.settings.reminderDefaultLead);
+  return d || 1;
+}
+/* The reminders due for an order as of `ref`: preparation N days before, dispatch on
+   the day, and one overdue alert per day late. Pure, so the same logic drives the
+   Reminder Center and the test. */
+function orderRemindersFor(o, ref) {
+  const r = ref || today();
+  const out = [];
+  if (!o || !o.deliveryDate || o.status === 'delivered') return out;
+  const lead = orderRemindLead_(o);
+  const dd = String(o.deliveryDate).slice(0, 10);
+  const prepFrom = addDays_(dd, -lead);
+  if (r >= prepFrom && r <= dd) out.push({ kind: 'prep', date: r, text: 'Check preparation for ' + (o.orderNo || '') });
+  if (r === dd) out.push({ kind: 'dispatch', date: r, text: 'Confirm dispatch today for ' + (o.orderNo || '') });
+  if (isOrderOverdue(o, r)) out.push({ kind: 'overdue', date: r, text: 'Overdue by ' + orderDaysLate_(o, r) + ' day(s): ' + (o.orderNo || '') });
+  return out;
+}
+
 /* A return puts the goods back into the stock book. `condition` decides whether they
    can be sold again: 'good' frees the sale, 'damaged' records the loss and keeps the
    goods out of available, so a damaged parcel never looks like sellable stock. */
@@ -2027,10 +2350,10 @@ function hash(s) {
 }
 
 const PERMS = {
-  admin:     ['dashboard', 'memo', 'history', 'purchase', 'supplier', 'products', 'stock', 'delivery', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'users', 'settings', 'backup'],
-  manager:   ['dashboard', 'memo', 'history', 'purchase', 'supplier', 'products', 'stock', 'delivery', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'backup'],
-  salesman:  ['dashboard', 'memo', 'history', 'products', 'stock', 'delivery', 'customers', 'ledger', 'backup'],
-  accountant:['dashboard', 'history', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'supplier', 'backup']
+  admin:     ['dashboard', 'orders', 'memo', 'history', 'purchase', 'supplier', 'products', 'stock', 'delivery', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'users', 'settings', 'backup'],
+  manager:   ['dashboard', 'orders', 'memo', 'history', 'purchase', 'supplier', 'products', 'stock', 'delivery', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'backup'],
+  salesman:  ['dashboard', 'orders', 'memo', 'history', 'products', 'stock', 'delivery', 'customers', 'ledger', 'backup'],
+  accountant:['dashboard', 'orders', 'history', 'customers', 'ledger', 'profit', 'pl', 'ledgerreport', 'expense', 'supplier', 'backup']
 };
 
 /* A fresh install always has a way in; a merge that emptied users must not lock the
@@ -3903,7 +4226,7 @@ function toast(msg) {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.10';
+const APP_VERSION = '2027-01-01.11';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -3923,6 +4246,7 @@ function versionNewer(a, b) {
 
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
+  { id: 'orders',     label: 'Orders',         ic: '\u26A1', group: 'Overview' },
   { id: 'memo',       label: 'New Sales Memo', ic: '\uFF0B', group: 'Sales' },
   { id: 'history',    label: 'Memo History',   ic: '\u25F7', group: 'Sales' },
   { id: 'delivery',   label: 'Delivery',       ic: '\u2713', group: 'Sales' },
@@ -4095,6 +4419,7 @@ function renderAll() {
   const p = currentPage;
   try {
     if (p === 'dashboard') renderDashboard();
+    if (p === 'orders') renderOrders();
     if (p === 'memo') calcMemo();
     if (p === 'history') renderHistory();
     if (p === 'delivery') renderDelivery();
@@ -4309,8 +4634,16 @@ function renderDashboard() {
     : '<div class="empty">No sales yet</div>';
 
   document.getElementById('dashDeliveries').innerHTML = pendingDeliveryHTML();
+  renderDashOrderSummary();
   renderSyncWarning();
   renderCostWarn();
+}
+
+/* The dashboard's Order Command Center entry: the same four tiles the Orders page
+   shows, from the same orderSummary(), so the two can never disagree. */
+function renderDashOrderSummary() {
+  const el = document.getElementById('dashOrderSummary');
+  if (el) el.innerHTML = orderSummaryTilesHTML();
 }
 
 function pendingDeliveryHTML() {
@@ -4322,6 +4655,343 @@ function pendingDeliveryHTML() {
   return '<div class="tablewrap"><table><thead><tr><th>Memo</th><th>Customer</th><th>Pending</th></tr></thead><tbody>' +
     rows.map(x => '<tr><td>' + esc(x.m.memoNo) + '</td><td>' + esc(x.m.customerName) +
       '</td><td><span class="pill warn">' + x.pend + '</span></td></tr>').join('') + '</tbody></table></div>';
+}
+
+/* ===================== Order Command Center =====================
+   The dashboard the owner asked for: a business summary, the orders that need
+   attention first, a delivery calendar, reminders, and the full order board. All
+   of the counts and colours come from the pure helpers in db.js, so the dashboard
+   banner, the Orders page and the calendar always tell the same story. */
+var orderCalMonth = null;      // 'YYYY-MM' being shown in the calendar
+var orderCalSel = null;        // 'YYYY-MM-DD' the owner last clicked
+
+function orderSummaryTilesHTML() {
+  const s = orderSummary();
+  return tile('All active', s.active, 'Active Orders', 'blue') +
+    tile('Upcoming', s.upcoming7, 'Next 7 Days', 'violet') +
+    tile('Attention', s.overdue, 'Overdue Orders', 'danger') +
+    tile('Ready', s.ready, 'Ready to Deliver', 'green');
+  function tile(label, v, sub, cls) {
+    return '<div class="ostile ' + cls + '"><div class="olabel">' + label + '</div>' +
+      '<div class="ovalue">' + String(v).padStart(2, '0') + '</div>' +
+      '<div class="osub">' + sub + '</div></div>';
+  }
+}
+
+function ordStatusBadgeHTML(status) {
+  const label = status === 'overdue' ? 'Overdue' : (ORDER_STATUS_LABEL[status] || status);
+  return '<span class="badge ' + status + '">' + esc(label) + '</span>';
+}
+
+function ordDateLabel(d) {
+  if (!d) return 'No date';
+  const parts = String(d).slice(0, 10).split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return parts[2] + ' ' + (months[num(parts[1]) - 1] || '') + ' ' + parts[0];
+}
+
+function orderCardHTML(o, ref) {
+  const st = orderDisplayStatus(o, ref);
+  return '<div class="ocard s-' + st + '" onclick="openOrder(\'' + o.id + '\')">' +
+    '<div class="ohead"><span class="ono">' + esc(o.orderNo || '(no number)') + '</span>' + ordStatusBadgeHTML(st) + '</div>' +
+    '<div class="ocust">' + esc(o.customerName || '-') + '</div>' +
+    '<div class="oprod">' + esc(o.productName || '-') + (num(o.qty) ? ' · ' + num(o.qty) + ' pcs' : '') + '</div>' +
+    '<div class="odate"><span>Delivery date</span><b>' + ordDateLabel(o.deliveryDate) + '</b></div>' +
+    (o.priority && o.priority !== 'normal'
+      ? '<div class="oprio">' + esc(o.priority) + ' priority</div>' : '') +
+  '</div>';
+}
+
+function renderOrders() {
+  const sumEl = document.getElementById('ordSummary');
+  if (sumEl) sumEl.innerHTML = orderSummaryTilesHTML();
+  ordFillStatusFilter();
+  renderOrderAttention();
+  renderOrderReminders();
+  renderOrderBoard();
+  if (!orderCalMonth) orderCalMonth = today().slice(0, 7);
+  renderOrderCalendar();
+}
+
+function ordFillStatusFilter() {
+  const sel = document.getElementById('ordFilterStatus');
+  if (!sel) return;
+  const cur = sel.value;
+  let html = '<option value="">All statuses</option><option value="overdue">Overdue</option>';
+  ORDER_STATUSES.forEach(s => { html += '<option value="' + s + '">' + ORDER_STATUS_LABEL[s] + '</option>'; });
+  sel.innerHTML = html;
+  sel.value = cur;
+}
+
+/* Needs Your Attention: overdue first, then anything due within three days. The
+   owner should not have to scroll the whole list to find the fire. */
+function renderOrderAttention() {
+  const ref = today();
+  const box = document.getElementById('ordAttention');
+  if (!box) return;
+  const soonCut = addDays_(ref, 3);
+  const items = ordersByUrgency(ref).filter(o => {
+    if (!isOrderActive(o)) return false;
+    return isOrderOverdue(o, ref) || (o.deliveryDate >= ref && o.deliveryDate <= soonCut);
+  }).slice(0, 8);
+  const cnt = document.getElementById('ordAttnCount');
+  if (cnt) cnt.textContent = String(items.length);
+  if (!items.length) { box.innerHTML = '<div class="empty">Nothing urgent. Every active order is on schedule.</div>'; return; }
+  box.innerHTML = items.map(o => {
+    const late = orderDaysLate_(o, ref);
+    const over = isOrderOverdue(o, ref);
+    const dueToday = String(o.deliveryDate || '').slice(0, 10) === ref;
+    const tag = over ? ('OVERDUE — ' + late + ' day' + (late === 1 ? '' : 's') + ' late')
+      : (dueToday ? 'DUE TODAY' : 'DUE ' + ordDateLabel(o.deliveryDate).toUpperCase());
+    return '<div class="attn ' + (over ? 'overdue' : 'soon') + '">' +
+      '<div class="arow"><span class="badge ' + (over ? 'overdue' : 'received') + '">' + esc(tag) + '</span>' +
+      '<span class="ano">' + esc(o.orderNo || '') + '</span><span class="acust">' + esc(o.customerName || '') + '</span>' +
+      '<span class="aact"><button class="btn-light btn-sm" onclick="openOrder(\'' + o.id + '\')">Open</button>' +
+      (o.status !== 'delivered' ? '<button class="btn-green btn-sm" onclick="setOrderStatus(\'' + o.id + '\',\'delivered\')">Mark Delivered</button>' : '') +
+      '</span></div>' +
+      '<div class="ameta">' + esc(o.productName || '') + (num(o.qty) ? ' · ' + num(o.qty) + ' pcs' : '') +
+      ' · Expected: ' + ordDateLabel(o.deliveryDate) + '</div></div>';
+  }).join('');
+}
+
+/* Reminder Center: everything due today across active orders, plus their own lead
+   time. Same pure orderRemindersFor() the tests exercise. */
+function renderOrderReminders() {
+  const ref = today();
+  const box = document.getElementById('ordReminders');
+  if (!box) return;
+  const rows = [];
+  (db.orders || []).forEach(o => {
+    orderRemindersFor(o, ref).forEach(r => rows.push({ o, r }));
+  });
+  rows.sort((a, b) => (a.r.kind === 'overdue' ? 0 : 1) - (b.r.kind === 'overdue' ? 0 : 1));
+  const cnt = document.getElementById('ordRemindCount');
+  if (cnt) cnt.textContent = String(rows.length);
+  if (!rows.length) { box.innerHTML = '<div class="empty">No reminders for today.</div>'; return; }
+  const seen = {};
+  box.innerHTML = rows.slice(0, 12).map(x => {
+    seen[x.r.kind] = true;
+    return '<div class="remitem ' + x.r.kind + '"><span class="rdot"></span><div>' +
+      '<div class="rtext">' + esc(x.r.text) + '</div>' +
+      '<div class="rsub">' + esc(x.o.customerName || '') + ' · ' + ordDateLabel(x.o.deliveryDate) + '</div></div></div>';
+  }).join('');
+}
+
+function ordSearchText(o) {
+  return [o.orderNo, o.customerName, o.phone, o.productName, o.note].map(v => String(v || '').toLowerCase()).join(' | ');
+}
+
+function renderOrderBoard() {
+  const box = document.getElementById('ordBoard');
+  if (!box) return;
+  const ref = today();
+  const q = (document.getElementById('ordSearch')?.value || '').trim().toLowerCase();
+  const fs = document.getElementById('ordFilterStatus')?.value || '';
+  const ft = document.getElementById('ordFilterTime')?.value || '';
+  const weekEnd = addDays_(ref, 7);
+  const monthEnd = ref.slice(0, 8) + '31';
+  let list = ordersByUrgency(ref);
+  if (q) list = list.filter(o => ordSearchText(o).indexOf(q) !== -1);
+  if (fs === 'overdue') list = list.filter(o => isOrderOverdue(o, ref));
+  else if (fs) list = list.filter(o => o.status === fs);
+  if (ft === 'overdue') list = list.filter(o => isOrderOverdue(o, ref));
+  if (ft === 'today') list = list.filter(o => String(o.deliveryDate || '').slice(0, 10) === ref);
+  if (ft === 'week') list = list.filter(o => o.deliveryDate >= ref && o.deliveryDate <= weekEnd);
+  if (ft === 'month') list = list.filter(o => o.deliveryDate >= ref.slice(0, 8) + '01' && o.deliveryDate <= monthEnd);
+  if (!list.length) {
+    box.innerHTML = '<div class="empty">No orders match. ' +
+      ((db.orders || []).length ? 'Try clearing the search or filters.' : 'Tap “+ New Order” to add the first one.') + '</div>';
+    return;
+  }
+  box.innerHTML = list.map(o => orderCardHTML(o, ref)).join('');
+}
+
+/* ---------- calendar ---------- */
+function ordCalShift(n) {
+  const d = new Date(orderCalMonth + '-01T00:00:00Z');
+  d.setUTCMonth(d.getUTCMonth() + n);
+  orderCalMonth = d.toISOString().slice(0, 7);
+  orderCalSel = null;
+  renderOrderCalendar();
+}
+function ordCalToday() { orderCalMonth = today().slice(0, 7); orderCalSel = null; renderOrderCalendar(); }
+function ordCalPickDate(date) { orderCalSel = date; renderOrderCalendar(); }
+
+function renderOrderCalendar() {
+  const grid = document.getElementById('ordCalendar');
+  const title = document.getElementById('ordCalTitle');
+  if (!grid) return;
+  const ref = today();
+  const [y, m] = orderCalMonth.split('-').map(x => num(x));
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  const startDow = first.getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  if (title) title.textContent = months[m - 1] + ' ' + y;
+  const dows = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  let html = dows.map(d => '<div class="cdow">' + d + '</div>').join('');
+  const cells = Math.ceil((startDow + daysInMonth) / 7) * 7;
+  for (let i = 0; i < cells; i++) {
+    const dayNum = i - startDow + 1;
+    if (dayNum < 1 || dayNum > daysInMonth) { html += '<div class="cday out"></div>'; continue; }
+    const ds = orderCalMonth + '-' + String(dayNum).padStart(2, '0');
+    const list = ordersOnDate(ds, ref);
+    const hasOver = list.some(o => isOrderOverdue(o, ref));
+    const cls = hasOver ? 'danger' : (list.length >= 5 ? 'warn' : 'ok');
+    const label = list.length
+      ? (list.length >= 5 ? list.length + ' Deliveries' : list.length + ' order' + (list.length > 1 ? 's' : ''))
+      : '';
+    html += '<div class="cday' + (ds === ref ? ' today' : '') + (ds === orderCalSel ? ' sel' : '') +
+      '" onclick="ordCalPickDate(\'' + ds + '\')"><div class="cnum">' + dayNum + '</div>' +
+      (label ? '<div class="cbar"><span class="ccount ' + cls + '">' + label + '</span></div>' : '') + '</div>';
+  }
+  grid.innerHTML = html;
+  renderOrderDay(ref);
+}
+
+function renderOrderDay(ref) {
+  const box = document.getElementById('ordCalDay');
+  if (!box) return;
+  if (!orderCalSel) { box.innerHTML = ''; return; }
+  const list = ordersOnDate(orderCalSel, ref);
+  box.innerHTML = '<h3>' + ordDateLabel(orderCalSel) + ' — ' + list.length + ' delivery' + (list.length === 1 ? '' : 'ies') + '</h3>' +
+    (list.length
+      ? '<div class="ordboard">' + list.map(o => orderCardHTML(o, ref)).join('') + '</div>'
+      : '<div class="empty">No delivery scheduled on this date.</div>');
+}
+
+/* ---------- create / edit ---------- */
+function nextOrderNo() {
+  const prefix = db.settings.orderPrefix || 'TP-';
+  let max = 0;
+  (db.orders || []).forEach(o => {
+    const mm = String(o.orderNo || '').match(/(\d+)\s*$/);
+    if (mm) max = Math.max(max, num(mm[1]));
+  });
+  return prefix + String(max + 1).padStart(4, '0');
+}
+
+function ordRenderCustomerOptions() {
+  const sel = document.getElementById('ordCustList');
+  if (sel) {
+    sel.innerHTML = '<option value="">- select saved customer -</option>' +
+      (db.customers || []).map(c => '<option value="' + c.id + '">' + esc(c.name) + (c.phone ? ' · ' + esc(c.phone) : '') + '</option>').join('');
+  }
+  const dl = document.getElementById('ordCustomerNames');
+  if (dl) dl.innerHTML = (db.customers || []).map(c => '<option value="' + esc(c.name) + '">').join('');
+  const dp = document.getElementById('ordProductNames');
+  if (dp) dp.innerHTML = (db.products || []).map(p => '<option value="' + esc(p.name) + '">').join('');
+}
+
+function ordPickCustomer(cid) {
+  const c = (db.customers || []).find(x => x.id === cid);
+  if (!c) return;
+  const n = document.getElementById('ordCustomer'); if (n) n.value = c.name || '';
+  const p = document.getElementById('ordPhone'); if (p) p.value = c.phone || '';
+}
+
+function openOrder(oid) {
+  ordRenderCustomerOptions();
+  const sel = document.getElementById('ordStatus');
+  if (sel) sel.innerHTML = ORDER_STATUSES.map(s => '<option value="' + s + '">' + ORDER_STATUS_LABEL[s] + '</option>').join('');
+  const o = oid ? (db.orders || []).find(x => x.id === oid) : null;
+  document.getElementById('ordId').value = o ? o.id : '';
+  document.getElementById('ordModalTitle').textContent = o ? 'Edit Order' : 'New Order';
+  document.getElementById('ordNo').value = o ? (o.orderNo || '') : nextOrderNo();
+  document.getElementById('ordDate').value = o ? (o.orderDate || today()) : today();
+  document.getElementById('ordCustomer').value = o ? (o.customerName || '') : '';
+  document.getElementById('ordPhone').value = o ? (o.phone || '') : '';
+  document.getElementById('ordProduct').value = o ? (o.productName || '') : '';
+  document.getElementById('ordQty').value = o ? num(o.qty) : '';
+  document.getElementById('ordDeliveryDate').value = o ? (o.deliveryDate || '') : addDays_(today(), 7);
+  const st = document.getElementById('ordStatus');
+  if (st) st.value = o ? (o.status || 'received') : 'received';
+  document.getElementById('ordPriority').value = o ? (o.priority || 'normal') : 'normal';
+  document.getElementById('ordRemindLead').value = (o && o.remindLeadDays !== undefined && o.remindLeadDays !== null && o.remindLeadDays !== '') ? o.remindLeadDays : '';
+  document.getElementById('ordNote').value = o ? (o.note || '') : '';
+  document.getElementById('ordDeleteBtn').style.display = o ? '' : 'none';
+  const info = document.getElementById('ordModalInfo');
+  if (info) info.textContent = o ? ('Created ' + ordDateLabel((o.createdAt || '').slice(0, 10)) + (o.status === 'delivered' ? ' · Delivered' : '')) : 'Fill in the order details.';
+  const hist = document.getElementById('ordHistory');
+  if (hist) {
+    const h = (o && Array.isArray(o.history)) ? o.history.slice().reverse() : [];
+    hist.innerHTML = h.length
+      ? '<div class="muted" style="font-weight:700;margin-bottom:4px">History</div>' +
+        h.map(x => '<div class="hrow"><b>' + ordDateLabel((x.at || '').slice(0, 10)) + '</b> — ' + esc(x.text || '') + '</div>').join('')
+      : '';
+  }
+  document.getElementById('orderModal').classList.add('show');
+}
+function closeOrder() { document.getElementById('orderModal').classList.remove('show'); }
+
+function saveOrder() {
+  const oid = document.getElementById('ordId').value;
+  const customer = document.getElementById('ordCustomer').value.trim();
+  const product = document.getElementById('ordProduct').value.trim();
+  const deliveryDate = document.getElementById('ordDeliveryDate').value;
+  if (!customer) return alert('Customer name is required.');
+  if (!product) return alert('Product / description is required.');
+  if (!deliveryDate) return alert('Delivery date is required.');
+  const now = new Date().toISOString();
+  const o = oid ? db.orders.find(x => x.id === oid) : null;
+  const prevStatus = o ? o.status : null;
+  const fields = {
+    orderNo: document.getElementById('ordNo').value.trim() || nextOrderNo(),
+    orderDate: document.getElementById('ordDate').value || today(),
+    customerName: customer,
+    phone: document.getElementById('ordPhone').value.trim(),
+    productName: product,
+    qty: num(document.getElementById('ordQty').value),
+    deliveryDate: deliveryDate,
+    status: document.getElementById('ordStatus').value || 'received',
+    priority: document.getElementById('ordPriority').value || 'normal',
+    remindLeadDays: document.getElementById('ordRemindLead').value === '' ? null : num(document.getElementById('ordRemindLead').value),
+    note: document.getElementById('ordNote').value.trim()
+  };
+  if (o) {
+    Object.assign(o, fields);
+    o.history = o.history || [];
+    if (prevStatus && prevStatus !== fields.status) {
+      o.history.push({ at: now, text: 'Status: ' + (ORDER_STATUS_LABEL[prevStatus] || prevStatus) + ' → ' + (ORDER_STATUS_LABEL[fields.status] || fields.status) });
+    } else {
+      o.history.push({ at: now, text: 'Order details updated' });
+    }
+  } else {
+    db.orders.push(Object.assign({ id: id(), createdAt: now, history: [{ at: now, text: 'Order created' }] }, fields));
+  }
+  if (!commit()) return;
+  const rec = o || db.orders[db.orders.length - 1];
+  syncPush('order', {
+    orderId: rec.id, orderNo: rec.orderNo, customerName: rec.customerName,
+    productName: rec.productName, qty: rec.qty, deliveryDate: rec.deliveryDate, status: rec.status
+  }, 'Order ' + rec.orderNo);
+  closeOrder();
+}
+
+function deleteOrderRecord() {
+  const oid = document.getElementById('ordId').value;
+  if (!oid) return;
+  if (!confirm('Delete this order? This cannot be undone.')) return;
+  db.orders = db.orders.filter(x => x.id !== oid);
+  if (!commit()) return;
+  closeOrder();
+}
+
+/* Quick status moves from the priority list and the board. Kept as one path so the
+   history line and the cloud push are never skipped. */
+function setOrderStatus(oid, status) {
+  const o = (db.orders || []).find(x => x.id === oid);
+  if (!o) return;
+  const prev = o.status;
+  if (prev === status) return;
+  o.status = status;
+  o.history = o.history || [];
+  o.history.push({ at: new Date().toISOString(), text: 'Status: ' + (ORDER_STATUS_LABEL[prev] || prev) + ' → ' + (ORDER_STATUS_LABEL[status] || status) });
+  if (!commit()) return;
+  syncPush('order', {
+    orderId: o.id, orderNo: o.orderNo, customerName: o.customerName,
+    productName: o.productName, qty: o.qty, deliveryDate: o.deliveryDate, status: o.status
+  }, 'Order ' + o.orderNo);
 }
 
 /* ===================== memo (the fixed screen) ===================== */
@@ -6081,6 +6751,10 @@ function renderSettings() {
   const dt = document.getElementById('stDeviceTag');
   if (dt) dt.value = db.settings.deviceTag || '';
   document.getElementById('stLowStock').value = db.settings.lowStockLevel || 10;
+  const op = document.getElementById('stOrderPrefix');
+  if (op) op.value = db.settings.orderPrefix || 'TP-';
+  const rl = document.getElementById('stReminderLead');
+  if (rl) rl.value = db.settings.reminderDefaultLead === undefined ? 1 : db.settings.reminderDefaultLead;
   document.getElementById('stShortWarn').checked = db.settings.warnOnShortStock !== false;
   document.getElementById('stAutoBackup').checked = db.settings.autoBackup !== false;
   const v = document.getElementById('appVersion');
@@ -6142,6 +6816,10 @@ function saveCompany() {
   const dtEl = document.getElementById('stDeviceTag');
   db.settings.deviceTag = dtEl ? dtEl.value.trim() : '';
   db.settings.lowStockLevel = num(document.getElementById('stLowStock').value) || 10;
+  const opEl = document.getElementById('stOrderPrefix');
+  if (opEl) db.settings.orderPrefix = opEl.value.trim() || 'TP-';
+  const rlEl = document.getElementById('stReminderLead');
+  if (rlEl) db.settings.reminderDefaultLead = Math.max(0, num(rlEl.value));
   db.settings.autoBackup = document.getElementById('stAutoBackup').checked;
   // Stamp the edit, so the other machine can tell this settings value is newer than
   // its own instead of the two of them trading the same field back and forth.
