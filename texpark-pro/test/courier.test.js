@@ -338,6 +338,20 @@ const paymentsBefore = db.payments.length;
   eq(picked.thana, 'Palash', 'manual thana kept');
   eq(picked.ok, true, 'a manual pick allows booking');
 
+  /* The full hierarchy renders and the City Corporation drives the thana list. */
+  console.log('\n--- full hierarchy on the order form ---');
+  _bdSel = { address: '', district: '', city: '', thana: '', union: '', paurashava: '', ward: '', wardParent: '' };
+  renderOrderAddressCheck(ordAddr);
+  const hierN = resolveBdLocation(orderBookingAddress_(ordAddr));
+  eq(hierN.city, null, 'Narsingdi has no city corporation');
+  eq(el('ordAddrCheck')._html.indexOf('City Corporation'), -1, 'no City Corporation select for a district without one');
+
+  /* A Dhaka ward address: the city and ward come out of the resolver. */
+  const hierD = resolveBdLocation('Ward 19, Uttara, Dhaka');
+  eq(hierD.city, 'Dhaka North', 'resolver puts the ward in Dhaka North');
+  eq(hierD.ward, 'Ward 19', 'resolver finds the ward');
+  eq(bdWardsFor('Dhaka', 'Dhaka North').length, 2, 'Dhaka North ward list is available to the picker');
+
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
   if (fail) process.exit(1);

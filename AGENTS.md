@@ -736,3 +736,48 @@ place — `Book with Steadfast` in the order modal, next to the existing `Sync C
   rules, the payload, reply and error parsing, the one write path, the modal field sync, and
   the two refusals (already booked, blank address).
 
+
+## Full Bangladesh address hierarchy (2026-10-11)
+
+The opt-in area check used to know only District and Thana, from districts + upazilas. It now
+resolves the whole administrative chain offline, so an address that names a village or a city
+ward lands on the right Union or Ward.
+
+- **One pinned, government-traceable source.** `tools/gen-bd-locations.js` builds the bundle
+  from `montasim/bangladesh-location-registry` release `data-2026.08.04`
+  (`address-bd-data-2026.08.04-json.tar.zst`, SHA-256 checked on download). Every record carries
+  its publisher's `sourceId` (BBS Census 2022, Bangladesh Post, LGD, DGHS), so a wrong area can
+  be traced — unlike the ad-hoc lists a geocoder would hide. The generator can download the
+  release itself (Node 24 has zstd built in) or read a pre-extracted `json/` directory.
+- **Bangla needs a second source.** The registry is English-only below union level, so
+  `@olism/bd-geo@1.0.0` (MIT) supplies Bangla district/thana names and older English spellings,
+  merged into the same records as `nameBn`/`aliases`. Neither package is an app dependency; only
+  the extracted names are committed.
+- **Levels:** 8 divisions, 64 districts, 600 thanas/upazilas (495 upazila + 105 metro thana — the
+  metro thana carries its City Corporation), 4762 unions, 329 paurashavas, 3142 wards, and 12 city
+  corporations. Dhaka is split into **Dhaka North** and **Dhaka South** by BBS code, which is what
+  makes `Mirpur`/`Uttara` → North and `Shahbag`/`Dhanmondi` → South resolve.
+- **Curated aliases are deliberate and labelled.** `c210` in the generator holds the phonetic/older
+  spellings a shopkeeper types (`Chattogram`←chittagong, `Cumilla`←comilla, `Jashore`←jessore,
+  `Charfasson`←char fasson, …). These are the only invented strings and they are visible in one
+  place.
+- **It never guesses what the source does not state.** The registry links a paurashava to its
+  *district only*, so no parent upazila is fabricated; the registry's Dhaka city-ward mapping is
+  partial, so the bundle keeps exactly the wards the source lists. `data/SOURCE.md` records both
+  limits.
+- **The payload is untouched.** `bdOrderLocationStatus_` still gates booking on the *District and
+  Thana only*; City Corporation / Union / Paurashava / Ward are shown for correction and never
+  sent to Steadfast. `courierBookRequest_` still has no area fields (pinned by a test).
+- **The order form grows the extra selects** (`ordBdCity`, `ordBdUnion`, `ordBdPaurashava`,
+  `ordBdWard`), each shown only when the chosen parent has children, and each re-seeding from
+  detection until the owner picks something. `_bdSel` carries `wardParent` so a ward whose parent
+  is a paurashava (not a city corporation) still lists its wards.
+- **The resolver ties names to positions, not just presence.** `bdNameIndex_` finds a name's token
+  position and the leftmost hit wins, because an address is written smallest-to-largest; a name
+  that merely repeats the thana is dropped so `Amta` cannot resolve to the `Amta` union *named
+  after* its own thana when a different `Amta` union is intended.
+- `test/address.test.js` grows to **62 checks** and `test/courier.test.js` to **90**, covering the
+  city-corporation split, union/paurashava/ward detection, the Bangla and old-spelling cases, the
+  helper lists, and the unchanged payload.
+
+

@@ -1,4 +1,5 @@
-/* Bangladesh address → District / Thana(Upazila) resolver.
+/* Bangladesh address → Division / District / City Corporation / Thana /
+   Union / Paurashava / Ward resolver.
 
    Pure functions, no DOM and no network, so the whole thing is unit-testable and
    the booking code can call it without a socket. The location list is the offline
@@ -9,7 +10,12 @@
    village Char Fasson, Bhola" must resolve to Bhola, never Dhaka. So the last,
    most specific location wins, a mid-string district that is followed by further
    location words is treated as weak, and a thana is never invented from a
-   district alone — an unresolved thana means we ask, we do not guess. */
+   district alone — an unresolved thana means we ask, we do not guess.
+
+   Districts and thanas/upazilas are matched from the dataset. Unions,
+   paurashavas and wards are matched too, but only exact names within the
+   district/thana already found, because those names repeat across the country.
+   The address sent to Steadfast is never rewritten; this only reads it. */
 
 function bdLocationData() {
   return (typeof window !== 'undefined' && window.BD_LOCATIONS) ? window.BD_LOCATIONS : null;
@@ -46,42 +52,109 @@ function bdTokens_(text) {
 var _bdDistrictByAlias = null;
 var _bdThanaByAlias = null;
 var _bdThanaGlobal = null;
+var _bdUnionByKey = null;
+var _bdPaurashavaByKey = null;
+var _bdWardByKey = null;
 
 function bdBuildIndex_() {
   if (_bdDistrictByAlias) return;
   _bdDistrictByAlias = {};
   _bdThanaByAlias = {};
   _bdThanaGlobal = {};
+  _bdUnionByKey = {};
+  _bdPaurashavaByKey = {};
+  _bdWardByKey = {};
   const data = bdLocationData();
   const districts = (data && data.districts) || [];
   districts.forEach(d => {
     const aliases = (d.aliases && d.aliases.length ? d.aliases : [normalizeBd_(d.name)])
       .concat([normalizeBd_(d.name), normalizeBd_(d.nameBn)]).filter(Boolean);
     aliases.forEach(a => { if (!(a in _bdDistrictByAlias)) _bdDistrictByAlias[a] = d; });
-    (d.thanas || []).forEach(t => {
-      const tal = (t.aliases && t.aliases.length ? t.aliases : [normalizeBd_(t.name)])
-        .concat([normalizeBd_(t.name)]).filter(Boolean);
-      tal.forEach(a => {
-        _bdThanaByAlias[d.code + '|' + a] = { thana: t, district: d };
-        (_bdThanaGlobal[a] = _bdThanaGlobal[a] || []).push({ thana: t, district: d });
-      });
+  });
+  /* Areas are a flat list keyed to a district; a metro thana also names its
+     city corporation, so the same thana name can appear under two districts. */
+  ((data && data.areas) || []).forEach(a => {
+    const tal = (a.aliases && a.aliases.length ? a.aliases : [])
+      .concat([normalizeBd_(a.name), normalizeBd_(a.nameBn)]).filter(Boolean);
+    tal.forEach(k => {
+      if (!(normalizeBd_(a.district) + '|' + k in _bdThanaByAlias)) _bdThanaByAlias[normalizeBd_(a.district) + '|' + k] = a;
+      (_bdThanaGlobal[k] = _bdThanaGlobal[k] || []).push(a);
     });
   });
+  ((data && data.unions) || []).forEach(u => {
+    _bdUnionByKey[normalizeBd_(u.district) + '|' + normalizeBd_(u.upazila) + '|' + normalizeBd_(u.name)] = u;
+  });
+  ((data && data.paurashavas) || []).forEach(p => {
+    _bdPaurashavaByKey[normalizeBd_(p.district) + '|' + normalizeBd_(p.name)] = p;
+  });
+  ((data && data.wards) || []).forEach(w => {
+    _bdWardByKey[normalizeBd_(w.district) + '|' + normalizeBd_(w.parent) + '|' + normalizeBd_(w.wardCode)] = w;
+  });
+}
+
+/* The district record for a name or code. */
+function bdFindDistrict_(nameOrCode) {
+  bdBuildIndex_();
+  const data = bdLocationData();
+  if (!data) return null;
+  const want = normalizeBd_(nameOrCode);
+  return (data.districts || []).find(x =>
+    x.name === nameOrCode || x.code === nameOrCode ||
+    normalizeBd_(x.name) === want || normalizeBd_(x.nameBn) === want ||
+    (x.aliases || []).indexOf(want) !== -1) || null;
 }
 
 function bdDistricts() {
   const data = bdLocationData();
-  return ((data && data.districts) || []).map(d => ({ code: d.code, name: d.name, nameBn: d.nameBn, division: d.division }));
+  return ((data && data.districts) || []).map(d => ({
+    code: d.code, name: d.name, nameBn: d.nameBn, division: d.division
+  }));
 }
 
+/* The thanas/upazilas of a district: every area whose `district` matches.
+   `city` is the city corporation for a metro thana (Dhaka North/South), else null. */
 function bdThanasFor(districtNameOrCode) {
   const data = bdLocationData();
+  const d = bdFindDistrict_(districtNameOrCode);
+  if (!data || !d) return [];
+  return (data.areas || []).filter(a => a.district === d.name)
+    .map(a => ({ name: a.name, nameBn: a.nameBn, type: a.type, city: a.city || null }));
+}
+
+function bdUnionsFor(districtNameOrCode, upazilaName) {
+  const data = bdLocationData();
   if (!data) return [];
-  const want = normalizeBd_(districtNameOrCode);
-  const d = (data.districts || []).find(x =>
-    x.code === districtNameOrCode || normalizeBd_(x.name) === want || normalizeBd_(x.nameBn) === want ||
-    (x.aliases || []).indexOf(want) !== -1);
-  return d ? (d.thanas || []).map(t => ({ name: t.name, nameBn: t.nameBn, type: t.type })) : [];
+  const d = bdFindDistrict_(districtNameOrCode);
+  const dk = normalizeBd_(d ? d.name : districtNameOrCode);
+  const uk = normalizeBd_(upazilaName);
+  return (data.unions || []).filter(u => normalizeBd_(u.district) === dk && (!uk || normalizeBd_(u.upazila) === uk));
+}
+
+function bdPaurashavasFor(districtNameOrCode) {
+  const data = bdLocationData();
+  if (!data) return [];
+  const d = bdFindDistrict_(districtNameOrCode);
+  return (data.paurashavas || []).filter(p => p.district === (d ? d.name : districtNameOrCode));
+}
+
+function bdWardsFor(districtNameOrCode, parentName) {
+  const data = bdLocationData();
+  if (!data) return [];
+  const d = bdFindDistrict_(districtNameOrCode);
+  const dn = d ? d.name : districtNameOrCode;
+  const pk = normalizeBd_(parentName);
+  return (data.wards || []).filter(w => w.district === dn && (!pk || normalizeBd_(w.parent) === pk));
+}
+
+function bdCityCorporations() {
+  const data = bdLocationData();
+  return ((data && data.cityCorporations) || []).map(c => ({ code: c.code, name: c.name, district: c.district }));
+}
+
+/* City corporations of a district, e.g. Dhaka -> [Dhaka North, Dhaka South]. */
+function bdCitiesFor(districtNameOrCode) {
+  const d = bdFindDistrict_(districtNameOrCode);
+  return bdCityCorporations().filter(c => c.district === (d ? d.name : districtNameOrCode));
 }
 
 /* Find every alias (1..3 words) of an index in the token stream. Returns the hits
@@ -110,15 +183,73 @@ function bdLabelled_(tokens) {
   return null;
 }
 
-/* Some districts the dataset spells one way are typed another; the generator puts
-   those variants in the alias list, so nothing extra is needed here. */
+/* First token index where a name phrase appears, or -1. */
+function bdNameIndex_(tokens, name) {
+  const parts = normalizeBd_(name).split(' ').filter(Boolean);
+  if (!parts.length) return -1;
+  for (let i = 0; i + parts.length <= tokens.length; i++) {
+    let ok = true;
+    for (let j = 0; j < parts.length; j++) if (tokens[i + j] !== parts[j]) { ok = false; break; }
+    if (ok) return i;
+  }
+  return -1;
+}
 
-/* Resolve an address to { district, thana, confidence, source }.
+/* Walk the address and collect the union / paurashava / ward the text names,
+   limited to the district (and, for a union, the thana) already found. The
+   leftmost hit wins, because an address is written smallest-to-largest; a name
+   that merely repeats the thana is dropped so it cannot stand in for the union.
+   A ward is only trusted when a number is written next to the word "ward". */
+function bdScanDetails_(tokens, district, thana) {
+  const out = { union: null, paurashava: null, ward: null, wardParent: null };
+  if (!district) return out;
+  const dn = district.name;
+  const tn = thana || '';
+  const tnk = normalizeBd_(tn);
+
+  const uHits = bdUnionsFor(dn, tn)
+    .map(u => ({ name: u.name, i: bdNameIndex_(tokens, u.name) }))
+    .filter(h => h.i !== -1 && normalizeBd_(h.name) !== tnk)
+    .sort((a, b) => a.i - b.i);
+  if (uHits.length) out.union = uHits[0].name;
+
+  const pHits = bdPaurashavasFor(dn)
+    .map(p => ({ name: p.name, i: bdNameIndex_(tokens, p.name) }))
+    .filter(h => h.i !== -1 && normalizeBd_(h.name) !== normalizeBd_(dn))
+    .sort((a, b) => a.i - b.i);
+  if (pHits.length) out.paurashava = pHits[0].name;
+
+  const wi = tokens.indexOf('ward');
+  if (wi !== -1) {
+    const near = tokens.slice(wi + 1, wi + 3).concat(tokens.slice(Math.max(0, wi - 2), wi));
+    const num = near.find(x => /^\d{1,3}$/.test(x));
+    if (num) {
+      const code = String(parseInt(num, 10)).padStart(2, '0');
+      const w = bdWardsFor(dn).find(x => x.wardCode === code);
+      if (w) { out.ward = /^ward\b/i.test(w.name) ? w.name : (w.name + ' (Ward ' + code + ')'); out.wardParent = w.parent; }
+    }
+  }
+  return out;
+}
+
+/* Resolve an address to { division, district, thana, city, union, paurashava,
+   ward, confidence, source }.
    structured (optional) = { district, thana } supplied by the user/record.
    confidence: 'high' | 'medium' | 'low' | 'none'. */
 function resolveBdLocation(rawAddress, structured) {
   bdBuildIndex_();
   const tokens = bdTokens_(rawAddress);
+
+  /* attach the lower levels the text names, once the district (and thana) are known */
+  const finish = (o) => {
+    const dist = o.district ? bdFindDistrict_(o.district) : null;
+    const det = bdScanDetails_(tokens, dist, o.thana);
+    return Object.assign({
+      division: dist ? dist.division : null,
+      city: (o.city || null),
+      union: det.union, paurashava: det.paurashava, ward: det.ward, wardParent: det.wardParent
+    }, o);
+  };
 
   /* 1. an explicit, valid structured location wins (priority 1–2). If it also
         disagrees with the text, say so (conflict) so the UI can ask. */
@@ -127,13 +258,14 @@ function resolveBdLocation(rawAddress, structured) {
     if (sd) {
       const st = structured.thana ? bdResolveThanaName_(sd, structured.thana) : null;
       const textHit = bdScanDistrict_(tokens);
-      const conflict = !!(textHit && textHit.district.code !== sd.code);
-      return {
+      const conflict = !!(textHit && textHit.district.name !== sd.name);
+      return finish({
         district: sd.name, districtCode: sd.code,
         thana: st ? st.name : null,
+        city: st ? st.city : null,
         confidence: conflict ? 'low' : (st ? 'high' : 'medium'),
         source: 'structured', conflict: conflict
-      };
+      });
     }
   }
 
@@ -143,8 +275,8 @@ function resolveBdLocation(rawAddress, structured) {
     const sd = bdResolveDistrictNamePhrase_(lab);
     if (sd) {
       const th = bdScanThana_(tokens, sd);
-      return { district: sd.name, districtCode: sd.code, thana: th ? th.name : null,
-        confidence: th ? 'high' : 'medium', source: 'labeled', conflict: false };
+      return finish({ district: sd.name, districtCode: sd.code, thana: th ? th.name : null,
+        city: th ? th.city : null, confidence: th ? 'high' : 'medium', source: 'labeled', conflict: false });
     }
   }
 
@@ -155,10 +287,11 @@ function resolveBdLocation(rawAddress, structured) {
   if (!dHit) {
     const g = bdScanThanaGlobal_(tokens);
     if (g && g.unique) {
-      return { district: g.district.name, districtCode: g.district.code, thana: g.thana.name,
-        confidence: 'medium', source: 'thana', conflict: false };
+      return finish({ district: g.district.name, districtCode: g.district.code, thana: g.thana.name,
+        city: g.thana.city || null, confidence: 'medium', source: 'thana', conflict: false });
     }
-    return { district: null, districtCode: null, thana: null, confidence: 'none', source: 'none', conflict: false };
+    return finish({ district: null, districtCode: null, thana: null, city: null,
+      confidence: 'none', source: 'none', conflict: false });
   }
 
   const district = dHit.district;
@@ -167,18 +300,17 @@ function resolveBdLocation(rawAddress, structured) {
   /* 3b. confidence: a terminal district with a thana is certain; a district on its
         own is medium (ask for the thana); a lone non-terminal district that is
         followed by more words is weak (it may be a reference point). */
-  const last = dHit.start;
-  const nearTerminal = last >= tokens.length - 2;
+  const nearTerminal = dHit.start >= tokens.length - 2;
   let confidence;
   if (th) confidence = nearTerminal ? 'high' : 'medium';
   else if (nearTerminal) confidence = 'medium';
   else confidence = 'low';
 
-  return {
+  return finish({
     district: district.name, districtCode: district.code,
-    thana: th ? th.name : null,
+    thana: th ? th.name : null, city: th ? th.city : null,
     confidence: confidence, source: 'text', conflict: false
-  };
+  });
 }
 
 /* --- internal matchers --------------------------------------------------- */
@@ -193,11 +325,10 @@ function bdScanDistrict_(tokens) {
 
 function bdScanThana_(tokens, district) {
   const hits = bdFindAliases_(tokens, _bdThanaGlobal);
-  const own = hits.filter(h => (h.val || []).some(c => c.district.code === district.code));
+  const own = hits.filter(h => (h.val || []).some(a => a.district === district.name));
   if (!own.length) return null;
   const last = own[own.length - 1];
-  const cand = (last.val || []).find(c => c.district.code === district.code);
-  return cand ? cand.thana : null;
+  return (last.val || []).find(a => a.district === district.name) || null;
 }
 
 function bdScanThanaGlobal_(tokens) {
@@ -206,8 +337,8 @@ function bdScanThanaGlobal_(tokens) {
   /* use the last mention; unique if every candidate for that name is one district */
   const last = hits[hits.length - 1];
   const cands = last.val;
-  const codes = new Set(cands.map(c => c.district.code));
-  return { thana: cands[0].thana, district: cands[0].district, unique: codes.size === 1 };
+  const districts = new Set(cands.map(a => a.district));
+  return { thana: cands[0], district: bdFindDistrict_(cands[0].district), unique: districts.size === 1 };
 }
 
 function bdResolveDistrictName_(name) {
@@ -228,6 +359,5 @@ function bdResolveDistrictNamePhrase_(tokensArr) {
 function bdResolveThanaName_(district, name) {
   bdBuildIndex_();
   const k = normalizeBd_(name);
-  const hit = _bdThanaByAlias[district.code + '|' + k];
-  return hit ? hit.thana : null;
+  return _bdThanaByAlias[normalizeBd_(district.name) + '|' + k] || null;
 }

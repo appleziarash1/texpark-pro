@@ -419,7 +419,7 @@ function bdOrderLocationStatus_() {
 
 /* What the owner has on the form, so a re-render keeps a manual choice. Reset
    whenever the address itself changes, so detection wins again. */
-var _bdSel = { address: '', district: '', thana: '' };
+var _bdSel = { address: '', district: '', city: '', thana: '', union: '', paurashava: '', ward: '', wardParent: '' };
 
 function renderOrderAddressCheck(ord) {
   const box = document.getElementById('ordAddrCheck');
@@ -433,11 +433,22 @@ function renderOrderAddressCheck(ord) {
   /* A fresh address re-seeds from detection; an unchanged one keeps the owner's
      pick, so switching the customer does not silently throw a correction away. */
   if (_bdSel.address !== address) {
-    _bdSel = { address: address, district: r.district || '', thana: r.thana || '' };
+    _bdSel = {
+      address: address, district: r.district || '', city: r.city || '', thana: r.thana || '',
+      union: r.union || '', paurashava: r.paurashava || '', ward: r.ward || '',
+      wardParent: r.wardParent || r.city || ''
+    };
   }
 
   const districts = bdDistricts();
-  const thanas = _bdSel.district ? bdThanasFor(_bdSel.district) : [];
+  const allThanas = _bdSel.district ? bdThanasFor(_bdSel.district) : [];
+  const cities = _bdSel.district ? bdCitiesFor(_bdSel.district) : [];
+  const thanas = _bdSel.city ? allThanas.filter(t => t.city === _bdSel.city) : allThanas;
+  const unions = (_bdSel.district && _bdSel.thana) ? bdUnionsFor(_bdSel.district, _bdSel.thana) : [];
+  const paurashavas = _bdSel.district ? bdPaurashavasFor(_bdSel.district) : [];
+  const wardParent = _bdSel.city || _bdSel.paurashava || _bdSel.wardParent || '';
+  const wards = (_bdSel.district && wardParent) ? bdWardsFor(_bdSel.district, wardParent) : [];
+
   const conf = r.confidence;
   const tone = conf === 'high' ? 'var(--green)' : (conf === 'none' ? 'var(--red)' : 'var(--orange)');
   const note = conf === 'high'
@@ -450,37 +461,77 @@ function renderOrderAddressCheck(ord) {
 
   const opt = (v, sel, bn) => '<option value="' + esc(v) + '"' + (v === sel ? ' selected' : '') + '>' +
     esc(v) + (bn ? ' — ' + esc(bn) : '') + '</option>';
+  const sel = (id, label, value, items, handler, blank) =>
+    '<div><label>' + esc(label) + '</label><select id="' + id + '" onchange="' + handler + '">' +
+    '<option value="">' + esc(blank || '— choose —') + '</option>' +
+    items.map(it => opt(it.name, value, it.nameBn)).join('') + '</select></div>';
 
-  box.innerHTML = '<div class="muted" style="font-weight:700;margin-bottom:4px">Delivery District / Thana</div>' +
+  let grid = sel('ordBdDistrict', 'District', _bdSel.district, districts, 'onOrderDistrictChanged()');
+  if (cities.length) {
+    grid += '<div><label>City Corporation</label><select id="ordBdCity" onchange="onOrderCityChanged()">' +
+      '<option value="">— district level —</option>' +
+      cities.map(c => opt(c.name, _bdSel.city, c.nameBn)).join('') + '</select></div>';
+  }
+  grid += sel('ordBdThana', 'Thana / Upazila', _bdSel.thana, thanas, 'onOrderThanaChanged()');
+  if (unions.length) {
+    grid += sel('ordBdUnion', 'Union', _bdSel.union, unions, 'onOrderUnionChanged()');
+  }
+  if (paurashavas.length) {
+    grid += sel('ordBdPaurashava', 'Paurashava', _bdSel.paurashava, paurashavas, 'onOrderPaurashavaChanged()');
+  }
+  if (wards.length) {
+    grid += sel('ordBdWard', 'Ward', _bdSel.ward, wards, 'onOrderWardChanged()');
+  }
+
+  box.innerHTML = '<div class="muted" style="font-weight:700;margin-bottom:4px">Delivery Area (Division → Ward)</div>' +
     '<div style="font-size:12.5px;color:' + tone + '">' + esc(note) + '</div>' +
-    '<div class="formgrid" style="margin-top:6px">' +
-    '<div><label>District</label><select id="ordBdDistrict" onchange="onOrderDistrictChanged()">' +
-    '<option value="">— choose —</option>' +
-    districts.map(d => opt(d.name, _bdSel.district, d.nameBn)).join('') + '</select></div>' +
-    '<div><label>Thana / Upazila</label><select id="ordBdThana" onchange="onOrderThanaChanged()">' +
-    '<option value="">— choose —</option>' +
-    thanas.map(t => opt(t.name, _bdSel.thana, t.nameBn)).join('') + '</select></div>' +
-    '</div>' +
+    '<div class="formgrid" style="margin-top:6px">' + grid + '</div>' +
     '<div class="hint">Checking only — the address sent to Steadfast is unchanged.</div>';
 
   /* The selects were just rebuilt, so put the remembered choice back into them.
-     Booking reads these two fields, so they have to mirror _bdSel exactly. */
-  const dEl = document.getElementById('ordBdDistrict');
-  if (dEl) dEl.value = _bdSel.district || '';
-  const tEl = document.getElementById('ordBdThana');
-  if (tEl) tEl.value = _bdSel.thana || '';
+     Booking reads these fields, so they have to mirror _bdSel exactly. */
+  ['ordBdDistrict', 'ordBdCity', 'ordBdThana', 'ordBdUnion', 'ordBdPaurashava'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const field = { ordBdDistrict: 'district', ordBdCity: 'city', ordBdThana: 'thana', ordBdUnion: 'union', ordBdPaurashava: 'paurashava' }[id];
+    if (el.querySelector('option[value="' + _bdSel[field] + '"]')) el.value = _bdSel[field] || '';
+  });
+  const wEl = document.getElementById('ordBdWard');
+  if (wEl && wEl.querySelector('option[value="' + _bdSel.ward + '"]')) wEl.value = _bdSel.ward || '';
 }
 
 function onOrderAddressChanged() { _bdSel.address = ''; renderOrderAddressCheck(orderOpenRecord_()); }
 function onOrderDistrictChanged() {
   const d = document.getElementById('ordBdDistrict');
   _bdSel.district = d ? d.value : '';
-  _bdSel.thana = '';
+  _bdSel.city = ''; _bdSel.thana = ''; _bdSel.union = ''; _bdSel.paurashava = ''; _bdSel.ward = '';
+  renderOrderAddressCheck(orderOpenRecord_());
+}
+function onOrderCityChanged() {
+  const c = document.getElementById('ordBdCity');
+  _bdSel.city = c ? c.value : '';
+  _bdSel.thana = ''; _bdSel.union = ''; _bdSel.ward = '';
   renderOrderAddressCheck(orderOpenRecord_());
 }
 function onOrderThanaChanged() {
   const t = document.getElementById('ordBdThana');
   _bdSel.thana = t ? t.value : '';
+  _bdSel.union = ''; _bdSel.ward = '';
+  renderOrderAddressCheck(orderOpenRecord_());
+}
+function onOrderUnionChanged() {
+  const u = document.getElementById('ordBdUnion');
+  _bdSel.union = u ? u.value : '';
+}
+function onOrderPaurashavaChanged() {
+  const p = document.getElementById('ordBdPaurashava');
+  _bdSel.paurashava = p ? p.value : '';
+  _bdSel.ward = '';
+  renderOrderAddressCheck(orderOpenRecord_());
+}
+function onOrderWardChanged() {
+  const w = document.getElementById('ordBdWard');
+  _bdSel.ward = w ? w.value : '';
 }
 
 
