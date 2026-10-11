@@ -18,8 +18,6 @@ const ASSETS = [
   './js/firebase-config.js',
   './js/cloud.js',
   './js/memoexport.js',
-  './js/bd-locations.js',
-  './js/address.js',
   './js/courier.js',
   './js/app.js',
   './icon-192.png',

@@ -639,10 +639,6 @@
               <label style="display:flex;gap:8px;align-items:center;font-weight:600">
                 <input id="stCourierAutoReturn" type="checkbox" style="width:auto"> Returned parcel adds stock (Good)
               </label>
-              <label class="muted" style="display:block;margin-top:6px">
-                <input id="stCourierAddressCheck" type="checkbox" style="width:auto"> Detect and correct the delivery area from the address
-                <span class="hint" style="display:block">Off by default. When on, the order form reads the full area — Division, District, City Corporation, Thana/Upazila, Union, Paurashava and Ward — from the address, fills those levels in, and corrects the address (and the phone to 01XXXXXXXXX) before booking. Booking is blocked until District and Thana are known.</span>
-              </label>
             </div>
           </div>
           <div class="row" style="margin-top:12px">
@@ -658,7 +654,6 @@
           <b>Version</b> shown in Settings — it changes when a new version arrives.</div>
           <div class="row">
             <span class="muted">Version:</span><b id="appVersion">-</b>
-            <span class="muted" style="margin-left:10px">Address data:</span><b id="appAddrVersion">-</b>
             <button class="btn-primary btn-sm" onclick="checkForUpdate()">Check for update</button>
           </div>
           <div id="updateOut" style="margin-top:10px;font-size:13px"></div>
@@ -862,7 +857,7 @@
       <div><label>Order Date</label><input id="ordDate" type="date"></div>
       <div><label>Select saved customer</label><select id="ordCustList" onchange="ordPickCustomer(this.value)"></select></div>
       <div><label>Customer Name *</label>
-        <input id="ordCustomer" list="ordCustomerNames" autocomplete="off" placeholder="Type a name — matched automatically" oninput="onOrderCustomerChanged()">
+        <input id="ordCustomer" list="ordCustomerNames" autocomplete="off" placeholder="Type a name — matched automatically">
         <datalist id="ordCustomerNames"></datalist>
       </div>
       <div><label>Phone</label><input id="ordPhone"></div>
@@ -893,7 +888,6 @@
         <div class="hint">Saved for the status sync. Usually filled automatically from the tracking link or after “Send to Steadfast”.</div>
       </div>
     </div>
-    <div id="ordAddrCheck" class="ordhistory"></div>
     <div id="ordCourier" class="ordhistory"></div>
     <div id="ordHistory" class="ordhistory"></div>
     <div class="modal-actions">
@@ -1009,8 +1003,6 @@
 <script src="js/firebase-config.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/memoexport.js"></script>
-<script src="js/bd-locations.js"></script>
-<script src="js/address.js"></script>
 <script src="js/courier.js"></script>
 <script src="js/app.js"></script>
 <script>

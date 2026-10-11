@@ -737,86 +737,32 @@ place — `Book with Steadfast` in the order modal, next to the existing `Sync C
   the two refusals (already booked, blank address).
 
 
-## Full Bangladesh address hierarchy (2026-10-11)
+## The Bangladesh area check was removed at the owner's request (2026-10-11)
 
-The opt-in area check used to know only District and Thana, from districts + upazilas. It now
-resolves the whole administrative chain offline, so an address that names a village or a city
-ward lands on the right Union or Ward.
+The opt-in area feature (added 2026-10-11 in commits `2e19e7b` #8, `51e836c` #9, `b2b1c8d` #10,
+`5f356ca` #11, `2ee6a39` #12) is gone, and the code is back to the state it was in before it
+(`c30e14b`, PR #7). The owner asked to remove the Division -> Ward tables from the order form and
+to be able to do the area handling manually. **Do not reintroduce it without a fresh instruction.**
 
-- **One pinned, government-traceable source.** `tools/gen-bd-locations.js` builds the bundle
-  from `montasim/bangladesh-location-registry` release `data-2026.08.04`
-  (`address-bd-data-2026.08.04-json.tar.zst`, SHA-256 checked on download). Every record carries
-  its publisher's `sourceId` (BBS Census 2022, Bangladesh Post, LGD, DGHS), so a wrong area can
-  be traced — unlike the ad-hoc lists a geocoder would hide. The generator can download the
-  release itself (Node 24 has zstd built in) or read a pre-extracted `json/` directory.
-- **Bangla needs a second source.** The registry is English-only below union level, so
-  `@olism/bd-geo@1.0.0` (MIT) supplies Bangla district/thana names and older English spellings,
-  merged into the same records as `nameBn`/`aliases`. Neither package is an app dependency; only
-  the extracted names are committed.
-- **Levels:** 8 divisions, 64 districts, 600 thanas/upazilas (495 upazila + 105 metro thana — the
-  metro thana carries its City Corporation), 4762 unions, 329 paurashavas, 3142 wards, and 12 city
-  corporations. Dhaka is split into **Dhaka North** and **Dhaka South** by BBS code, which is what
-  makes `Mirpur`/`Uttara` → North and `Shahbag`/`Dhanmondi` → South resolve.
-- **Curated aliases are deliberate and labelled.** `c210` in the generator holds the phonetic/older
-  spellings a shopkeeper types (`Chattogram`←chittagong, `Cumilla`←comilla, `Jashore`←jessore,
-  `Charfasson`←char fasson, …). These are the only invented strings and they are visible in one
-  place.
-- **It never guesses what the source does not state.** The registry links a paurashava to its
-  *district only*, so no parent upazila is fabricated; the registry's Dhaka city-ward mapping is
-  partial, so the bundle keeps exactly the wards the source lists. `data/SOURCE.md` records both
-  limits.
-- **The area levels are never sent as separate fields — but the address now is corrected.** The
-  area check is no longer "check only". With it on, `bdCorrectAddress_` rewrites the address so
-  its District / Thana / Union / Ward are present and in canonical order, `localizeCourierPhone_`
-  folds the phone to `01XXXXXXXXX`, and `courierBookOrder_` sends that corrected draft. The
-  Steadfast payload still has **no area fields** (pinned by a test); the levels live in the
-  address text. An address that cannot be resolved is left exactly as typed — it never guesses.
-  Both the modal (`renderOrderCourier` shows the corrected values, with a "corrected" note) and
-  the confirm dialog name what will actually be sent, so the two cannot disagree.
-- **The order form grows the extra selects** (`ordBdCity`, `ordBdUnion`, `ordBdPaurashava`,
-  `ordBdWard`), each shown only when the chosen parent has children, and each re-seeding from
-  detection until the owner picks something. `_bdSel` carries `wardParent` so a ward whose parent
-  is a paurashava (not a city corporation) still lists its wards.
-- **The resolver ties names to positions, not just presence.** `bdNameIndex_` finds a name's token
-  position and the leftmost hit wins, because an address is written smallest-to-largest; a name
-  that merely repeats the thana is dropped so `Amta` cannot resolve to the `Amta` union *named
-  after* its own thana when a different `Amta` union is intended.
-- `test/address.test.js` grows to **76 checks** and `test/courier.test.js` to **113**, covering the
-  city-corporation split, union/paurashava/ward detection, the Bangla and old-spelling cases, the
-  helper lists, the address correction (`bdCorrectAddress_`: area-only rebuilt, house/road kept,
-  duplicate names collapsed, unresolved left alone), phone folding, and the unchanged payload.
+What was removed, so nothing is half-left behind:
 
-### The booking draft must not come out blank (2026-10-11)
+- `js/address.js`, `js/bd-locations.js`, `test/address.test.js`, `tools/gen-bd-locations.js`,
+  `data/bd-locations.json`, `data/SOURCE.md` — the resolver, the generated bundle, its test and
+  its generator. The two js files are gone from the repo root too (build output).
+- `index.html`: the `Detect and correct the delivery area from the address` settings toggle, the
+  `Address data:` version readout, the `#ordAddrCheck` block, the `oninput="onOrderCustomerChanged()"`
+  on the customer field, and the two `<script>` tags.
+- `js/courier.js`: `localizeCourierPhone_`, the whole offline area-detection/correction section
+  (`renderOrderAddressCheck`, `bdOrderLocationStatus_`, `_bdSel`, the `onOrder*Changed` handlers,
+  `courierCorrectDraft_`, `courierAutoFixEnabled_`, `applyOrderAddressCorrection_`, `courierFixedDraft_`,
+  `_courierForm`/`_courierFormLive_`), the `courierAddressCheck` gate in `courierBookOrder_` and
+  `bookOrderCourier`, and the address-check toggle read in `saveCourierSettings`. `courierBookingDraft`
+  is back to its original name+phone customer match; `courierDraftFromForm_` reads the inputs directly.
+- `js/app.js` (`onOrderCustomerChanged` + the settings/version reads), `js/db.js`
+  (`courierAddressCheck`), `sw.js` (asset list), `build.js` (script list), `make-zip.py` (allowlist),
+  `package.json` (the address test), and the area test cases in `test/courier.test.js`.
 
-Three separate faults made `Book with Steadfast` show an empty Phone and Delivery Address, ask for
-a Thana the address could not give, and then refuse the booking:
-
-- **The empty live value blanked the draft.** `courierFixedDraft_` seeded `live = {phone:'', address:''}`
-  and `Object.assign({}, base, live)` overwrote the computed phone/address with those blanks whenever
-  the on-screen input was empty — which is always, on first render. `live` now starts `{}` and only a
-  field that actually holds text may override the draft.
-- **The saved customer was missed when the memo had no phone.** `courierBookingDraft` matched a
-  customer only when the memo's phone *equalled* the customer's, so a memo typed without a phone (the
-  common case) found nobody and the booking went out with no phone and no address. It now matches by
-  name first, with a phone match as fallback.
-- **A union names its upazila.** The registry links every union to its upazila, so `Silimpur, Tangail`
-  can fill Thana `Tangail Sadar` even though the address never writes it. `bdScanDetails_` returns the
-  derived `thana`, `finish()` adopts it (and its City Corporation) and lifts `medium` to `high`.
-  A bare district still leaves the Thana unknown on purpose — it must not invent one.
-
-The booking inputs are reused DOM nodes, so a value left from the previously opened order could be
-read as the new order's. `_courierForm = {ordId, painted}` records which order the block was rendered
-for; `_courierFormLive_` gates every read of `ordBookPhone`/`ordBookAddress`, and a changed order
-clears `_bdSel` so the previous order's area cannot leak.
-
-### Never append the division to a shipping address (2026-10-11)
-
-`bdCorrectAddress_` rebuilt the address from `bdAreaTail_`, which ended with the **division**. Tangail
-is in the *Dhaka* division, so a Tangail parcel went to Steadfast as `Mirzapur, Tangail, Dhaka` and
-was routed into **Dhaka city** — a real delivery loss. A courier routes on district and thana only;
-the division is a grouping level for the picker. `bdAreaParts_` now stops at the district. A genuine
-Dhaka address still ends in `Dhaka` (`Dhanmondi, Dhaka South, Dhaka`) because that `Dhaka` is the
-*district*, not a division. `courierDraftFromForm_` also falls back to the computed draft for any
-field the owner left blank, so a booking can never send an empty name/phone/address.
-
-
+After the change `js/courier.js`, `index.html`, `js/app.js`, `js/db.js`, `sw.js` and `build.js` are
+**byte-identical to `c30e14b`**, and the built `index.html`/`texpark-pro.html` are identical too.
+`test/courier.test.js` keeps only its 71 pre-area checks; the full suite is green and `ci/check-site.py`
+and `ci/check-zip.py` pass. No `APP_VERSION` bump, so the APK and its signature are untouched.
