@@ -7,8 +7,7 @@ ei sandbox muche geleo cholbe:
 https://appleziarash1.github.io/texpark-pro
 ```
 
-Login: `admin` / `admin123` → login korar por **Settings → Change my password**
-theke bodle nin।
+To change your password: **Settings → Change my password**.
 
 APK download: `https://appleziarash1.github.io/texpark-pro/TexparkPro.apk`
 

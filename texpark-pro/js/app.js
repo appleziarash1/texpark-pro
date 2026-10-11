@@ -674,6 +674,13 @@ function ordPickCustomer(cid) {
   if (!c) return;
   const n = document.getElementById('ordCustomer'); if (n) n.value = c.name || '';
   const p = document.getElementById('ordPhone'); if (p) p.value = c.phone || '';
+  onOrderCustomerChanged();
+}
+
+/* The order form's address comes from the saved customer, so re-check the
+   District/Thana block whenever the customer name changes. */
+function onOrderCustomerChanged() {
+  if (typeof onOrderAddressChanged === 'function') onOrderAddressChanged();
 }
 
 function openOrder(oid) {
@@ -2709,8 +2716,12 @@ function renderSettings() {
   if (ccod) ccod.checked = db.settings.courierAutoCod !== false;
   const cret = document.getElementById('stCourierAutoReturn');
   if (cret) cret.checked = db.settings.courierAutoReturnGood !== false;
+  const cadr = document.getElementById('stCourierAddressCheck');
+  if (cadr) cadr.checked = !!db.settings.courierAddressCheck;
   const v = document.getElementById('appVersion');
   if (v) v.textContent = APP_VERSION;
+  const av = document.getElementById('appAddrVersion');
+  if (av) av.textContent = (typeof bdDatasetVersion === 'function' && bdDatasetVersion()) ? bdDatasetVersion() : 'not loaded';
   syncStatusRender();
 }
 

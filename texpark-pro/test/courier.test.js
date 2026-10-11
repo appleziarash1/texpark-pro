@@ -58,7 +58,7 @@ global.localStorage = {
   removeItem: k => { delete fakeStore[k]; }
 };
 
-for (const f of ['db.js', 'sync.js', 'voice.js', 'courier.js', 'app.js']) {
+for (const f of ['db.js', 'sync.js', 'voice.js', 'bd-locations.js', 'address.js', 'courier.js', 'app.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(root, 'js', f), 'utf8'), { filename: f });
 }
 vm.runInThisContext('boot();', { filename: 'boot' });
@@ -274,6 +274,69 @@ const paymentsBefore = db.payments.length;
   triggers.alert.length = 0;
   bookOrderCourier();
   eq(/address/i.test(triggers.alert.join(' ')), true, 'Book refuses a blank address');
+
+  /* ---------- address detection (opt-in) never changes the payload ---------- */
+  console.log('\n--- offline District / Thana detection ---');
+  const addrMemo = { id: 'maddr', memoNo: 'TXP/SM/ADDR', date: T, customerName: 'Rahim',
+    customerPhone: '01712345678', customerAddress: 'Shibpur Narsingdi',
+    items: [], totalQty: 1, grandTotal: 500, advance: 100, due: 400, cogs: 0, profit: 500 };
+  db.memos.push(addrMemo);
+  const ordAddr = { id: 'oAddr', orderNo: 'TP-ADDR', memoId: 'maddr', customerName: 'Rahim',
+    productName: 'Frock', qty: 1, deliveryDate: T, status: 'received' };
+  db.orders.push(ordAddr);
+
+  /* With the feature off, the block renders nothing and booking is not gated. */
+  db.settings.courierAddressCheck = false;
+  el('ordId').value = 'oAddr';
+  _bdSel = { address: '', district: '', thana: '' };
+  renderOrderAddressCheck(ordAddr);
+  eq(el('ordAddrCheck')._html === '', true, 'feature off -> no detection block');
+  let capturedOff = null;
+  const offBook = await courierBookOrder_(ordAddr, courierBookingDraft(ordAddr), async p => { capturedOff = p; return { consignmentId: 'OFF1' }; });
+  eq(offBook.ok, true, 'feature off -> booking proceeds without a District/Thana choice');
+  delete ordAddr.consignmentId; delete ordAddr.courierStatus;
+
+  /* With it on, the resolver fills the selects and the address is untouched. */
+  db.settings.courierAddressCheck = true;
+  renderOrderCourier();
+  eq(el('ordBdDistrict').value, 'Narsingdi', 'detected district shown');
+  eq(el('ordBdThana').value, 'Shibpur', 'detected thana shown');
+  const st = bdOrderLocationStatus_();
+  eq(st.ok, true, 'detection counts as resolved -> not blocked');
+
+  /* A blank/unknown address is blocked before any request goes out. */
+  db.orders.push({ id: 'oBad', orderNo: 'TP-BAD', customerName: 'Nobody', productName: 'X', qty: 1, deliveryDate: T, status: 'received' });
+  el('ordId').value = 'oBad';
+  _bdSel = { address: '', district: '', thana: '' };
+  renderOrderCourier();
+  eq(bdOrderLocationStatus_().ok, false, 'unknown address -> not resolved');
+  let calledBad = false;
+  const badBook = await courierBookOrder_({ id: 'oBad', orderNo: 'TP-BAD' },
+    { name: 'N', phone: '01712345678', address: 'xyz nowhere', cod: 10, desc: 'X' },
+    async () => { calledBad = true; return { consignmentId: 'X' }; });
+  eq(badBook.ok, false, 'unresolved address blocks the booking');
+  eq(calledBad, false, 'no request is sent when blocked');
+
+  /* The payload keeps the owner's exact address, whatever was detected. */
+  el('ordId').value = 'oAddr';
+  _bdSel = { address: '', district: '', thana: '' };
+  renderOrderCourier();
+  /* A real browser re-fills the address input to the draft value on render; the
+     DOM shim keeps the value a previous case wrote, so set it explicitly. */
+  el('ordBookAddress').value = 'Shibpur Narsingdi';
+  const addrDraft = courierDraftFromForm_(ordAddr);
+  const addrPayload = courierBookRequest_(ordAddr, addrDraft);
+  eq(addrPayload.recipient_address, 'Shibpur Narsingdi', 'payload address is byte-for-byte the original');
+  eq(Object.keys(addrPayload).indexOf('district'), -1, 'no district field added to the payload');
+  eq(Object.keys(addrPayload).indexOf('thana'), -1, 'no thana field added to the payload');
+
+  /* A manual pick is honoured even when detection disagrees. */
+  _bdSel = { address: 'Shibpur Narsingdi', district: 'Narsingdi', thana: 'Palash' };
+  renderOrderAddressCheck(ordAddr);
+  const picked = bdOrderLocationStatus_();
+  eq(picked.district, 'Narsingdi', 'manual district kept');
+  eq(picked.thana, 'Palash', 'manual thana kept');
+  eq(picked.ok, true, 'a manual pick allows booking');
 
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
