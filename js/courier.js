@@ -316,6 +316,7 @@ function saveCourierSettings() {
   const en = document.getElementById('stCourierEnabled');
   const cod = document.getElementById('stCourierAutoCod');
   const ret = document.getElementById('stCourierAutoReturn');
+  const addr = document.getElementById('stCourierAddressCheck');
   try {
     if (k) localStorage.setItem(COURIER_KEY_KEY, String(k.value || '').trim());
     if (s) localStorage.setItem(COURIER_SECRET_KEY, String(s.value || '').trim());
@@ -323,6 +324,7 @@ function saveCourierSettings() {
   if (en) db.settings.courierEnabled = !!en.checked;
   if (cod) db.settings.courierAutoCod = !!cod.checked;
   if (ret) db.settings.courierAutoReturnGood = !!ret.checked;
+  if (addr) db.settings.courierAddressCheck = !!addr.checked;
   db.settings.settingsUpdatedAt = new Date().toISOString();
   commit();
   alert('Courier settings saved on this device.');
@@ -381,6 +383,106 @@ function courierInvoiceFor_(ord) {
 function courierPhoneOk_(phone) {
   return /^01[3-9]\d{8}$/.test(String(phone || '').trim());
 }
+
+/* ---- offline District / Thana detection (optional, off by default) ----
+   Detection never changes the address that is sent to Steadfast: the parcel keeps
+   the exact text the owner wrote. The resolver only reads it to show, and check,
+   the District and Thana, so a booking is not sent with an ambiguous area. When
+   the feature is off, nothing here runs and booking behaves exactly as before. */
+
+/* The record the order modal is editing, or null for a new one. */
+function orderOpenRecord_() {
+  const oid = (document.getElementById('ordId') || {}).value;
+  return oid ? (db.orders || []).find(x => x.id === oid) || null : null;
+}
+
+/* The address the booking will actually send: the live field if the owner has
+   one, else the computed draft (memo, then saved customer). */
+function orderBookingAddress_(ord) {
+  const el = document.getElementById('ordBookAddress');
+  if (el && String(el.value || '').trim()) return String(el.value).trim();
+  return courierBookingDraft(ord).address;
+}
+
+/* The District/Thana currently chosen on the form. Booking is allowed only when
+   both are set — whether the resolver found them or the owner picked them. */
+function bdOrderLocationStatus_() {
+  const d = document.getElementById('ordBdDistrict');
+  const t = document.getElementById('ordBdThana');
+  const district = d ? String(d.value || '').trim() : '';
+  const thana = t ? String(t.value || '').trim() : '';
+  return {
+    ok: !!district && !!thana, district: district, thana: thana,
+    message: 'District and Thana could not be detected from this address. Please select them before booking.'
+  };
+}
+
+/* What the owner has on the form, so a re-render keeps a manual choice. Reset
+   whenever the address itself changes, so detection wins again. */
+var _bdSel = { address: '', district: '', thana: '' };
+
+function renderOrderAddressCheck(ord) {
+  const box = document.getElementById('ordAddrCheck');
+  if (!box) return;
+  const on = !!(db.settings && db.settings.courierAddressCheck);
+  if (!on || ord == null || typeof resolveBdLocation !== 'function') { box.innerHTML = ''; return; }
+
+  const address = orderBookingAddress_(ord);
+  const r = resolveBdLocation(address);
+
+  /* A fresh address re-seeds from detection; an unchanged one keeps the owner's
+     pick, so switching the customer does not silently throw a correction away. */
+  if (_bdSel.address !== address) {
+    _bdSel = { address: address, district: r.district || '', thana: r.thana || '' };
+  }
+
+  const districts = bdDistricts();
+  const thanas = _bdSel.district ? bdThanasFor(_bdSel.district) : [];
+  const conf = r.confidence;
+  const tone = conf === 'high' ? 'var(--green)' : (conf === 'none' ? 'var(--red)' : 'var(--orange)');
+  const note = conf === 'high'
+    ? 'Detected from the address.'
+    : conf === 'none'
+      ? 'Could not detect a District / Thana from this address.'
+      : conf === 'low'
+        ? 'The address names a district that may be a reference point — please confirm.'
+        : 'District found; please confirm the Thana.';
+
+  const opt = (v, sel, bn) => '<option value="' + esc(v) + '"' + (v === sel ? ' selected' : '') + '>' +
+    esc(v) + (bn ? ' — ' + esc(bn) : '') + '</option>';
+
+  box.innerHTML = '<div class="muted" style="font-weight:700;margin-bottom:4px">Delivery District / Thana</div>' +
+    '<div style="font-size:12.5px;color:' + tone + '">' + esc(note) + '</div>' +
+    '<div class="formgrid" style="margin-top:6px">' +
+    '<div><label>District</label><select id="ordBdDistrict" onchange="onOrderDistrictChanged()">' +
+    '<option value="">— choose —</option>' +
+    districts.map(d => opt(d.name, _bdSel.district, d.nameBn)).join('') + '</select></div>' +
+    '<div><label>Thana / Upazila</label><select id="ordBdThana" onchange="onOrderThanaChanged()">' +
+    '<option value="">— choose —</option>' +
+    thanas.map(t => opt(t.name, _bdSel.thana, t.nameBn)).join('') + '</select></div>' +
+    '</div>' +
+    '<div class="hint">Checking only — the address sent to Steadfast is unchanged.</div>';
+
+  /* The selects were just rebuilt, so put the remembered choice back into them.
+     Booking reads these two fields, so they have to mirror _bdSel exactly. */
+  const dEl = document.getElementById('ordBdDistrict');
+  if (dEl) dEl.value = _bdSel.district || '';
+  const tEl = document.getElementById('ordBdThana');
+  if (tEl) tEl.value = _bdSel.thana || '';
+}
+
+function onOrderAddressChanged() { _bdSel.address = ''; renderOrderAddressCheck(orderOpenRecord_()); }
+function onOrderDistrictChanged() {
+  const d = document.getElementById('ordBdDistrict');
+  _bdSel.district = d ? d.value : '';
+  _bdSel.thana = '';
+  renderOrderAddressCheck(orderOpenRecord_());
+}
+function onOrderThanaChanged() {
+  const t = document.getElementById('ordBdThana');
+  _bdSel.thana = t ? t.value : '';
+}
+
 
 /* Where a parcel's recipient details come from, in priority order:
    the order's own fields, then the memo it settles, then the saved customer.
@@ -468,6 +570,12 @@ async function courierBookOrder_(ord, draft, fetchOne) {
   const get = fetchOne || courierBookFetch_;
   const errs = courierBookErrors_(draft);
   if (errs.length) return { ok: false, error: errs.join(' ') };
+  /* Optional offline area check: when on, a parcel is not sent until District and
+     Thana are known. The payload itself is unchanged either way. */
+  if (db.settings && db.settings.courierAddressCheck) {
+    const loc = bdOrderLocationStatus_();
+    if (!loc.ok) return { ok: false, error: loc.message };
+  }
   const payload = courierBookRequest_(ord, draft);
   const resp = await get(payload);
   if (resp.error) return { ok: false, error: resp.error };
@@ -509,6 +617,10 @@ function renderOrderCourier() {
 
   if (btn) btn.style.display = (o && (hasId || o.status === 'delivered')) ? '' : 'none';
   if (bookBtn) bookBtn.style.display = (o && !hasId) ? '' : 'none';
+  /* The detection block is drawn from the live form, so it must be rendered
+     before we read the current choice to decide whether booking is allowed. */
+  renderOrderAddressCheck(o);
+  if (bookBtn) bookBtn.disabled = false;
 
   /* Keep the two tracking fields in step with the order, so a later Save Order
      reads back the same consignment id a booking just stored rather than
@@ -534,6 +646,10 @@ function renderOrderCourier() {
 
   const draft = courierBookingDraft(o);
   const errs = hasId ? [] : courierBookErrors_(draft);
+  /* With the area check on, booking stays disabled until both are chosen. */
+  const loc = (db.settings && db.settings.courierAddressCheck) ? bdOrderLocationStatus_() : null;
+  if (bookBtn && !hasId && loc) bookBtn.disabled = !loc.ok;
+  if (!hasId && loc && !loc.ok && errs.indexOf(loc.message) === -1) errs.push(loc.message);
   const statusPill = o.courierStatus
     ? '<span class="pill ' + (courierStatusFinal_(o.courierStatus) ? 'ok' : 'warn') + '">' +
       esc(courierStatusLabel_(o.courierStatus)) + '</span>'
@@ -551,7 +667,7 @@ function renderOrderCourier() {
       '<div class="formgrid" style="margin-top:8px">' +
       '<div><label>Recipient</label><input id="ordBookName" value="' + esc(draft.name) + '"></div>' +
       '<div><label>Phone</label><input id="ordBookPhone" value="' + esc(draft.phone) + '"></div>' +
-      '<div class="wide"><label>Delivery Address</label><input id="ordBookAddress" value="' + esc(draft.address) + '"></div>' +
+      '<div class="wide"><label>Delivery Address</label><input id="ordBookAddress" value="' + esc(draft.address) + '" oninput="onOrderAddressChanged()"></div>' +
       '<div><label>COD Amount</label><input id="ordBookCod" type="number" min="0" step="1" value="' + num(draft.cod) + '"></div>' +
       '</div>';
     if (errs.length) html += '<div class="muted" style="color:var(--red);margin-top:6px">' + esc(errs.join(' ')) + '</div>';
@@ -584,6 +700,10 @@ function bookOrderCourier() {
   const draft = courierDraftFromForm_(o);
   const errs = courierBookErrors_(draft);
   if (errs.length) return alert(errs.join('\n'));
+  if (db.settings && db.settings.courierAddressCheck) {
+    const loc = bdOrderLocationStatus_();
+    if (!loc.ok) return alert(loc.message);
+  }
   if (!confirm('Book a Steadfast parcel for ' + (o.orderNo || 'this order') + '?\n\n' +
     'Recipient: ' + draft.name + '\nPhone: ' + draft.phone + '\nAddress: ' + draft.address +
     '\nCOD: ' + money(num(draft.cod)))) return;

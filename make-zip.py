@@ -40,6 +40,8 @@ APP_FILES = [
     'js/cloud.js',
     'js/voice.js',
     'js/memoexport.js',
+    'js/bd-locations.js',
+    'js/address.js',
     'sw.js',
     'manifest.webmanifest',
     'icon-192.png',

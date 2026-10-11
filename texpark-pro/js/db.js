@@ -28,7 +28,8 @@ const DEFAULT_SETTINGS = {
   memoOrderEnabled: false, // off by default; the owner turns it on to mirror new memos as orders
   courierEnabled: true,    // Steadfast status sync (needs the per-device key + secret)
   courierAutoCod: true,    // take a delivered parcel's COD off the memo's due
-  courierAutoReturnGood: true  // a returned parcel's goods go back into available stock
+  courierAutoReturnGood: true, // a returned parcel's goods go back into available stock
+  courierAddressCheck: false   // offline District/Thana detection on the order form; off by default
 };
 
 function blankDB() {

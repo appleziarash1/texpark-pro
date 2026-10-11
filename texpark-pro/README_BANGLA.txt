@@ -120,13 +120,10 @@ Install kivabe
 4. .exe banate chailে: npm run dist
 
 
-Prothom login
--------------
-  Username: admin
-  Password: admin123
-
-*** Login korar por por-i Settings > Change my password theke
-    password bodle nin. ***
+Login
+-----
+Use your own username and password. To change your password, open
+Settings → Change my password inside the app.
 
 
 Purono data asha
