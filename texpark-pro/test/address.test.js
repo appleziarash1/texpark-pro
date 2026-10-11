@@ -95,6 +95,50 @@ ok(bdThanasFor('Dhaka').some(t => t.name === 'Dhanmondi'), 'Dhaka carries the me
 console.log('\n--- determinism ---');
 eq(JSON.stringify(R('শিবপুর নরসিংদী')), JSON.stringify(R('শিবপুর নরসিংদী')), 'same input -> same output');
 
+console.log('\n--- 11. the full hierarchy: Division -> District -> City Corporation -> Thana -> Union -> Paurashava -> Ward ---');
+r = R('Shibpur, Narsingdi');
+eq(r.division, 'Dhaka', 'division filled from the district');
+
+r = R('Mirpur, Dhaka');
+eq(r.city, 'Dhaka North', 'Mirpur sits in Dhaka North City Corporation');
+r = R('Shahbag, Dhaka');
+eq(r.city, 'Dhaka South', 'Shahbag sits in Dhaka South City Corporation');
+r = R('Uttara, Dhaka');
+eq(r.city, 'Dhaka North', 'Uttara sits in Dhaka North City Corporation');
+r = R('ধানমন্ডি, ঢাকা');
+eq(r.city, 'Dhaka South', 'Dhanmondi sits in Dhaka South City Corporation');
+
+r = R('Amta, Dhamrai, Dhaka');
+eq(r.district, 'Dhaka', 'district Dhaka');
+eq(r.thana, 'Dhamrai', 'thana Dhamrai');
+eq(r.union, 'Amta', 'union Amta is under Dhamrai');
+
+r = R('Bancharampur, Brahmanbaria');
+eq(r.district, 'Brahmanbaria', 'district Brahmanbaria');
+eq(r.paurashava, 'Bancharampur', 'paurashava Bancharampur found');
+
+r = R('Ward 19, Uttara, Dhaka');
+eq(r.city, 'Dhaka North', 'ward 19 is in Dhaka North');
+eq(r.ward, 'Ward 19', 'ward detected from the number');
+
+r = R('Char Fasson, Bhola');
+eq(r.district, 'Bhola', 'old spelling still resolves to Bhola');
+eq(r.thana, 'Charfasson', 'Char Fasson folds onto the registry Charfasson');
+
+console.log('\n--- full-hierarchy helpers ---');
+eq(bdCityCorporations().length, 12, '12 city corporations');
+eq(bdCitiesFor('Dhaka').length, 2, 'Dhaka has two city corporations');
+ok(bdCitiesFor('Dhaka').some(c => c.name === 'Dhaka North'), 'Dhaka North present');
+ok(bdCitiesFor('Dhaka').some(c => c.name === 'Dhaka South'), 'Dhaka South present');
+ok(bdThanasFor('Dhaka').some(t => t.name === 'Shahbag' && t.city === 'Dhaka South'), 'Shahbag is a Dhaka South thana');
+ok(bdThanasFor('Dhaka').some(t => t.name === 'Mirpur' && t.city === 'Dhaka North'), 'Mirpur is a Dhaka North thana');
+ok(bdUnionsFor('Dhaka', 'Dhamrai').some(u => u.name === 'Amta'), 'Amta union under Dhamrai');
+ok(bdPaurashavasFor('Brahmanbaria').some(p => p.name === 'Bancharampur'), 'Bancharampur paurashava under Brahmanbaria');
+ok(bdWardsFor('Dhaka', 'Dhaka North').length > 0, 'Dhaka North has wards');
+
+console.log('\n--- determinism ---');
+eq(JSON.stringify(R('শিবপুর নরসিংদী')), JSON.stringify(R('শিবপুর নরসিংদী')), 'same input -> same output');
+
 console.log('\n=================');
 console.log('PASS ' + pass + '   FAIL ' + fail);
 console.log('=================');
