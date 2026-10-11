@@ -136,6 +136,21 @@ ok(bdUnionsFor('Dhaka', 'Dhamrai').some(u => u.name === 'Amta'), 'Amta union und
 ok(bdPaurashavasFor('Brahmanbaria').some(p => p.name === 'Bancharampur'), 'Bancharampur paurashava under Brahmanbaria');
 ok(bdWardsFor('Dhaka', 'Dhaka North').length > 0, 'Dhaka North has wards');
 
+console.log('\n--- 12. address correction from the area ---');
+/* area-only text is rebuilt in a canonical smallest-to-largest order */
+eq(bdCorrectAddress_('Shibpur Narsingdi', R('Shibpur Narsingdi')), 'Shibpur, Narsingdi, Dhaka', 'area-only address rebuilt and ordered');
+eq(bdCorrectAddress_('ধানমন্ডি ঢাকা', R('ধানমন্ডি ঢাকা')), 'Dhanmondi, Dhaka South, Dhaka', 'Dhaka thana corrects to its city corporation, duplicate name collapsed');
+/* house/road detail is kept, and only the missing levels are appended */
+eq(bdCorrectAddress_('House 12, Road 3, Dhanmondi, Dhaka', R('House 12, Road 3, Dhanmondi, Dhaka')),
+  'House 12, Road 3, Dhanmondi, Dhaka', 'a complete address with detail is left unchanged');
+eq(bdCorrectAddress_('House 5, Road 2, Shibpur', R('House 5, Road 2, Shibpur')),
+  'House 5, Road 2, Shibpur, Narsingdi, Dhaka', 'detail kept, missing levels appended');
+eq(bdCorrectAddress_('Bancharampur, Brahmanbaria', R('Bancharampur, Brahmanbaria')),
+  'Bancharampur, Brahmanbaria, Chattogram', 'a paurashava address gains its district and division');
+/* never guesses */
+eq(bdCorrectAddress_('somewhere unknown 123', R('somewhere unknown 123')), 'somewhere unknown 123', 'an unresolved address is left untouched');
+eq(bdCorrectAddress_('', R('')), '', 'an empty address stays empty');
+
 console.log('\n--- determinism ---');
 eq(JSON.stringify(R('শিবপুর নরসিংদী')), JSON.stringify(R('শিবপুর নরসিংদী')), 'same input -> same output');
 

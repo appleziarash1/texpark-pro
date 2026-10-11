@@ -296,7 +296,7 @@ const paymentsBefore = db.payments.length;
   eq(offBook.ok, true, 'feature off -> booking proceeds without a District/Thana choice');
   delete ordAddr.consignmentId; delete ordAddr.courierStatus;
 
-  /* With it on, the resolver fills the selects and the address is untouched. */
+  /* With it on, the resolver fills the selects and corrects the address. */
   db.settings.courierAddressCheck = true;
   renderOrderCourier();
   eq(el('ordBdDistrict').value, 'Narsingdi', 'detected district shown');
@@ -304,9 +304,52 @@ const paymentsBefore = db.payments.length;
   const st = bdOrderLocationStatus_();
   eq(st.ok, true, 'detection counts as resolved -> not blocked');
 
+  /* The address is rebuilt so its area is present and ordered (smallest first). */
+  /* A real browser shows the corrected draft in the inputs; the DOM shim keeps a
+     prior case's value, so mirror that text explicitly before reading it back. */
+  el('ordBookPhone').value = '+880 1812-345678';
+  el('ordBookAddress').value = 'Shibpur Narsingdi';
+  const fixOn = courierFixedDraft_(ordAddr).corrected;
+  eq(fixOn.address, 'Shibpur, Narsingdi, Dhaka', 'feature on -> address corrected to the full area');
+  eq(fixOn.phone, '01812345678', 'feature on -> phone folded to 01XXXXXXXXX');
+  renderOrderCourier();
+  eq(el('ordCourier')._html.indexOf('Shibpur, Narsingdi, Dhaka') !== -1, true, 'modal shows the corrected address');
+  eq(el('ordCourier')._html.indexOf('01812345678') !== -1, true, 'modal shows the corrected phone');
+
+  /* With it off, the phone and address are left exactly as typed. */
+  db.settings.courierAddressCheck = false;
+  const fixOff = courierCorrectDraft_(ordAddr, { name: 'R', phone: '01712345678', address: 'Shibpur Narsingdi', cod: 0, desc: '' }).draft;
+  db.settings.courierAddressCheck = true;
+  eq(fixOff.address, 'Shibpur Narsingdi', 'feature off -> address left exactly as typed');
+  eq(fixOff.phone, '01712345678', 'feature off -> phone left exactly as typed');
+
+  /* A phone written the long way is folded to 01XXXXXXXXX; Bangla digits too. */
+  eq(localizeCourierPhone_('+880 1712-345678'), '01712345678', '+880 phone folded');
+  eq(localizeCourierPhone_('01712345678'), '01712345678', 'already-local phone unchanged');
+  eq(localizeCourierPhone_('০১৭১২৩৪৫৬৭৮'), '01712345678', 'Bangla digits folded');
+  eq(localizeCourierPhone_('12345'), '12345', 'a bad phone is returned as typed');
+  eq(courierBookErrors_({ name: 'N', phone: localizeCourierPhone_('+8801712345678'), address: 'x', cod: 1 }).length, 0, 'folded phone passes validation');
+
+  /* An address with house/road detail keeps it and only gains the missing levels. */
+  const withDetail = courierCorrectDraft_(ordAddr, { name: 'R', phone: '01712345678', address: 'House 5, Road 2, Shibpur', cod: 0, desc: '' }).draft;
+  eq(withDetail.address, 'House 5, Road 2, Shibpur, Narsingdi, Dhaka', 'house/road kept, area appended');
+
+  /* A corrected booking sends the corrected address and phone. */
+  let capturedOn = null;
+  const onBook = await courierBookOrder_(ordAddr, { name: 'Rahim', phone: '+8801712345678', address: 'Shibpur Narsingdi', cod: 400, desc: 'Frock' },
+    async p => { capturedOn = p; return { consignmentId: 'ON1' }; });
+  eq(onBook.ok, true, 'feature on -> booking proceeds');
+  eq(capturedOn.recipient_address, 'Shibpur, Narsingdi, Dhaka', 'corrected address is what is sent');
+  eq(capturedOn.recipient_phone, '01712345678', 'corrected phone is what is sent');
+  eq(Object.keys(capturedOn).indexOf('district'), -1, 'no district field added to the payload');
+  eq(Object.keys(capturedOn).indexOf('ward'), -1, 'no ward field added to the payload');
+  delete ordAddr.consignmentId; delete ordAddr.courierStatus;
+
   /* A blank/unknown address is blocked before any request goes out. */
   db.orders.push({ id: 'oBad', orderNo: 'TP-BAD', customerName: 'Nobody', productName: 'X', qty: 1, deliveryDate: T, status: 'received' });
   el('ordId').value = 'oBad';
+  el('ordBookPhone').value = '';
+  el('ordBookAddress').value = '';
   _bdSel = { address: '', district: '', thana: '' };
   renderOrderCourier();
   eq(bdOrderLocationStatus_().ok, false, 'unknown address -> not resolved');
@@ -317,7 +360,8 @@ const paymentsBefore = db.payments.length;
   eq(badBook.ok, false, 'unresolved address blocks the booking');
   eq(calledBad, false, 'no request is sent when blocked');
 
-  /* The payload keeps the owner's exact address, whatever was detected. */
+  /* The payload builder is pure: it carries exactly the fields it is given, and
+     never adds an area field of its own. */
   el('ordId').value = 'oAddr';
   _bdSel = { address: '', district: '', thana: '' };
   renderOrderCourier();
@@ -326,7 +370,7 @@ const paymentsBefore = db.payments.length;
   el('ordBookAddress').value = 'Shibpur Narsingdi';
   const addrDraft = courierDraftFromForm_(ordAddr);
   const addrPayload = courierBookRequest_(ordAddr, addrDraft);
-  eq(addrPayload.recipient_address, 'Shibpur Narsingdi', 'payload address is byte-for-byte the original');
+  eq(addrPayload.recipient_address, 'Shibpur Narsingdi', 'payload builder keeps the address it is given');
   eq(Object.keys(addrPayload).indexOf('district'), -1, 'no district field added to the payload');
   eq(Object.keys(addrPayload).indexOf('thana'), -1, 'no thana field added to the payload');
 

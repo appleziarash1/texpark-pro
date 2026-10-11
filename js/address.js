@@ -232,6 +232,92 @@ function bdScanDetails_(tokens, district, thana) {
   return out;
 }
 
+/* The resolved levels as {name, nameBn}, smallest -> largest (Ward -> Division),
+   dropping a level whose name repeats one already listed so a Dhaka address does
+   not come out as "Dhaka, Dhaka". */
+function bdAreaParts_(r) {
+  const raw = [
+    { name: r.ward, nameBn: null },
+    { name: r.union, nameBn: r.unionBn || null },
+    { name: r.paurashava, nameBn: r.paurashavaBn || null },
+    { name: r.thana, nameBn: r.thanaBn || null },
+    { name: r.city, nameBn: r.cityBn || null },
+    { name: r.district, nameBn: r.districtBn || null },
+    { name: r.division, nameBn: r.divisionBn || null }
+  ];
+  const seen = {};
+  const out = [];
+  raw.forEach(p => {
+    const v = String(p.name == null ? '' : p.name).trim();
+    if (!v) return;
+    const k = normalizeBd_(v);
+    if (!k || seen[k]) return;
+    seen[k] = 1;
+    out.push({ name: v, nameBn: p.nameBn ? String(p.nameBn).trim() : '' });
+  });
+  return out;
+}
+
+/* The English names in order. */
+function bdAreaTail_(r) {
+  return bdAreaParts_(r).map(p => p.name);
+}
+
+/* True when the address carries nothing but the area: every word is a number or
+   part of a resolved name (in either script). A house/road/flat word makes it
+   false, so that part is never thrown away when the address is rebuilt. */
+function bdAreaOnly_(tokens, r) {
+  const known = { ward: 1 };
+  bdAreaParts_(r).forEach(p => {
+    normalizeBd_(p.name).split(' ').forEach(w => { if (w) known[w] = 1; });
+    normalizeBd_(p.nameBn).split(' ').forEach(w => { if (w) known[w] = 1; });
+  });
+  let extra = 0;
+  tokens.forEach(t => { if (!/^\d{1,4}$/.test(t) && !known[t]) extra++; });
+  return extra === 0;
+}
+
+/* Correct an address from a resolved area. When the address is only area it is
+   rebuilt in a canonical smallest-to-largest order; when it also has house/road
+   text, only the levels it does not already name are appended, so nothing the
+   owner typed is lost. Returns the address unchanged when the area is unknown. */
+function bdCorrectAddress_(rawAddress, r) {
+  const address = String(rawAddress == null ? '' : rawAddress).trim();
+  if (!r || !r.district) return address;
+  const tail = bdAreaTail_(r);
+  if (!tail.length) return address;
+  const tokens = bdTokens_(address);
+  if (!address || bdAreaOnly_(tokens, r)) return tail.join(', ');
+  const have = {};
+  tokens.forEach(t => { have[t] = 1; });
+  const missing = tail.filter(p => normalizeBd_(p).split(' ').every(w => !have[w]));
+  return missing.length ? address + ', ' + missing.join(', ') : address;
+}
+
+/* Bangla names for the resolved levels, so an address written in Bangla is still
+   recognised as area-only and rebuilt. Missing ones stay null. */
+function bdAreaBn_(r) {
+  const data = bdLocationData();
+  const out = { districtBn: null, thanaBn: null, cityBn: null, unionBn: null, paurashavaBn: null, wardBn: null };
+  if (!data) return out;
+  const find = (arr, val, parentKey, parentVal) => {
+    const k = normalizeBd_(val);
+    if (!k) return null;
+    return (arr || []).find(x => normalizeBd_(x.name) === k &&
+      (!parentKey || normalizeBd_(x[parentKey]) === normalizeBd_(parentVal))) || null;
+  };
+  const dist = find(data.districts, r.district);
+  const city = find(data.cityCorporations, r.city, 'district', r.district);
+  const th = find(data.areas, r.thana, 'district', r.district);
+  const un = find(data.unions, r.union, 'district', r.district);
+  const pa = find(data.paurashavas, r.paurashava, 'district', r.district);
+  const wa = find(data.wards, r.ward, 'district', r.district);
+  const bn = (x) => (x && x.nameBn ? String(x.nameBn).trim() : null);
+  out.districtBn = bn(dist); out.cityBn = bn(city); out.thanaBn = bn(th);
+  out.unionBn = bn(un); out.paurashavaBn = bn(pa); out.wardBn = bn(wa);
+  return out;
+}
+
 /* Resolve an address to { division, district, thana, city, union, paurashava,
    ward, confidence, source }.
    structured (optional) = { district, thana } supplied by the user/record.
@@ -244,11 +330,12 @@ function resolveBdLocation(rawAddress, structured) {
   const finish = (o) => {
     const dist = o.district ? bdFindDistrict_(o.district) : null;
     const det = bdScanDetails_(tokens, dist, o.thana);
-    return Object.assign({
+    const merged = Object.assign({
       division: dist ? dist.division : null,
       city: (o.city || null),
       union: det.union, paurashava: det.paurashava, ward: det.ward, wardParent: det.wardParent
     }, o);
+    return Object.assign(merged, bdAreaBn_(merged));
   };
 
   /* 1. an explicit, valid structured location wins (priority 1–2). If it also

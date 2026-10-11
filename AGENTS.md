@@ -765,9 +765,14 @@ ward lands on the right Union or Ward.
   *district only*, so no parent upazila is fabricated; the registry's Dhaka city-ward mapping is
   partial, so the bundle keeps exactly the wards the source lists. `data/SOURCE.md` records both
   limits.
-- **The payload is untouched.** `bdOrderLocationStatus_` still gates booking on the *District and
-  Thana only*; City Corporation / Union / Paurashava / Ward are shown for correction and never
-  sent to Steadfast. `courierBookRequest_` still has no area fields (pinned by a test).
+- **The area levels are never sent as separate fields — but the address now is corrected.** The
+  area check is no longer "check only". With it on, `bdCorrectAddress_` rewrites the address so
+  its District / Thana / Union / Ward are present and in canonical order, `localizeCourierPhone_`
+  folds the phone to `01XXXXXXXXX`, and `courierBookOrder_` sends that corrected draft. The
+  Steadfast payload still has **no area fields** (pinned by a test); the levels live in the
+  address text. An address that cannot be resolved is left exactly as typed — it never guesses.
+  Both the modal (`renderOrderCourier` shows the corrected values, with a "corrected" note) and
+  the confirm dialog name what will actually be sent, so the two cannot disagree.
 - **The order form grows the extra selects** (`ordBdCity`, `ordBdUnion`, `ordBdPaurashava`,
   `ordBdWard`), each shown only when the chosen parent has children, and each re-seeding from
   detection until the owner picks something. `_bdSel` carries `wardParent` so a ward whose parent
@@ -776,8 +781,9 @@ ward lands on the right Union or Ward.
   position and the leftmost hit wins, because an address is written smallest-to-largest; a name
   that merely repeats the thana is dropped so `Amta` cannot resolve to the `Amta` union *named
   after* its own thana when a different `Amta` union is intended.
-- `test/address.test.js` grows to **62 checks** and `test/courier.test.js` to **90**, covering the
+- `test/address.test.js` grows to **69 checks** and `test/courier.test.js` to **107**, covering the
   city-corporation split, union/paurashava/ward detection, the Bangla and old-spelling cases, the
-  helper lists, and the unchanged payload.
+  helper lists, the address correction (`bdCorrectAddress_`: area-only rebuilt, house/road kept,
+  duplicate names collapsed, unresolved left alone), phone folding, and the unchanged payload.
 
 
