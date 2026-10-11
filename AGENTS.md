@@ -704,3 +704,35 @@ of the Dashboard.
 - **Test grows to 69 checks** covering the switch off/on, the linked order's fields, the
   no-duplicate edit, the history one-click path, unlink-on-delete, and the SL/count rendering.
 
+
+## Booking a Steadfast parcel from the order itself (2026-10-11)
+
+Until now `courier.js` could only *follow* a parcel that already existed at Steadfast: the
+owner booked it in the Steadfast portal, pasted the tracking link, and the app synced the
+status back. The booking half now lives on the order too, so the whole courier job is one
+place — `Book with Steadfast` in the order modal, next to the existing `Sync Courier Status`.
+
+- **Idempotent by invoice, not by hope.** `courierInvoiceFor_` builds `TXP-<orderNo>`; the
+  same order always produces the same invoice, so pressing Book twice, or retrying after a
+  dropped reply, cannot create a second parcel — Steadfast refuses the duplicate invoice.
+  `bookOrderCourier` also refuses outright once `order.consignmentId` exists.
+- **Nothing is recorded before Steadfast confirms.** `courierBookOrder_` writes the
+  consignment id, tracking link, `courierStatus: 'pending'` and a history line only after a
+  reply parses; a failed call leaves the order exactly as it was. `courierBookFetch_` is the
+  one seam a test stubs, so the payload and the reply handling are checked without a socket.
+- **The recipient details are derived, not retyped.** `courierBookingDraft` reads the order's
+  own fields first, then falls back to the memo it settles, then to the saved customer, and
+  the COD defaults to the memo's remaining due (`memoRemainingDue`, floored at 0). A
+  hand-typed value in the modal is never overwritten by a stale record.
+- **The modal tracks the order.** `renderOrderCourier` now fills `#ordConsignment` and
+  `#ordTrackingUrl` from the order when they are blank. Without that, the next `saveOrder`
+  would re-derive the *tracking code* out of the URL and overwrite the *consignment id* a
+  booking just stored — the two are different ids, and only the numeric cid routes a status
+  check to `status_by_cid`.
+- **Web-only, like the tracking half.** The Android app has no courier support and WebView
+  CORS/credential handling makes a native port a separate project; nothing here touches the
+  APK beyond the version stamp, which still has to be rebuilt every release.
+- `test/courier.test.js` grows from 43 to **71 checks**, adding the invoice/phone/draft
+  rules, the payload, reply and error parsing, the one write path, the modal field sync, and
+  the two refusals (already booked, blank address).
+

@@ -192,6 +192,89 @@ const paymentsBefore = db.payments.length;
   eq(/Delivered/.test(ordCourierBadgeHTML(db.orders[0])), true, 'badge shows Delivered');
   eq(ordCourierBadgeHTML({ status: 'received' }), '', 'no tracking and no status → no badge');
 
+  /* ---------- 10. booking: the pure rules ---------- */
+  eq(courierInvoiceFor_({ orderNo: 'TP-0001' }), 'TXP-TP-0001', 'invoice is deterministic per order');
+  eq(courierInvoiceFor_({ orderNo: 'TP/0001' }), 'TXP-TP-0001', 'invoice sanitizes the order no');
+  eq(courierPhoneOk_('01712345678'), true, 'valid phone accepted');
+  eq(courierPhoneOk_('0171'), false, 'short phone rejected');
+  eq(courierPhoneOk_('02712345678'), false, 'non-01 phone rejected');
+
+  /* The draft comes off the memo the order settles: the order's own fields first,
+     then the memo's customer details, then the saved customer. */
+  const memoB = {
+    id: 'mB', memoNo: 'TXP/SM/0009', date: T, customerName: 'Nasir', customerPhone: '01799999999',
+    customerAddress: 'Mirpur, Dhaka', items: [], totalQty: 0, grandTotal: 1200, advance: 200, due: 1000
+  };
+  db.memos.push(memoB);
+  const ordB = { id: 'oB', orderNo: 'TP-0009', customerName: 'Nasir', productName: 'Kids 3pcs Set',
+    qty: 2, deliveryDate: T, status: 'received', memoId: 'mB' };
+  db.orders.push(ordB);
+  const draftB = courierBookingDraft(ordB);
+  eq(draftB.name, 'Nasir', 'draft name from the order');
+  eq(draftB.phone, '01799999999', 'draft phone from the memo when the order has none');
+  eq(draftB.address, 'Mirpur, Dhaka', 'draft address from the memo');
+  eq(draftB.cod, 1000, 'draft COD is the memo remaining due');
+
+  const reqB = courierBookRequest_(ordB, draftB);
+  eq(reqB.invoice, 'TXP-TP-0009', 'payload invoice');
+  eq(reqB.recipient_phone, '01799999999', 'payload phone');
+  eq(reqB.cod_amount, 1000, 'payload COD');
+  eq(reqB.delivery_type, 0, 'home delivery');
+
+  const bad = courierBookErrors_({ name: 'X', phone: '01799999999', address: '', cod: 0 });
+  eq(bad.length, 1, 'missing address is refused');
+  eq(/address/i.test(bad[0]), true, 'the reason names the address');
+
+  /* Parsing the reply, in the documented and the error shape. */
+  const pb = parseCourierBooking_({ status: 200, consignment: { consignment_id: '987', tracking_code: 'TC9' } });
+  eq(pb.consignmentId, '987', 'parses consignment id');
+  eq(pb.trackingCode, 'TC9', 'parses tracking code');
+  eq(!!parseCourierBooking_({ status: 400, message: 'Invoice already exists' }).error, true, 'duplicate invoice surfaced');
+  eq(!!parseCourierBooking_({ status: 200 }).error, true, 'missing consignment id is an error');
+
+  /* ---------- 11. booking: the one place it changes records ---------- */
+  const rBook = await courierBookOrder_(ordB, draftB, async () => ({ consignmentId: '555111', trackingCode: 'TC555' }));
+  eq(rBook.ok, true, 'booking succeeds');
+  eq(ordB.consignmentId, '555111', 'consignment id saved on the order');
+  eq(ordB.trackingUrl, 'https://steadfast.com.bd/t/TC555', 'tracking link built from the code');
+  eq(ordB.courierStatus, 'pending', 'status starts as pending');
+  eq(ordB.history[ordB.history.length - 1].text.indexOf('Booked with Steadfast') === 0, true, 'history records the booking');
+
+  /* After booking, opening the modal must fill the tracking fields from the order,
+     so a later Save Order keeps the consignment id rather than re-deriving the code. */
+  el('ordId').value = 'oB';
+  el('ordConsignment').value = '';
+  el('ordTrackingUrl').value = '';
+  renderOrderCourier();
+  eq(el('ordConsignment').value, '555111', 'modal consignment field synced from the order');
+  eq(el('ordTrackingUrl').value, 'https://steadfast.com.bd/t/TC555', 'modal tracking field synced from the order');
+
+  /* A refused call changes nothing: no parcel is recorded on the order. */
+  const ordC = { id: 'oC', orderNo: 'TP-0010', customerName: 'Z', productName: 'Y', qty: 1, deliveryDate: T, status: 'received' };
+  db.orders.push(ordC);
+  const rFail = await courierBookOrder_(ordC, { name: 'Z', phone: '01799999999', address: 'Dhaka', cod: 100, desc: 'Y' },
+    async () => ({ error: 'Steadfast refused the booking' }));
+  eq(rFail.ok, false, 'a refused booking reports failure');
+  eq(ordC.consignmentId, undefined, 'no consignment id on a failed booking');
+
+  /* The Book button refuses a second parcel for an order that already has one. */
+  localStorage.setItem('texpark_pro_courier_key', 'k');
+  localStorage.setItem('texpark_pro_courier_secret', 's');
+  el('ordId').value = 'oB';
+  triggers.alert.length = 0;
+  bookOrderCourier();
+  eq(/already has a parcel/.test(triggers.alert.join(' ')), true, 'Book refuses an order that already has a parcel');
+
+  /* And it refuses a blank address before any request goes out. */
+  el('ordId').value = 'oC';
+  el('ordBookName').value = 'Z';
+  el('ordBookPhone').value = '01799999999';
+  el('ordBookAddress').value = '';
+  el('ordBookCod').value = '100';
+  triggers.alert.length = 0;
+  bookOrderCourier();
+  eq(/address/i.test(triggers.alert.join(' ')), true, 'Book refuses a blank address');
+
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
   if (fail) process.exit(1);

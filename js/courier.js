@@ -296,31 +296,6 @@ function orderTrackingChanged() {
   if (found && !String(cid.value || '').trim()) cid.value = found;
 }
 
-/* Show the courier block (link + last status + Sync button) in the order modal. */
-function renderOrderCourier() {
-  const box = document.getElementById('ordCourier');
-  if (!box) return;
-  const oid = document.getElementById('ordId').value;
-  const o = oid ? (db.orders || []).find(x => x.id === oid) : null;
-  const btn = document.getElementById('ordCourierSyncBtn');
-  const link = o && o.trackingUrl ? String(o.trackingUrl).trim() : '';
-  const cid = (o && o.consignmentId) || '';
-  if (btn) btn.style.display = (o && (cid || extractConsignment_(link) || o.status === 'delivered')) ? '' : 'none';
-  if (!o && !courierConfigured()) {
-    box.innerHTML = '<div class="muted">Set the Steadfast API key in Settings → Courier to sync delivery status automatically.</div>';
-    return;
-  }
-  const last = o && o.courierStatus
-    ? '<span class="pill ' + (courierStatusFinal_(o.courierStatus) ? 'ok' : 'warn') + '">' +
-      esc(courierStatusLabel_(o.courierStatus)) + '</span>'
-    : '<span class="muted">Not checked yet</span>';
-  box.innerHTML = '<div class="row" style="gap:10px;flex-wrap:wrap">' +
-    '<span><b>Courier:</b> ' + last +
-    (o && o.courierCheckedAt ? ' <span class="muted">· ' + esc(String(o.courierCheckedAt).slice(0, 16).replace('T', ' ')) + '</span>' : '') +
-    (link ? ' <a href="' + esc(link) + '" target="_blank" rel="noopener">Open tracking ↗</a>' : '') +
-    '</span></div>';
-}
-
 function syncOrderCourier() {
   const oid = document.getElementById('ordId').value;
   const o = oid ? (db.orders || []).find(x => x.id === oid) : null;
@@ -383,4 +358,239 @@ async function courierAutoSync() {
     if (r.changed && currentPage === 'orders') renderOrders();
   } catch (e) { /* a courier outage must never break the app */ }
   courierSyncing = false;
+}
+
+/* ============================ booking a parcel ============================
+   The tracking half above can only follow a parcel that already exists at
+   Steadfast. This half creates it, so the whole courier job lives on the order
+   itself and the owner never leaves the app to open the Steadfast portal.
+
+   The invoice is deterministic per order (`TXP-<orderNo>`), so pressing Book
+   twice, or a retry after a dropped reply, cannot create a second parcel: the
+   same invoice is refused by Steadfast as a duplicate. The shipment is only
+   recorded after Steadfast confirms, so a failed call never leaves an order
+   claiming a parcel that was not really booked. */
+
+/* Our idempotency key, sent to Steadfast as `invoice`. */
+function courierInvoiceFor_(ord) {
+  const no = String((ord && (ord.orderNo || ord.memoNo || ord.id)) || '').trim() || 'order';
+  return 'TXP-' + no.replace(/[^A-Za-z0-9-]/g, '-');
+}
+
+/* A Bangladeshi mobile: 01 followed by 3-9, then eight more digits. */
+function courierPhoneOk_(phone) {
+  return /^01[3-9]\d{8}$/.test(String(phone || '').trim());
+}
+
+/* Where a parcel's recipient details come from, in priority order:
+   the order's own fields, then the memo it settles, then the saved customer.
+   Each falls back only when the field above it is blank, so a hand-typed value
+   is never overwritten by a stale customer record. */
+function courierBookingDraft(ord) {
+  const memo = ord ? memoForOrder_(ord) : null;
+  const cust = (db.customers || []).find(c =>
+    (memo && c.name === memo.customerName && (c.phone || '') === (memo.customerPhone || '')) ||
+    (!memo && c.name === (ord && ord.customerName)));
+  const name = String((ord && ord.customerName) || (memo && memo.customerName) || (cust && cust.name) || '').trim();
+  const phone = String((ord && ord.phone) || (memo && memo.customerPhone) || (cust && cust.phone) || '').trim();
+  const address = String((memo && memo.customerAddress) || (cust && cust.address) || '').trim();
+  /* Cash on delivery: what the memo still owes, less the advance already taken.
+     Never negative, so a fully-paid memo books as 0 COD rather than a refund. */
+  const cod = memo ? Math.max(0, num(memoRemainingDue(memo))) : 0;
+  const desc = [ord && ord.productName, ord && num(ord.qty) ? '(' + num(ord.qty) + ' pcs)' : '']
+    .filter(Boolean).join(' ');
+  return { name, phone, address, cod, desc };
+}
+
+/* Build the Steadfast create_order payload. Pure, so a test can assert exactly
+   what would be sent without a socket. */
+function courierBookRequest_(ord, draft) {
+  return {
+    invoice: courierInvoiceFor_(ord),
+    recipient_name: draft.name,
+    recipient_phone: draft.phone,
+    recipient_address: draft.address,
+    cod_amount: num(draft.cod),
+    item_description: draft.desc || undefined,
+    delivery_type: 0
+  };
+}
+
+/* Validate a draft before anything is sent. Returns an array of messages; empty
+   means good to book. */
+function courierBookErrors_(draft) {
+  const errs = [];
+  if (!String(draft.name || '').trim()) errs.push('Recipient name is required.');
+  if (!courierPhoneOk_(draft.phone)) errs.push('A valid phone is required (01XXXXXXXXX).');
+  if (!String(draft.address || '').trim()) errs.push('Delivery address is required.');
+  if (num(draft.cod) < 0) errs.push('COD amount cannot be negative.');
+  return errs;
+}
+
+/* Parse a create_order reply into {consignmentId, trackingCode}. Kept pure so the
+   shapes Steadfast documents can be driven directly. */
+function parseCourierBooking_(json) {
+  const j = json || {};
+  if (j.status && j.status !== 200) return { error: String(j.message || 'Steadfast refused the booking') };
+  const c = j.consignment || j.data || j;
+  const consignmentId = String((c && c.consignment_id) || '').trim();
+  const trackingCode = String((c && c.tracking_code) || '').trim();
+  if (!consignmentId) return { error: 'Steadfast did not return a consignment id.' };
+  return { consignmentId, trackingCode };
+}
+
+/* The create_order HTTP call, isolated so tests stub exactly one seam. */
+async function courierBookFetch_(payload) {
+  if (!courierConfigured()) return { error: 'Courier API key/secret are not set (Settings → Courier).' };
+  try {
+    const res = await fetch(STEADFAST_API + '/create_order', {
+      method: 'POST',
+      headers: { 'Api-Key': courierKey(), 'Secret-Key': courierSecret(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const txt = await res.text();
+    let j = null; try { j = JSON.parse(txt); } catch (e) { /* not JSON */ }
+    if (j === null) {
+      return { error: res.status === 401 || res.status === 403
+        ? 'Steadfast rejected the API key (HTTP ' + res.status + '). Check Settings → Courier.'
+        : 'Steadfast did not return JSON (HTTP ' + res.status + ').' };
+    }
+    return parseCourierBooking_(j);
+  } catch (e) {
+    return { error: 'Could not reach Steadfast: ' + ((e && e.message) || e) };
+  }
+}
+
+/* The one place a booking changes records. `fetchOne` is injectable for tests;
+   production passes nothing and uses courierBookFetch_. Returns {ok, error,
+   shipment} and commits + queues the order once. */
+async function courierBookOrder_(ord, draft, fetchOne) {
+  const get = fetchOne || courierBookFetch_;
+  const errs = courierBookErrors_(draft);
+  if (errs.length) return { ok: false, error: errs.join(' ') };
+  const payload = courierBookRequest_(ord, draft);
+  const resp = await get(payload);
+  if (resp.error) return { ok: false, error: resp.error };
+
+  ord.consignmentId = resp.consignmentId;
+  if (resp.trackingCode) {
+    ord.trackingUrl = 'https://steadfast.com.bd/t/' + resp.trackingCode;
+    ord.trackingCode = resp.trackingCode;
+  }
+  ord.courierStatus = 'pending';
+  ord.courierCod = num(draft.cod);
+  ord.courierBookedAt = new Date().toISOString();
+  ord.courierCheckedAt = new Date().toISOString();
+  ord.history = ord.history || [];
+  ord.history.push({ at: new Date().toISOString(), text: 'Booked with Steadfast · ' + resp.consignmentId + ' · COD ' + money(num(draft.cod)) });
+  commit();
+  syncPush('order', {
+    orderId: ord.id, orderNo: ord.orderNo, consignmentId: ord.consignmentId,
+    courierStatus: ord.courierStatus, status: ord.status
+  }, 'Courier booking ' + ord.orderNo);
+  return { ok: true, shipment: { consignmentId: resp.consignmentId, trackingCode: resp.trackingCode } };
+}
+
+/* ---- the order modal's Courier block ---- */
+
+/* Recompute the draft and paint the courier block: status badge, the fields the
+   booking will use, and the Book / Sync buttons. Called whenever the order modal
+   opens or a booking/sync finishes. */
+function renderOrderCourier() {
+  const box = document.getElementById('ordCourier');
+  if (!box) return;
+  const oid = document.getElementById('ordId').value;
+  const o = oid ? (db.orders || []).find(x => x.id === oid) : null;
+  const btn = document.getElementById('ordCourierSyncBtn');
+  const bookBtn = document.getElementById('ordCourierBookBtn');
+  const link = o && o.trackingUrl ? String(o.trackingUrl).trim() : '';
+  const cid = (o && o.consignmentId) || '';
+  const hasId = !!(cid || extractConsignment_(link));
+
+  if (btn) btn.style.display = (o && (hasId || o.status === 'delivered')) ? '' : 'none';
+  if (bookBtn) bookBtn.style.display = (o && !hasId) ? '' : 'none';
+
+  /* Keep the two tracking fields in step with the order, so a later Save Order
+     reads back the same consignment id a booking just stored rather than
+     re-deriving a tracking code over it. Only fills a blank field, so a value
+     the owner typed is never overwritten. */
+  if (o) {
+    const csEl = document.getElementById('ordConsignment');
+    if (csEl && o.consignmentId && !String(csEl.value || '').trim()) csEl.value = o.consignmentId;
+    const tuEl = document.getElementById('ordTrackingUrl');
+    if (tuEl && o.trackingUrl && !String(tuEl.value || '').trim()) tuEl.value = o.trackingUrl;
+  }
+
+  if (!o) {
+    box.innerHTML = '<div class="muted">Save the order first, then book the parcel and its ' +
+      'Steadfast status will come back on its own.</div>';
+    return;
+  }
+  if (!courierConfigured()) {
+    box.innerHTML = '<div class="muted">Set the Steadfast API key in Settings → Courier to book ' +
+      'and sync delivery status automatically.</div>';
+    return;
+  }
+
+  const draft = courierBookingDraft(o);
+  const errs = hasId ? [] : courierBookErrors_(draft);
+  const statusPill = o.courierStatus
+    ? '<span class="pill ' + (courierStatusFinal_(o.courierStatus) ? 'ok' : 'warn') + '">' +
+      esc(courierStatusLabel_(o.courierStatus)) + '</span>'
+    : '<span class="muted">Not booked yet</span>';
+
+  let html = '<div class="row" style="gap:10px;flex-wrap:wrap">' +
+    '<span><b>Courier:</b> ' + statusPill +
+    (o.courierCheckedAt ? ' <span class="muted">· ' + esc(String(o.courierCheckedAt).slice(0, 16).replace('T', ' ')) + '</span>' : '') +
+    (link ? ' <a href="' + esc(link) + '" target="_blank" rel="noopener">Open tracking ↗</a>' : '') +
+    '</span></div>';
+
+  if (!hasId) {
+    html += '<div class="hint" style="margin-top:8px">Booking will send these details to Steadfast. ' +
+      'Fix any blank field first — the address comes from the memo or the saved customer.</div>' +
+      '<div class="formgrid" style="margin-top:8px">' +
+      '<div><label>Recipient</label><input id="ordBookName" value="' + esc(draft.name) + '"></div>' +
+      '<div><label>Phone</label><input id="ordBookPhone" value="' + esc(draft.phone) + '"></div>' +
+      '<div class="wide"><label>Delivery Address</label><input id="ordBookAddress" value="' + esc(draft.address) + '"></div>' +
+      '<div><label>COD Amount</label><input id="ordBookCod" type="number" min="0" step="1" value="' + num(draft.cod) + '"></div>' +
+      '</div>';
+    if (errs.length) html += '<div class="muted" style="color:var(--red);margin-top:6px">' + esc(errs.join(' ')) + '</div>';
+  }
+  box.innerHTML = html;
+}
+
+/* Read the courier fields off the modal, falling back to the computed draft when
+   the booking form is not on screen (an already-booked order). */
+function courierDraftFromForm_(ord) {
+  const base = courierBookingDraft(ord);
+  const v = id => { const e = document.getElementById(id); return e ? e.value : null; };
+  return {
+    name: v('ordBookName') != null ? String(v('ordBookName')).trim() : base.name,
+    phone: v('ordBookPhone') != null ? String(v('ordBookPhone')).trim() : base.phone,
+    address: v('ordBookAddress') != null ? String(v('ordBookAddress')).trim() : base.address,
+    cod: v('ordBookCod') != null && v('ordBookCod') !== '' ? num(v('ordBookCod')) : base.cod,
+    desc: base.desc
+  };
+}
+
+/* Book the open order. The parcel is only booked once; a second press re-uses
+   the consignment id already on the order rather than sending another parcel. */
+function bookOrderCourier() {
+  const oid = document.getElementById('ordId').value;
+  const o = oid ? (db.orders || []).find(x => x.id === oid) : null;
+  if (!o) return alert('Save the order first, then book.');
+  if (o.consignmentId) return alert('This order already has a parcel (' + o.consignmentId + ').');
+  if (!courierConfigured()) { alert('Set the Steadfast API key and secret in Settings → Courier first.'); return; }
+  const draft = courierDraftFromForm_(o);
+  const errs = courierBookErrors_(draft);
+  if (errs.length) return alert(errs.join('\n'));
+  if (!confirm('Book a Steadfast parcel for ' + (o.orderNo || 'this order') + '?\n\n' +
+    'Recipient: ' + draft.name + '\nPhone: ' + draft.phone + '\nAddress: ' + draft.address +
+    '\nCOD: ' + money(num(draft.cod)))) return;
+  courierBookOrder_(o, draft).then(r => {
+    if (!r.ok) { alert('Booking failed: ' + r.error); return; }
+    renderOrderCourier();
+    renderOrders();
+    alert('Booked. Consignment ' + r.shipment.consignmentId + '. Status will sync automatically.');
+  });
 }
