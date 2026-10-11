@@ -138,15 +138,15 @@ ok(bdWardsFor('Dhaka', 'Dhaka North').length > 0, 'Dhaka North has wards');
 
 console.log('\n--- 12. address correction from the area ---');
 /* area-only text is rebuilt in a canonical smallest-to-largest order */
-eq(bdCorrectAddress_('Shibpur Narsingdi', R('Shibpur Narsingdi')), 'Shibpur, Narsingdi, Dhaka', 'area-only address rebuilt and ordered');
+eq(bdCorrectAddress_('Shibpur Narsingdi', R('Shibpur Narsingdi')), 'Shibpur, Narsingdi', 'area-only address rebuilt and ordered (no division appended)');
 eq(bdCorrectAddress_('ধানমন্ডি ঢাকা', R('ধানমন্ডি ঢাকা')), 'Dhanmondi, Dhaka South, Dhaka', 'Dhaka thana corrects to its city corporation, duplicate name collapsed');
 /* house/road detail is kept, and only the missing levels are appended */
 eq(bdCorrectAddress_('House 12, Road 3, Dhanmondi, Dhaka', R('House 12, Road 3, Dhanmondi, Dhaka')),
   'House 12, Road 3, Dhanmondi, Dhaka', 'a complete address with detail is left unchanged');
 eq(bdCorrectAddress_('House 5, Road 2, Shibpur', R('House 5, Road 2, Shibpur')),
-  'House 5, Road 2, Shibpur, Narsingdi, Dhaka', 'detail kept, missing levels appended');
+  'House 5, Road 2, Shibpur, Narsingdi', 'detail kept, missing levels appended');
 eq(bdCorrectAddress_('Bancharampur, Brahmanbaria', R('Bancharampur, Brahmanbaria')),
-  'Bancharampur, Brahmanbaria, Chattogram', 'a paurashava address gains its district and division');
+  'Bancharampur, Brahmanbaria', 'a paurashava address gains its district (not the division)');
 /* never guesses */
 eq(bdCorrectAddress_('somewhere unknown 123', R('somewhere unknown 123')), 'somewhere unknown 123', 'an unresolved address is left untouched');
 eq(bdCorrectAddress_('', R('')), '', 'an empty address stays empty');
@@ -161,6 +161,21 @@ eq(R('Silimpur, Tangail').district, 'Tangail', 'district still resolves');
 /* A district named on its own still asks for the Thana — it must not invent one. */
 eq(R('Tangail').thana, null, 'a bare district still leaves the thana unknown');
 eq(R('Tangail').confidence, 'medium', 'a bare district stays medium confidence');
+
+console.log('\n--- 14. the division is never appended to a shipping address ---');
+/* Tangail is in the Dhaka *division*. Appending that "Dhaka" made Steadfast read
+   the parcel as Dhaka city and route a Tangail order into Dhaka. The address a
+   courier routes on stops at the district. */
+eq(bdCorrectAddress_('Mirzapur, Tangail', R('Mirzapur, Tangail')), 'Mirzapur, Tangail',
+  'a Tangail address does not gain the Dhaka division');
+eq(bdCorrectAddress_('Mirzapur, Tangail', R('Mirzapur, Tangail')).indexOf(', Dhaka') === -1, true,
+  'no trailing Dhaka on a Tangail parcel');
+eq(R('Mirzapur, Tangail').division, 'Dhaka', 'the division is still resolved for the picker');
+/* A real Dhaka address keeps its Dhaka — that one is the district, not a division. */
+eq(bdCorrectAddress_('Dhanmondi, Dhaka', R('Dhanmondi, Dhaka')), 'Dhanmondi, Dhaka South, Dhaka',
+  'a Dhaka thana keeps the city corporation and the Dhaka district');
+eq(bdAreaTail_(R('Bancharampur, Brahmanbaria')).indexOf('Chattogram'), -1, true,
+  'the Chattogram division is not appended to a Brahmanbaria address');
 
 console.log('\n--- determinism ---');
 eq(JSON.stringify(R('শিবপুর নরসিংদী')), JSON.stringify(R('শিবপুর নরসিংদী')), 'same input -> same output');

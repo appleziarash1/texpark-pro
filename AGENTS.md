@@ -809,4 +809,14 @@ read as the new order's. `_courierForm = {ordId, painted}` records which order t
 for; `_courierFormLive_` gates every read of `ordBookPhone`/`ordBookAddress`, and a changed order
 clears `_bdSel` so the previous order's area cannot leak.
 
+### Never append the division to a shipping address (2026-10-11)
+
+`bdCorrectAddress_` rebuilt the address from `bdAreaTail_`, which ended with the **division**. Tangail
+is in the *Dhaka* division, so a Tangail parcel went to Steadfast as `Mirzapur, Tangail, Dhaka` and
+was routed into **Dhaka city** — a real delivery loss. A courier routes on district and thana only;
+the division is a grouping level for the picker. `bdAreaParts_` now stops at the district. A genuine
+Dhaka address still ends in `Dhaka` (`Dhanmondi, Dhaka South, Dhaka`) because that `Dhaka` is the
+*district*, not a division. `courierDraftFromForm_` also falls back to the computed draft for any
+field the owner left blank, so a booking can never send an empty name/phone/address.
+
 

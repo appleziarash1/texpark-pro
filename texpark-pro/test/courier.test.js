@@ -310,10 +310,10 @@ const paymentsBefore = db.payments.length;
   el('ordBookPhone').value = '+880 1812-345678';
   el('ordBookAddress').value = 'Shibpur Narsingdi';
   const fixOn = courierFixedDraft_(ordAddr).corrected;
-  eq(fixOn.address, 'Shibpur, Narsingdi, Dhaka', 'feature on -> address corrected to the full area');
+  eq(fixOn.address, 'Shibpur, Narsingdi', 'feature on -> address corrected to the area, division not appended');
   eq(fixOn.phone, '01812345678', 'feature on -> phone folded to 01XXXXXXXXX');
   renderOrderCourier();
-  eq(el('ordCourier')._html.indexOf('Shibpur, Narsingdi, Dhaka') !== -1, true, 'modal shows the corrected address');
+  eq(el('ordCourier')._html.indexOf('Shibpur, Narsingdi') !== -1, true, 'modal shows the corrected address');
   eq(el('ordCourier')._html.indexOf('01812345678') !== -1, true, 'modal shows the corrected phone');
 
   /* With it off, the phone and address are left exactly as typed. */
@@ -332,14 +332,14 @@ const paymentsBefore = db.payments.length;
 
   /* An address with house/road detail keeps it and only gains the missing levels. */
   const withDetail = courierCorrectDraft_(ordAddr, { name: 'R', phone: '01712345678', address: 'House 5, Road 2, Shibpur', cod: 0, desc: '' }).draft;
-  eq(withDetail.address, 'House 5, Road 2, Shibpur, Narsingdi, Dhaka', 'house/road kept, area appended');
+  eq(withDetail.address, 'House 5, Road 2, Shibpur, Narsingdi', 'house/road kept, area appended');
 
   /* A corrected booking sends the corrected address and phone. */
   let capturedOn = null;
   const onBook = await courierBookOrder_(ordAddr, { name: 'Rahim', phone: '+8801712345678', address: 'Shibpur Narsingdi', cod: 400, desc: 'Frock' },
     async p => { capturedOn = p; return { consignmentId: 'ON1' }; });
   eq(onBook.ok, true, 'feature on -> booking proceeds');
-  eq(capturedOn.recipient_address, 'Shibpur, Narsingdi, Dhaka', 'corrected address is what is sent');
+  eq(capturedOn.recipient_address, 'Shibpur, Narsingdi', 'corrected address is what is sent, no division');
   eq(capturedOn.recipient_phone, '01712345678', 'corrected phone is what is sent');
   eq(Object.keys(capturedOn).indexOf('district'), -1, 'no district field added to the payload');
   eq(Object.keys(capturedOn).indexOf('ward'), -1, 'no ward field added to the payload');
@@ -429,6 +429,17 @@ const paymentsBefore = db.payments.length;
   const leaked = courierDraftFromForm_(db.orders.find(x => x.id === 'oBad'));
   eq(leaked.address, '', 'a not-yet-painted order does not read the previous order address');
   eq(leaked.phone, '', 'a not-yet-painted order does not read the previous order phone');
+
+  /* The address actually sent for a Tangail parcel must not end in the Dhaka
+     division, or Steadfast routes it into Dhaka city. */
+  console.log('\n--- the sent address carries no division ---');
+  el('ordId').value = 'oNoPhone';
+  _courierForm.ordId = 'oNoPhone'; _courierForm.painted = true;
+  el('ordBookName').value = ''; el('ordBookPhone').value = ''; el('ordBookAddress').value = ''; el('ordBookCod').value = '';
+  const sendDraft = courierCorrectDraft_(ordNoPhone, courierDraftFromForm_(ordNoPhone), '').draft;
+  const sendPayload = courierBookRequest_(ordNoPhone, sendDraft);
+  eq(sendPayload.recipient_address, 'Mirzapur, Tangail', 'a Tangail parcel is sent as Mirzapur, Tangail');
+  eq(/, Dhaka$/.test(sendPayload.recipient_address), false, 'no trailing Dhaka division on the parcel');
 
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);

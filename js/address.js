@@ -237,9 +237,12 @@ function bdScanDetails_(tokens, district, thana) {
   return out;
 }
 
-/* The resolved levels as {name, nameBn}, smallest -> largest (Ward -> Division),
+/* The resolved levels as {name, nameBn}, smallest -> largest (Ward -> District),
    dropping a level whose name repeats one already listed so a Dhaka address does
-   not come out as "Dhaka, Dhaka". */
+   not come out as "Dhaka, Dhaka". The division is deliberately left out: it is a
+   grouping level for the picker, not something a courier routes on, and a
+   trailing "Dhaka" (the division of Tangail) makes Steadfast send a Tangail
+   parcel into Dhaka city. */
 function bdAreaParts_(r) {
   const raw = [
     { name: r.ward, nameBn: null },
@@ -247,8 +250,7 @@ function bdAreaParts_(r) {
     { name: r.paurashava, nameBn: r.paurashavaBn || null },
     { name: r.thana, nameBn: r.thanaBn || null },
     { name: r.city, nameBn: r.cityBn || null },
-    { name: r.district, nameBn: r.districtBn || null },
-    { name: r.division, nameBn: r.divisionBn || null }
+    { name: r.district, nameBn: r.districtBn || null }
   ];
   const seen = {};
   const out = [];

@@ -853,15 +853,15 @@ function renderOrderCourier() {
 function courierDraftFromForm_(ord) {
   const base = courierBookingDraft(ord);
   /* Only trust the inputs when they were rendered for this order; they are reused
-     DOM nodes and would otherwise carry the previously opened order's details. */
+     DOM nodes and would otherwise carry the previously opened order's details.
+     A field that is blank falls back to the computed draft, never to a blank. */
   const live = _courierFormLive_(ord);
-  const v = id => (live ? document.getElementById(id) : null);
-  const pe = v('ordBookPhone'), ae = v('ordBookAddress'), ne = v('ordBookName'), ce = v('ordBookCod');
+  const v = id => { const e = live ? document.getElementById(id) : null; return e ? String(e.value || '').trim() : ''; };
   return {
-    name: ne != null ? String(ne.value).trim() : base.name,
-    phone: pe != null ? String(pe.value).trim() : base.phone,
-    address: ae != null ? String(ae.value).trim() : base.address,
-    cod: ce != null && ce.value !== '' ? num(ce.value) : base.cod,
+    name: v('ordBookName') || base.name,
+    phone: v('ordBookPhone') || base.phone,
+    address: v('ordBookAddress') || base.address,
+    cod: (function () { const e = live ? document.getElementById('ordBookCod') : null; return e && e.value !== '' ? num(e.value) : base.cod; })(),
     desc: base.desc
   };
 }
