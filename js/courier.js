@@ -412,11 +412,18 @@ function orderOpenRecord_() {
 }
 
 /* The address the booking will actually send: the live field if the owner has
-   one, else the computed draft (memo, then saved customer). */
+   one *for this order*, else the computed draft (memo, then saved customer).
+   The live fields are reused DOM nodes, so a value left from the previously
+   opened order must never leak into this one. */
 function orderBookingAddress_(ord) {
   const el = document.getElementById('ordBookAddress');
-  if (el && String(el.value || '').trim()) return String(el.value).trim();
+  if (el && _courierFormLive_(ord) && String(el.value || '').trim()) return String(el.value).trim();
   return courierBookingDraft(ord).address;
+}
+
+/* True only when the booking form on screen was rendered for this order. */
+function _courierFormLive_(ord) {
+  return !!(ord && _courierForm.painted && _courierForm.ordId === ord.id);
 }
 
 /* The District/Thana currently chosen on the form. Booking is allowed only when
@@ -426,10 +433,12 @@ function bdOrderLocationStatus_() {
   const t = document.getElementById('ordBdThana');
   const district = d ? String(d.value || '').trim() : '';
   const thana = t ? String(t.value || '').trim() : '';
-  return {
-    ok: !!district && !!thana, district: district, thana: thana,
-    message: 'District and Thana could not be detected from this address. Please select them before booking.'
-  };
+  const message = (!district && !thana)
+    ? 'District and Thana could not be detected from this address. Please select them before booking.'
+    : (!district
+      ? 'District could not be detected from this address. Please select it before booking.'
+      : 'Thana could not be detected from this address. Please select it before booking.');
+  return { ok: !!district && !!thana, district: district, thana: thana, message: message };
 }
 
 /* What the owner has on the form, so a re-render keeps a manual choice. Reset
@@ -558,12 +567,16 @@ function onOrderWardChanged() {
    is never overwritten by a stale customer record. */
 function courierBookingDraft(ord) {
   const memo = ord ? memoForOrder_(ord) : null;
-  const cust = (db.customers || []).find(c =>
-    (memo && c.name === memo.customerName && (c.phone || '') === (memo.customerPhone || '')) ||
-    (!memo && c.name === (ord && ord.customerName)));
-  const name = String((ord && ord.customerName) || (memo && memo.customerName) || (cust && cust.name) || '').trim();
+  const name = String((ord && ord.customerName) || (memo && memo.customerName) || '').trim();
+  /* Match the saved customer by name. The old rule also demanded the memo's phone
+     equal the customer's, so a memo typed without a phone (the common case) found
+     no customer and the booking went out with no phone and no address even though
+     the customer record held both. Name first, then a phone match as a fallback. */
+  const typedPhone = String((ord && ord.phone) || (memo && memo.customerPhone) || '').trim();
+  const cust = (db.customers || []).find(c => c.name === name) ||
+    (db.customers || []).find(c => typedPhone && c.phone && c.phone === typedPhone) || null;
   const phone = String((ord && ord.phone) || (memo && memo.customerPhone) || (cust && cust.phone) || '').trim();
-  const address = String((memo && memo.customerAddress) || (cust && cust.address) || '').trim();
+  const address = String((memo && memo.customerAddress) || (ord && ord.customerAddress) || (cust && cust.address) || '').trim();
   /* Cash on delivery: what the memo still owes, less the advance already taken.
      Never negative, so a fully-paid memo books as 0 COD rather than a refund. */
   const cod = memo ? Math.max(0, num(memoRemainingDue(memo))) : 0;
@@ -621,15 +634,25 @@ function applyOrderAddressCorrection_(ord) {
 
 /* Everything the booking would send, corrected. One place so the button, the
    modal's own error list and the final send cannot disagree. */
+/* Which order the booking form currently on screen was rendered for, so a stale
+   value left in a reused input is never read as if it belonged to another order.
+   `painted` is true only after the block has actually been rebuilt for `ordId`. */
+var _courierForm = { ordId: '', painted: false };
+
 function courierFixedDraft_(ord) {
   const base = courierBookingDraft(ord);
-  const live = { phone: '', address: '' };
-  const pe = document.getElementById('ordBookPhone');
-  if (pe && String(pe.value || '').trim()) live.phone = String(pe.value).trim();
-  const ae = document.getElementById('ordBookAddress');
-  if (ae && String(ae.value || '').trim()) live.address = String(ae.value).trim();
+  /* Only an input that actually holds text may override the computed draft. An
+     empty key here would blank out a phone/address the memo or customer record
+     does have — which is why the modal used to show both fields empty. */
+  const live = {};
+  if (_courierFormLive_(ord)) {
+    const pe = document.getElementById('ordBookPhone');
+    if (pe && String(pe.value || '').trim()) live.phone = String(pe.value).trim();
+    const ae = document.getElementById('ordBookAddress');
+    if (ae && String(ae.value || '').trim()) live.address = String(ae.value).trim();
+  }
   const seed = Object.assign({}, base, live);
-  const corrected = courierCorrectDraft_(ord, seed, live.address).draft;
+  const corrected = courierCorrectDraft_(ord, seed, live.address || base.address).draft;
   return { base: seed, corrected: corrected };
 }
 
@@ -742,6 +765,14 @@ function renderOrderCourier() {
   if (!box) return;
   const oid = document.getElementById('ordId').value;
   const o = oid ? (db.orders || []).find(x => x.id === oid) : null;
+  /* A different order is on screen now. The booking inputs and the area selects
+     are reused DOM, so drop the previous order's remembered area and mark which
+     order they belong to; otherwise order B inherits order A's address/thana. */
+  if (_courierForm.ordId !== (o ? o.id : '')) {
+    _courierForm.ordId = o ? o.id : '';
+    _courierForm.painted = false;
+    _bdSel = { address: '', district: '', city: '', thana: '', union: '', paurashava: '', ward: '', wardParent: '' };
+  }
   const btn = document.getElementById('ordCourierSyncBtn');
   const bookBtn = document.getElementById('ordCourierBookBtn');
   const link = o && o.trackingUrl ? String(o.trackingUrl).trim() : '';
@@ -813,18 +844,24 @@ function renderOrderCourier() {
     if (errs.length) html += '<div class="muted" style="color:var(--red);margin-top:6px">' + esc(errs.join(' ')) + '</div>';
   }
   box.innerHTML = html;
+  /* The block now matches `o`, so its inputs may be trusted as this order's. */
+  if (o && !hasId) _courierForm.painted = true;
 }
 
 /* Read the courier fields off the modal, falling back to the computed draft when
    the booking form is not on screen (an already-booked order). */
 function courierDraftFromForm_(ord) {
   const base = courierBookingDraft(ord);
-  const v = id => { const e = document.getElementById(id); return e ? e.value : null; };
+  /* Only trust the inputs when they were rendered for this order; they are reused
+     DOM nodes and would otherwise carry the previously opened order's details. */
+  const live = _courierFormLive_(ord);
+  const v = id => (live ? document.getElementById(id) : null);
+  const pe = v('ordBookPhone'), ae = v('ordBookAddress'), ne = v('ordBookName'), ce = v('ordBookCod');
   return {
-    name: v('ordBookName') != null ? String(v('ordBookName')).trim() : base.name,
-    phone: v('ordBookPhone') != null ? String(v('ordBookPhone')).trim() : base.phone,
-    address: v('ordBookAddress') != null ? String(v('ordBookAddress')).trim() : base.address,
-    cod: v('ordBookCod') != null && v('ordBookCod') !== '' ? num(v('ordBookCod')) : base.cod,
+    name: ne != null ? String(ne.value).trim() : base.name,
+    phone: pe != null ? String(pe.value).trim() : base.phone,
+    address: ae != null ? String(ae.value).trim() : base.address,
+    cod: ce != null && ce.value !== '' ? num(ce.value) : base.cod,
     desc: base.desc
   };
 }

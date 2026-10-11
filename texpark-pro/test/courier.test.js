@@ -396,6 +396,40 @@ const paymentsBefore = db.payments.length;
   eq(hierD.ward, 'Ward 19', 'resolver finds the ward');
   eq(bdWardsFor('Dhaka', 'Dhaka North').length, 2, 'Dhaka North ward list is available to the picker');
 
+  /* The saved customer fills a phone and address the memo left blank. This is the
+     case that used to book with both fields empty: the memo had no phone, so the
+     old name+phone match found no customer at all. */
+  console.log('\n--- the draft falls back to the saved customer ---');
+  db.customers.push({ id: 'cCust', name: 'Mahmuda Mitu', phone: '01712345678', address: 'Mirzapur, Tangail' });
+  const memoNoPhone = { id: 'mNoPhone', memoNo: 'TXP/SM/NP', date: T, customerName: 'Mahmuda Mitu',
+    customerPhone: '', customerAddress: '', items: [], totalQty: 1, grandTotal: 22370, advance: 0, due: 22370 };
+  db.memos.push(memoNoPhone);
+  const ordNoPhone = { id: 'oNoPhone', orderNo: 'TP-NP', memoId: 'mNoPhone', customerName: 'Mahmuda Mitu',
+    productName: 'Frock', qty: 1, deliveryDate: T, status: 'received' };
+  db.orders.push(ordNoPhone);
+  const dNoPhone = courierBookingDraft(ordNoPhone);
+  eq(dNoPhone.phone, '01712345678', 'memo without a phone -> customer phone fills the draft');
+  eq(dNoPhone.address, 'Mirzapur, Tangail', 'memo without an address -> customer address fills the draft');
+
+  /* Opening the order renders those values, not blanks. */
+  el('ordId').value = 'oNoPhone';
+  el('ordBookPhone').value = '';
+  el('ordBookAddress').value = '';
+  _bdSel = { address: '', district: '', city: '', thana: '', union: '', paurashava: '', ward: '', wardParent: '' };
+  renderOrderCourier();
+  eq(el('ordCourier')._html.indexOf('01712345678') !== -1, true, 'modal shows the customer phone, not blank');
+  eq(el('ordCourier')._html.indexOf('Mirzapur, Tangail') !== -1, true, 'modal shows the customer address, not blank');
+
+  /* Switching orders must not leak the previous order's fields. The inputs are
+     reused DOM nodes; the guard is that they only count once painted for the order. */
+  el('ordBookPhone').value = '01712345678';
+  el('ordBookAddress').value = 'Shibpur Narsingdi';
+  _courierForm.ordId = 'oNoPhone'; _courierForm.painted = true;   /* order A is on screen */
+  el('ordId').value = 'oBad';                                     /* but we read order B */
+  const leaked = courierDraftFromForm_(db.orders.find(x => x.id === 'oBad'));
+  eq(leaked.address, '', 'a not-yet-painted order does not read the previous order address');
+  eq(leaked.phone, '', 'a not-yet-painted order does not read the previous order phone');
+
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
   if (fail) process.exit(1);
