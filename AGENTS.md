@@ -781,9 +781,32 @@ ward lands on the right Union or Ward.
   position and the leftmost hit wins, because an address is written smallest-to-largest; a name
   that merely repeats the thana is dropped so `Amta` cannot resolve to the `Amta` union *named
   after* its own thana when a different `Amta` union is intended.
-- `test/address.test.js` grows to **69 checks** and `test/courier.test.js` to **107**, covering the
+- `test/address.test.js` grows to **76 checks** and `test/courier.test.js` to **113**, covering the
   city-corporation split, union/paurashava/ward detection, the Bangla and old-spelling cases, the
   helper lists, the address correction (`bdCorrectAddress_`: area-only rebuilt, house/road kept,
   duplicate names collapsed, unresolved left alone), phone folding, and the unchanged payload.
+
+### The booking draft must not come out blank (2026-10-11)
+
+Three separate faults made `Book with Steadfast` show an empty Phone and Delivery Address, ask for
+a Thana the address could not give, and then refuse the booking:
+
+- **The empty live value blanked the draft.** `courierFixedDraft_` seeded `live = {phone:'', address:''}`
+  and `Object.assign({}, base, live)` overwrote the computed phone/address with those blanks whenever
+  the on-screen input was empty — which is always, on first render. `live` now starts `{}` and only a
+  field that actually holds text may override the draft.
+- **The saved customer was missed when the memo had no phone.** `courierBookingDraft` matched a
+  customer only when the memo's phone *equalled* the customer's, so a memo typed without a phone (the
+  common case) found nobody and the booking went out with no phone and no address. It now matches by
+  name first, with a phone match as fallback.
+- **A union names its upazila.** The registry links every union to its upazila, so `Silimpur, Tangail`
+  can fill Thana `Tangail Sadar` even though the address never writes it. `bdScanDetails_` returns the
+  derived `thana`, `finish()` adopts it (and its City Corporation) and lifts `medium` to `high`.
+  A bare district still leaves the Thana unknown on purpose — it must not invent one.
+
+The booking inputs are reused DOM nodes, so a value left from the previously opened order could be
+read as the new order's. `_courierForm = {ordId, painted}` records which order the block was rendered
+for; `_courierFormLive_` gates every read of `ordBookPhone`/`ordBookAddress`, and a changed order
+clears `_bdSel` so the previous order's area cannot leak.
 
 

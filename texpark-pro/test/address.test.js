@@ -151,6 +151,17 @@ eq(bdCorrectAddress_('Bancharampur, Brahmanbaria', R('Bancharampur, Brahmanbaria
 eq(bdCorrectAddress_('somewhere unknown 123', R('somewhere unknown 123')), 'somewhere unknown 123', 'an unresolved address is left untouched');
 eq(bdCorrectAddress_('', R('')), '', 'an empty address stays empty');
 
+console.log('\n--- 13. a union or village fills its Thana ---');
+/* The registry links every union to its upazila, so naming the union is enough. */
+eq(R('Silimpur, Tangail').thana, 'Tangail Sadar', 'union Silimpur fills thana Tangail Sadar');
+eq(R('Silimpur, Tangail').union, 'Silimpur', 'the union itself is kept');
+eq(R('Silimpur, Tangail').confidence, 'high', 'a derived thana counts as resolved');
+eq(R('Balla, Tangail').thana, 'Kalihati', 'union Balla fills thana Kalihati');
+eq(R('Silimpur, Tangail').district, 'Tangail', 'district still resolves');
+/* A district named on its own still asks for the Thana — it must not invent one. */
+eq(R('Tangail').thana, null, 'a bare district still leaves the thana unknown');
+eq(R('Tangail').confidence, 'medium', 'a bare district stays medium confidence');
+
 console.log('\n--- determinism ---');
 eq(JSON.stringify(R('শিবপুর নরসিংদী')), JSON.stringify(R('শিবপুর নরসিংদী')), 'same input -> same output');
 

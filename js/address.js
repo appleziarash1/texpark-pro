@@ -201,17 +201,22 @@ function bdNameIndex_(tokens, name) {
    that merely repeats the thana is dropped so it cannot stand in for the union.
    A ward is only trusted when a number is written next to the word "ward". */
 function bdScanDetails_(tokens, district, thana) {
-  const out = { union: null, paurashava: null, ward: null, wardParent: null };
+  const out = { union: null, paurashava: null, ward: null, wardParent: null, thana: null };
   if (!district) return out;
   const dn = district.name;
   const tn = thana || '';
   const tnk = normalizeBd_(tn);
 
   const uHits = bdUnionsFor(dn, tn)
-    .map(u => ({ name: u.name, i: bdNameIndex_(tokens, u.name) }))
+    .map(u => ({ rec: u, name: u.name, i: bdNameIndex_(tokens, u.name) }))
     .filter(h => h.i !== -1 && normalizeBd_(h.name) !== tnk)
     .sort((a, b) => a.i - b.i);
-  if (uHits.length) out.union = uHits[0].name;
+  if (uHits.length) {
+    out.union = uHits[0].name;
+    /* The registry links every union to its upazila, so an address that names a
+       village or union can fill the Thana the owner would otherwise pick by hand. */
+    if (!tn && uHits[0].rec && uHits[0].rec.upazila) out.thana = uHits[0].rec.upazila;
+  }
 
   const pHits = bdPaurashavasFor(dn)
     .map(p => ({ name: p.name, i: bdNameIndex_(tokens, p.name) }))
@@ -330,11 +335,20 @@ function resolveBdLocation(rawAddress, structured) {
   const finish = (o) => {
     const dist = o.district ? bdFindDistrict_(o.district) : null;
     const det = bdScanDetails_(tokens, dist, o.thana);
+    /* A union named in the text carries its upazila, so the Thana can be filled
+       even when the address never names it. */
+    const thana = o.thana || det.thana || null;
     const merged = Object.assign({
       division: dist ? dist.division : null,
       city: (o.city || null),
       union: det.union, paurashava: det.paurashava, ward: det.ward, wardParent: det.wardParent
     }, o);
+    merged.thana = thana;
+    if (!merged.city && thana) {
+      const tr = bdResolveThanaName_(dist, thana);
+      merged.city = (tr && tr.city) || null;
+    }
+    if (!merged.conflict && !o.thana && thana && merged.confidence === 'medium') merged.confidence = 'high';
     return Object.assign(merged, bdAreaBn_(merged));
   };
 
