@@ -356,10 +356,13 @@ download/hosting zips carry (via `make-hosting-zip.py`), so no tooling, `.git` o
 `android-keystore.jks` is ever uploaded. `docs/CLOUDFLARE_BANGLA.txt` is the owner's guide.
 
 The workflow is a no-op unless both secrets exist (`if: secrets... != ''`), so the repo cannot
-go red for a host it is not configured for. GitHub Pages remains the primary site and the APK's
-update path (`RELEASE_URL`/`DEFAULT_UPDATE_URL`) still points at it; Cloudflare is a faster
-mirror at `texpark-pro.pages.dev`, not a replacement. No data is involved: both hosts serve the
-same public code, and the owner's data stays in device `localStorage` and the private Sheet.
+go red for a host it is not configured for. The owner set the two secrets, so it is now **live
+at `https://texpark-pro.pages.dev`** and serves the identical build to GitHub Pages (verified:
+`js/app.js` hashes match). GitHub Pages remains the primary site and the APK's update path
+(`RELEASE_URL`/`DEFAULT_UPDATE_URL`) still points at it; Cloudflare is a faster mirror, not a
+replacement. The token is handed only to Cloudflare's own CLI (`npx wrangler`), never to a
+third-party action. No data is involved: both hosts serve the same public code, and the owner's
+data stays in device `localStorage` and the private Sheet.
 
 ### The repo root *is* the site
 `build.js` writes the app to the repo root (`index.html`, `js/`, `css/`, `sw.js`, icons,
