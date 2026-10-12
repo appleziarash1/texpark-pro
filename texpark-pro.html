@@ -5039,6 +5039,36 @@ window.addEventListener('load', function () {
   document.addEventListener('visibilitychange', function () { if (!document.hidden) applyLiveUpdate_(); });
 });
 
+/* ---- live delta pull: a change on another device lands within seconds ----
+   Firestore is the primary sync path when it is configured. The normal auto-sync
+   still runs on a 30 s timer, and 30 s is not "live". This is the fast lane: when
+   Firestore is configured and reachable, it pulls the delta every few seconds so a
+   memo typed on the phone shows up on the PC almost at once.
+
+   It reuses the ONE merge already proven by the sync tests (cloudPullMerge ->
+   mergeCloudInto_ -> commit); it adds no second definition of "newer wins". It never
+   runs the slow Sheet pull, so the frequent ticks stay cheap. The 30 s cloudAutoSync
+   keeps running underneath as the safety net (its own 8 s floor means it will not
+   double-pull right after a live tick). Ticks stop while the tab is hidden or a sync
+   is already in flight, and a short delay after the last local edit avoids racing an
+   upload of this device's own change. */
+const LIVE_SYNC_MS = 5000;
+var liveSyncInFlight = false;
+async function liveDeltaPull_() {
+  if (typeof cloudConfigured !== 'function' || !cloudConfigured()) return;
+  if (typeof session === 'undefined' || !session) return;
+  if (typeof fbSignedIn !== 'function' || !fbSignedIn()) return;
+  if (typeof cloudBusy !== 'undefined' && cloudBusy) return;
+  if (typeof cloudDirty !== 'undefined' && cloudDirty) return;   // our own edit is going up
+  if (liveSyncInFlight) return;
+  liveSyncInFlight = true;
+  try { await cloudPullMerge(); } catch (e) { /* offline is normal; the 30 s net retries */ }
+  finally { liveSyncInFlight = false; }
+}
+window.addEventListener('load', function () {
+  setInterval(function () { if (!document.hidden) liveDeltaPull_(); }, LIVE_SYNC_MS);
+});
+
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
   { id: 'orders',     label: 'Orders',         ic: '\u26A1', group: 'Overview' },
@@ -8172,6 +8202,7 @@ window.addEventListener('DOMContentLoaded', function () {
      polling the sheet would spend the owner's data to update a screen nobody is
      looking at. cloudAutoSync() itself keeps the once-per-8s floor. */
   setInterval(function () { if (!document.hidden) cloudAutoSync('timer'); }, 30000);
+
   /* Steadfast status, the same way: on open, when the tab comes back, and on a slow
      timer. courierAutoSync() no-ops unless the owner set the keys, and it never
      blocks the app; it is the only path that turns a delivered parcel into a memo

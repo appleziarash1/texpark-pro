@@ -346,6 +346,30 @@ updates through the APK rebuild path. It only makes the *web* build reach every 
 (The alternative - a host with a faster build, e.g. Cloudflare Pages - was not taken: it would
 need the owner's account and a migration away from Pages, and this closes the gap without it.)
 
+### Live delta pull: a change on another device lands within seconds (2026-10-12)
+
+The owner asked whether a data edit is "instant" on any device, and it was not: Firestore (the
+primary sync path) was only read on open, on `visibilitychange`, and on a 30 s timer, so a memo
+typed on the phone could take up to 30 s to show on the PC. `liveDeltaPull_` in `app.js` is the
+fast lane: when Firestore is configured and the device is signed in, it calls `cloudPullMerge()`
+every 5 s, so another device's change lands almost at once.
+
+It reuses the ONE merge the sync tests already prove (`cloudPullMerge -> cloudMergeDelta ->
+mergeCloudInto_ -> commit`); it adds no second definition of "newer wins". It runs only the
+Firestore delta pull, never the slow Sheet pull, so the frequent ticks stay cheap (a delta read
+is a few documents). It stands down while the tab is hidden, while a sync is in flight
+(`cloudBusy`/`liveSyncInFlight`), and while this device has an unsent edit (`cloudDirty`), so it
+cannot race an upload of the device's own change. The 30 s `cloudAutoSync` keeps running
+underneath as the safety net; its own 8 s floor means it will not double-pull right after a live
+tick. A failed tick is swallowed - offline is normal, and the 30 s net retries.
+
+This works **with the existing Google Sheet setup only if Firebase is configured**: without
+Firebase keys the app still uses the Sheet and the lag is unchanged. `test/livesync.test.js`
+drives the gating through the real `app.js` (9 checks). A true server-push listener
+(`documents:listen`) was considered and not shipped: its streaming framing is not reliably
+documented and could not be tested against the owner's real Firebase, so shipping it blind to
+the critical sync path was not worth the risk. A 5 s delta pull gets "within seconds" without it.
+
 ### Cloudflare Pages as an optional second host (2026-10-12)
 
 The owner asked to add Cloudflare Pages *and keep* GitHub Pages. Cloudflare needs the owner's
