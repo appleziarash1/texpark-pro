@@ -49,5 +49,5 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          npx --yes wrangler@3 pages project create texpark-pro --production-branch=main || true
-          npx --yes wrangler@3 pages deploy _site --project-name=texpark-pro --branch=main
+          npx --yes wrangler@4 pages project create texpark-pro --production-branch=main || true
+          npx --yes wrangler@4 pages deploy _site --project-name=texpark-pro --branch=main
