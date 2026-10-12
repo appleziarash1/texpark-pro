@@ -346,6 +346,21 @@ updates through the APK rebuild path. It only makes the *web* build reach every 
 (The alternative - a host with a faster build, e.g. Cloudflare Pages - was not taken: it would
 need the owner's account and a migration away from Pages, and this closes the gap without it.)
 
+### Cloudflare Pages as an optional second host (2026-10-12)
+
+The owner asked to add Cloudflare Pages *and keep* GitHub Pages. Cloudflare needs the owner's
+account, which is not available to the agent, so the repo side is wired up and inert until the
+owner sets two repository secrets (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`). The
+workflow `.github/workflows/cloudflare.yml` uploads the same allowlisted `_site` folder the
+download/hosting zips carry (via `make-hosting-zip.py`), so no tooling, `.git` or
+`android-keystore.jks` is ever uploaded. `docs/CLOUDFLARE_BANGLA.txt` is the owner's guide.
+
+The workflow is a no-op unless both secrets exist (`if: secrets... != ''`), so the repo cannot
+go red for a host it is not configured for. GitHub Pages remains the primary site and the APK's
+update path (`RELEASE_URL`/`DEFAULT_UPDATE_URL`) still points at it; Cloudflare is a faster
+mirror at `texpark-pro.pages.dev`, not a replacement. No data is involved: both hosts serve the
+same public code, and the owner's data stays in device `localStorage` and the private Sheet.
+
 ### The repo root *is* the site
 `build.js` writes the app to the repo root (`index.html`, `js/`, `css/`, `sw.js`, icons,
 `version.txt`, `TexparkPro.apk`) because GitHub Pages serves the root of the branch it is

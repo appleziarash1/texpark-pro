@@ -1,0 +1,64 @@
+# Texpark Pro — Cloudflare Pages (bikolpo host, GitHub-er pashe)
+
+GitHub Pages ta **thakbe** (primary). Ei guide ta diye **Cloudflare Pages** o chalu
+korte parben — dutai ek sathe cholbe, ek-i app. Cloudflare-e push korle build
+queue na thakay **notun version aro taratari** (koyek second) CDN te pouchay.
+
+> Ei kaj-er jonno **tomar Cloudflare account** lagbe — ami tomar account banate
+> parbo na. Niche click-by-click ache; ekbar korle por theke sob push automatic.
+
+---
+
+## Step 1 — Cloudflare account
+1. Khulun: https://dash.cloudflare.com/signup (email diye free account)
+2. Login kore dashboard-e chan.
+
+## Step 2 — Account ID ber korun
+1. Dashboard-e **Workers & Pages** e jaan.
+2. Dan-pashe **Account ID** dekhabe (ekta lamba number+letter). Copy korun.
+
+## Step 3 — API token banan
+1. Khulun: https://dash.cloudflare.com/profile/api-tokens
+2. **Create Token** → **"Edit Cloudflare Workers"** template → **Continue**.
+   (Eta `Cloudflare Pages: Edit` permission dey.)
+3. **Create Token** → token ta **ekbar-i** dekhabe. Copy kore rakhun.
+
+## Step 4 — GitHub repo-te duita secret bosan
+Repo: `appleziarash1/texpark-pro`
+1. **Settings → Secrets and variables → Actions → New repository secret**
+2. Naam: `CLOUDFLARE_API_TOKEN` — value: Step 3-er token
+3. Aro ekta: Naam `CLOUDFLARE_ACCOUNT_ID` — value: Step 2-er Account ID
+
+## Step 5 — Chalu korun
+- Ei file ta (`docs/CLOUDFLARE_BANGLA.txt`) ar `.github/workflows/cloudflare.yml`
+  push korar por, **Actions** tab-e **"Deploy to Cloudflare Pages"** run ta dekhben
+  (ba **Run workflow** chepe hate chalu korun).
+- Secret duita thakle eta `_site` folder banaye Cloudflare-e upload korbe.
+- Sesh hole ekta link pabben: `https://texpark-pro.pages.dev`
+
+## Step 6 — Phone/PC-te notun address
+- Cloudflare link ta hole **`https://texpark-pro.pages.dev`**
+- Custom naam chan? Cloudflare → Workers & Pages → texpark-pro → **Custom domains**
+  → `texpark-pro` → hobe `https://texpark-pro.pages.dev` (ba nijer domain).
+
+---
+
+## Ki hobe / ki hobe na
+- **GitHub Pages:** thakbe, same link — `https://appleziarash1.github.io/texpark-pro`
+- **Cloudflare Pages:** notun link — `https://texpark-pro.pages.dev`
+- Duitai **ek-i app** serve korbe (same `index.html`, `js/`, `sw.js`).
+- **Tomar data** kono jaygay jay na — data tomari phone-er `localStorage` aar
+  tomari private Google Sheet-e. Host shudhu **code** dey, data na.
+
+## Important (data safe)
+- Cloudflare-e **`Code.gs` upload hobe** (eta normal — GitHub-e-o ache). Kintu
+  `Code.gs`-e shudhu Sheet-er **ID** ache, data na; Sheet private, tai keu ID
+  pelen-o kichu pabe na (401).
+- `android-keystore.jks` (APK signer key) **kokhono upload hobe na** — workflow
+  allowlisted `_site` folder theke upload kore, jekhane keystore nei.
+
+## Jodi ami kore dite chao
+Ami tomari account-e directly deploy korte pari, jodi tumi ei duita value
+(Account ID + API token) **OpenHands secret** hisebe set kore dao. Kintu token
+share kora mane tomar account-e access dewa — tai na dile **uporer Step 4** nijei
+kore felun, kaj ek-i hobe.

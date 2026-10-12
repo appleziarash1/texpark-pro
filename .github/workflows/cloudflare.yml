@@ -1,0 +1,52 @@
+name: Deploy to Cloudflare Pages
+
+# Optional second host. GitHub Pages stays the primary site; this pushes the
+# same built app to Cloudflare Pages so a release reaches the CDN faster (a
+# direct upload, no build queue). It is inert until the two repository secrets
+# below are set, so it can never turn the repo red on its own:
+#
+#   CLOUDFLARE_API_TOKEN   - a token with the "Cloudflare Pages: Edit" permission
+#   CLOUDFLARE_ACCOUNT_ID  - the account id from the Cloudflare dashboard
+#
+# See docs/CLOUDFLARE_BANGLA.txt for the click-by-click steps.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Only run when the secrets exist, so a repo without them stays green.
+      - name: Are the Cloudflare secrets set?
+        id: cf
+        run: echo "ready=${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}" >> "$GITHUB_OUTPUT"
+
+      # Build the exact clean site the host must serve - the same allowlisted
+      # folder the download/hosting zips carry, so no tooling, .git or signing
+      # key is ever uploaded.
+      - name: Assemble the site folder
+        if: steps.cf.outputs.ready == 'true'
+        run: |
+          node texpark-pro/build.js
+          python3 make-hosting-zip.py
+          rm -rf _site && mkdir _site && unzip -q texpark-hosting.zip -d _site
+          test -f _site/index.html && test -f _site/js/app.js
+
+      - name: Publish to Cloudflare Pages
+        if: steps.cf.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Create the project once; ignore the "already exists" error on later runs.
+          preCommands: npx wrangler pages project create texpark-pro --production-branch=main || true
+          command: pages deploy _site --project-name=texpark-pro --branch=main
