@@ -373,15 +373,22 @@ async function flush(dev) {
   ok(firestore.state.writes > w1, 're-running is a safe idempotent upsert, not a crash');
 
   /* ------------------- unconfigured device is untouched ------------------- */
-  console.log('\n--- a device with no cloud keys behaves exactly as before ---');
-  const plain = makeDevice('OLD', firestore, auth, sheet);
+  console.log('\n--- the keys are baked into the build, so a fresh device is configured ---');
+  const plain = makeDevice('NEW', firestore, auth, sheet);
   plain.db = plain.blankDB();
-  plain.db.settings.firebase = { apiKey: '', projectId: '' };
   plain.lastCommitted = plain.indexRecs_(plain.db);
+  eq(plain.cloudConfigured(), true, 'a brand-new device is cloud-configured with no typing');
+  eq(plain.fbConfig().projectId, 'texpark-62700', 'it picked up the baked project id');
+
+  /* A build that truly has no keys still falls back to the Sheet exactly as before.
+     That case is now produced by removing the baked config, not by blanking the
+     per-device setting (which no longer exists as a concept). */
+  console.log('\n--- a build with no keys at all behaves exactly as before ---');
+  plain.window.FIREBASE_CONFIG = { apiKey: '', projectId: '' };
+  plain.db.settings.firebase = { apiKey: '', projectId: '' };
   const n = plain.cloudQueueChanges(plain.lastCommitted);
   eq(n, 0, 'no records are queued when the cloud is not configured');
   eq(plain.cloudConfigured(), false, 'and it reports itself unconfigured');
-  const qLen = plain.syncQueue.length;
   const p2 = { id: 'm-plain', memoNo: 'X', at: new Date().toISOString(), items: [], grandTotal: 0, due: 0 };
   plain.db.memos.push(p2);
   plain.commit();

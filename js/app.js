@@ -71,21 +71,34 @@ window.addEventListener('load', function () {
   document.addEventListener('visibilitychange', function () { if (!document.hidden) applyLiveUpdate_(); });
 });
 
-/* ---- live delta pull: a change on another device lands within seconds ----
-   Firestore is the primary sync path when it is configured. The normal auto-sync
-   still runs on a 30 s timer, and 30 s is not "live". This is the fast lane: when
-   Firestore is configured and reachable, it pulls the delta every few seconds so a
-   memo typed on the phone shows up on the PC almost at once.
+/* ---- live delta pull: a change on another device lands almost at once ----
+   Firestore is the primary sync path when it is configured, but it used to be read
+   only on open, on visibilitychange, and on a 30 s timer - so a memo typed on the
+   phone could take up to 30 s to reach the PC. This is the fast lane.
 
-   It reuses the ONE merge already proven by the sync tests (cloudPullMerge ->
-   mergeCloudInto_ -> commit); it adds no second definition of "newer wins". It never
-   runs the slow Sheet pull, so the frequent ticks stay cheap. The 30 s cloudAutoSync
-   keeps running underneath as the safety net (its own 8 s floor means it will not
-   double-pull right after a live tick). Ticks stop while the tab is hidden or a sync
-   is already in flight, and a short delay after the last local edit avoids racing an
-   upload of this device's own change. */
-const LIVE_SYNC_MS = 5000;
+   It is adaptive: while the owner is using the app it pulls every ~2 s, so another
+   device's change lands almost immediately; after a short idle it backs off to a
+   calm ~10 s. That keeps it "live" while it matters and cheap (a delta read is a few
+   documents, not the whole book) the rest of the time.
+
+   It reuses the ONE merge the sync tests already prove (cloudPullMerge ->
+   cloudMergeDelta -> mergeCloudInto_ -> commit); it adds no second definition of
+   "newer wins". It runs only the Firestore delta pull, never the slow Sheet pull, so
+   frequent ticks stay cheap. It stands down while the tab is hidden, while a sync is
+   already in flight, and while this device has an unsent edit (so it cannot race the
+   device's own upload). The 30 s cloudAutoSync keeps running underneath as the
+   safety net; its own 8 s floor stops it double-pulling right after a live tick. */
+const LIVE_SYNC_ACTIVE_MS = 2000;
+const LIVE_SYNC_IDLE_MS   = 10000;
+const LIVE_ACTIVE_WINDOW_MS = 60000;   // recently touched the app = "active"
 var liveSyncInFlight = false;
+var liveLastActivityAt = 0;
+
+function liveNoteActivity_() { liveLastActivityAt = Date.now(); }
+function liveDelay_() {
+  return (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS)
+    ? LIVE_SYNC_ACTIVE_MS : LIVE_SYNC_IDLE_MS;
+}
 async function liveDeltaPull_() {
   if (typeof cloudConfigured !== 'function' || !cloudConfigured()) return;
   if (typeof session === 'undefined' || !session) return;
@@ -98,7 +111,16 @@ async function liveDeltaPull_() {
   finally { liveSyncInFlight = false; }
 }
 window.addEventListener('load', function () {
-  setInterval(function () { if (!document.hidden) liveDeltaPull_(); }, LIVE_SYNC_MS);
+  ['pointerdown', 'keydown', 'input', 'touchstart'].forEach(function (ev) {
+    document.addEventListener(ev, liveNoteActivity_, { passive: true, capture: true });
+  });
+  (function liveLoop() {
+    var wait = liveDelay_();
+    setTimeout(function () {
+      if (!document.hidden) liveDeltaPull_();
+      liveLoop();
+    }, wait);
+  })();
 });
 
 const PAGES = [
@@ -2760,11 +2782,6 @@ function renderSettings() {
     if (e) e.value = c[k] || '';
   });
   document.getElementById('stSyncUrl').value = db.settings.syncUrl || '';
-  const fb = db.settings.firebase || {};
-  const fbKeyEl = document.getElementById('stFbKey');
-  if (fbKeyEl) fbKeyEl.value = fb.apiKey || '';
-  const fbProjEl = document.getElementById('stFbProject');
-  if (fbProjEl) fbProjEl.value = fb.projectId || '';
   const fbEmailEl = document.getElementById('stFbEmail');
   if (fbEmailEl && !fbEmailEl.value && typeof fbEmail === 'function') fbEmailEl.value = fbEmail() || '';
   if (typeof cloudStatusRender === 'function') cloudStatusRender();
@@ -2881,19 +2898,9 @@ function saveAutoPull() {
            : 'Auto-pull off — now it only pulls from the sheet when you press the button.');
 }
 
-/* ===================== cloud (Firestore) settings ===================== */
-function saveFirebaseConfig() {
-  const key = (document.getElementById('stFbKey').value || '').trim();
-  const proj = (document.getElementById('stFbProject').value || '').trim();
-  db.settings.firebase = { apiKey: key, projectId: proj };
-  // The keys are machine-local: syncing them would push one project's id onto every
-  // device. They live in db.settings but are excluded from the merge like a sync URL.
-  commit();
-  cloudStatusRender();
-  alert(key && proj ? 'Cloud keys saved. Now sign in and send your data to the cloud.'
-                    : 'Cloud keys cleared — the app will use the Google Sheet only.');
-}
-
+/* ===================== cloud (Firestore) settings =====================
+   The Firebase keys are baked into js/firebase-config.js, so there is no key field
+   to save any more — a device is configured just by opening the site. */
 function cloudOut(html) {
   const el = document.getElementById('cloudTestOut');
   if (el) el.innerHTML = html;
@@ -2902,7 +2909,7 @@ function cloudOut(html) {
 async function cloudSignIn() {
   const email = (document.getElementById('stFbEmail').value || '').trim();
   const pass = document.getElementById('stFbPass').value || '';
-  if (!cloudConfigured()) return cloudOut('<span class="red">Save the Firebase key and project id first.</span>');
+  if (!cloudConfigured()) return cloudOut('<span class="red">Cloud is not set up in this build.</span>');
   if (!email || !pass) return cloudOut('<span class="red">Enter the cloud email and password.</span>');
   cloudOut('Signing in...');
   try {
@@ -2916,7 +2923,7 @@ async function cloudSignIn() {
 async function cloudCreateAccount() {
   const email = (document.getElementById('stFbEmail').value || '').trim();
   const pass = document.getElementById('stFbPass').value || '';
-  if (!cloudConfigured()) return cloudOut('<span class="red">Save the Firebase key and project id first.</span>');
+  if (!cloudConfigured()) return cloudOut('<span class="red">Cloud is not set up in this build.</span>');
   if (!email || !pass) return cloudOut('<span class="red">Enter the cloud email and password.</span>');
   cloudOut('Creating the account...');
   try {
@@ -2933,7 +2940,7 @@ function cloudSignOutNow() {
 }
 
 async function testFirebase() {
-  if (!cloudConfigured()) return cloudOut('<span class="red">Save the Firebase key and project id first.</span>');
+  if (!cloudConfigured()) return cloudOut('<span class="red">Cloud is not set up in this build.</span>');
   cloudOut('Testing the cloud...');
   try {
     const delta = await fbPullDelta();
@@ -2943,7 +2950,7 @@ async function testFirebase() {
 }
 
 async function migrateToCloud() {
-  if (!cloudConfigured()) return cloudOut('<span class="red">Save the Firebase key and project id first.</span>');
+  if (!cloudConfigured()) return cloudOut('<span class="red">Cloud is not set up in this build.</span>');
   if (!fbSignedIn()) return cloudOut('<span class="red">Sign in to the cloud first.</span>');
   cloudOut('Sending every record to the cloud...');
   const ok = await cloudMigrate(false);

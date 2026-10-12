@@ -116,6 +116,13 @@ document.hidden = false;
   try { await liveDeltaPull_(); } catch (e) { threw = true; }
   ok(!threw, 'a failed live pull is swallowed, not thrown');
 
+  /* Adaptive cadence: fast while the owner is working, calm once idle. */
+  console.log('\n--- adaptive cadence ---');
+  liveNoteActivity_();
+  eq(liveDelay_(), 2000, 'recent activity: pulls every 2 s');
+  liveLastActivityAt = Date.now() - 120000;
+  eq(liveDelay_(), 10000, 'idle for two minutes: backs off to 10 s');
+
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
   if (fail) process.exit(1);

@@ -346,13 +346,14 @@ updates through the APK rebuild path. It only makes the *web* build reach every 
 (The alternative - a host with a faster build, e.g. Cloudflare Pages - was not taken: it would
 need the owner's account and a migration away from Pages, and this closes the gap without it.)
 
-### Live delta pull: a change on another device lands within seconds (2026-10-12)
+### Live delta pull: a change on another device lands almost at once (2026-10-12)
 
 The owner asked whether a data edit is "instant" on any device, and it was not: Firestore (the
 primary sync path) was only read on open, on `visibilitychange`, and on a 30 s timer, so a memo
 typed on the phone could take up to 30 s to show on the PC. `liveDeltaPull_` in `app.js` is the
 fast lane: when Firestore is configured and the device is signed in, it calls `cloudPullMerge()`
-every 5 s, so another device's change lands almost at once.
+on an adaptive cadence - every ~2 s while the owner is using the app (a recent pointer/key/touch
+within `LIVE_ACTIVE_WINDOW_MS`), backing off to ~10 s once idle.
 
 It reuses the ONE merge the sync tests already prove (`cloudPullMerge -> cloudMergeDelta ->
 mergeCloudInto_ -> commit`); it adds no second definition of "newer wins". It runs only the
@@ -365,10 +366,28 @@ tick. A failed tick is swallowed - offline is normal, and the 30 s net retries.
 
 This works **with the existing Google Sheet setup only if Firebase is configured**: without
 Firebase keys the app still uses the Sheet and the lag is unchanged. `test/livesync.test.js`
-drives the gating through the real `app.js` (9 checks). A true server-push listener
-(`documents:listen`) was considered and not shipped: its streaming framing is not reliably
-documented and could not be tested against the owner's real Firebase, so shipping it blind to
-the critical sync path was not worth the risk. A 5 s delta pull gets "within seconds" without it.
+drives the gating and the adaptive cadence through the real `app.js` (11 checks). A true
+server-push listener (`documents:listen`) was considered and not shipped: its streaming framing
+is not reliably documented and could not be tested against the owner's real Firebase, so
+shipping it blind to the critical sync path was not worth the risk. An adaptive ~2 s delta pull
+gets "almost at once" without it.
+
+### The Firebase keys are baked into the build (2026-10-12)
+
+The owner asked that no device ever type in the Firebase keys. `js/firebase-config.js` now
+carries the real `apiKey` (`AIza...`) and `projectId` (`texpark-62700`), so every device is
+cloud-configured just by opening the site; `fbConfig()` reads the baked config first and any
+per-device value second. The Settings -> Cloud sync card therefore has **no key fields** any
+more - only "Test cloud", "Send all data to cloud", and the sign-in fields. `saveFirebaseConfig`
+and the `stFbKey`/`stFbProject` inputs were removed; `renderSettings` no longer fills them.
+
+These two values are **not secrets** (Firebase puts them in every web client) - the security is
+`firestore.rules`, which only lets the signed-in uid read and write its own `shops/{uid}`. So
+signing in once per device is still required, and that is the point: baking the *keys* is safe,
+baking the *account password* would put the owner's books in a public repo. `test/cloud.test.js`
+now asserts a fresh device reports `cloudConfigured() === true` with no typing, and still checks
+the keyless-build fallback (blank the baked config) behaves exactly as before.
+
 
 ### Cloudflare Pages as an optional second host (2026-10-12)
 
