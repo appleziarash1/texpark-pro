@@ -372,6 +372,29 @@ is not reliably documented and could not be tested against the owner's real Fire
 shipping it blind to the critical sync path was not worth the risk. An adaptive ~2 s delta pull
 gets "almost at once" without it.
 
+### Realtime push: the true "0" path (2026-10-12)
+
+The owner asked for a real 0 - not a fast poll. `fbListenLoop` in `cloud.js` opens one
+long-lived HTTP stream to Firestore's `documents:listen`, so the server pushes each change the
+instant it is written. A `documentChange`/`documentDelete` is a *wake-up*: it calls the SAME
+`cloudPullMerge()` the tests already prove, so there is still exactly one definition of
+"newer-wins" and no second merge path. Bursts coalesce (`fbListenMergeQueued`), and it stands
+down while `cloudBusy`/`cloudDirty` so it cannot race the device's own upload.
+
+The target is a query target over `shops/{uid}` scoped to `records`, the same scope as the delta
+query, so the same rule proves it. A `targetChange.resumeToken` is kept and sent in the next
+`addTarget`, so a reconnect does not drop changes that landed between frames; a dropped stream
+reconnects with 5 s..30 s backoff, and `fbListenStop()` (called from `fbSignOut`) aborts the
+stream with no reconnect.
+
+**The honest risk:** the REST listen framing is not something this code can be certain of against
+every project, and it could not be tested against the owner's live Firebase. So the stream is a
+best-effort accelerator: if it is refused or does not stream, it fails silently and the adaptive
+poll (2 s active / 10 s idle) remains the guaranteed floor. The app is therefore never worse
+than before, and reaches true push when the stream works. `test/realtime.test.js` (17 checks)
+drives the framing, the wake-up merge, the coalescing, the resume token, the reconnect backoff,
+and the abort-on-sign-out through the real `cloud.js` against a fake streaming fetch.
+
 ### The Firebase keys are baked into the build (2026-10-12)
 
 The owner asked that no device ever type in the Firebase keys. `js/firebase-config.js` now

@@ -3700,6 +3700,7 @@ function fbAuthError(j) {
 }
 
 function fbSignOut() {
+  if (typeof fbListenStop === 'function') fbListenStop();
   fbAuthClear();
   if (typeof cloudStatusRender === 'function') cloudStatusRender();
 }
@@ -3990,6 +3991,115 @@ async function cloudSendJob(job) {
   }
 }
 
+
+/* ===================== realtime push (documents:listen) =====================
+   The fast lane above polls the delta, so the worst-case lag is the poll period.
+   This is the true "0" the owner asked for: one long-lived HTTP stream, so the
+   server pushes each change the instant it is written and the other device lands
+   it with no poll delay at all.
+
+   It reuses the ONE merge (cloudPullMerge) the sync tests already prove, so there
+   is still no second definition of "newer wins" and no new merge risk. The stream
+   is a *wake-up*: on a change it runs cloudPullMerge() and reads the change through
+   the exact same path the poll uses. If the stream is refused (the REST listen
+   framing is not something this code can be sure of against every project), it
+   falls back silently to the adaptive poll, which is itself the safety net - so
+   the app is never worse than before, and gets true push when the stream works.
+
+   The protocol is Firestore's HTTP streaming listen: a POST whose body is the
+   first frame (addTarget with a query target over the records subcollection) and
+   whose response is newline-delimited ListenResponse JSON. A targetChange carries a
+   resumeToken; after any reconnect the next addTarget resumes from that token, so
+   changes that land between frames are not lost. */
+const FB_LISTEN_RETRY_MS = 5000;
+var fbListenAbort = null;
+var fbListenActive = false;
+var fbListenTimer = null;
+var fbListenResumeToken = null;
+var fbListenResumeWait = 0;
+var fbListenMergeQueued = false;
+
+function fbListenShouldRun() {
+  return cloudConfigured() && fbSignedIn() && (typeof session !== 'undefined' && !!session);
+}
+
+function fbListenStop() {
+  if (fbListenTimer) { clearTimeout(fbListenTimer); fbListenTimer = null; }
+  if (fbListenAbort) { try { fbListenAbort.abort(); } catch (e) {} fbListenAbort = null; }
+  fbListenActive = false;
+}
+
+/* A change arrived. Coalesce bursts, and never merge under the owner's fingers or
+   over an upload of this device's own change - the poll and the 30 s net catch it. */
+function fbListenOnChange() {
+  fbListenResumeWait = 0;
+  if (fbListenMergeQueued) return;
+  if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) return;
+  fbListenMergeQueued = true;
+  cloudPullMerge().catch(function () {}).then(function () { fbListenMergeQueued = false; });
+}
+
+/* Newline-delimited JSON: chunks can split a frame, so keep the tail in the buffer. */
+function fbListenHandleLine(line) {
+  if (!line) return;
+  let msg;
+  try { msg = JSON.parse(line); } catch (e) { return; }
+  if (msg && msg.targetChange && msg.targetChange.resumeToken) {
+    fbListenResumeToken = msg.targetChange.resumeToken;
+  }
+  if (msg && (msg.documentChange || msg.documentDelete)) fbListenOnChange();
+}
+
+async function fbListenLoop() {
+  if (fbListenActive) return;
+  if (!fbListenShouldRun()) { fbListenStop(); return; }
+  const auth = await fbEnsureAuth();
+  if (!auth) { fbListenStop(); return; }
+  const c = fbConfig();
+  const url = 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(c.projectId) +
+    '/databases/(default)/documents:listen';
+  const target = {
+    query: {
+      parent: 'projects/' + c.projectId + '/databases/(default)/documents/shops/' + auth.uid,
+      structuredQuery: { from: [{ collectionId: 'records' }] }
+    }
+  };
+  if (fbListenResumeToken) target.resumeToken = fbListenResumeToken;
+  const ac = new AbortController();
+  fbListenAbort = ac;
+  fbListenActive = true;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + auth.idToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ addTarget: { targetId: 1, ...target } }) + '\n',
+      signal: ac.signal
+    });
+    if (!res.ok || !res.body) throw new Error('listen http ' + res.status);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const r = await reader.read();
+      if (r.done) break;
+      buf += dec.decode(r.value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        fbListenHandleLine(line);
+      }
+    }
+    throw new Error('listen closed');       // a clean close is still a reconnect
+  } catch (e) {
+    if (e && e.name === 'AbortError') { fbListenActive = false; return; }   // sign-out / stop
+    fbListenActive = false;
+    fbListenResumeWait = Math.min((fbListenResumeWait || 0) + FB_LISTEN_RETRY_MS, 30000);
+    if (fbListenTimer) clearTimeout(fbListenTimer);
+    fbListenTimer = setTimeout(function () { fbListenTimer = null; fbListenLoop().catch(function () {}); }, fbListenResumeWait);
+  }
+}
+
 /* ===================== pull + merge ===================== */
 /* One run: pull the delta and merge it. Used by the open/login auto-sync and by the
    Firestore retry timer. On a transient failure the device degrades to the Sheet and
@@ -4114,6 +4224,7 @@ function cloudBoot() {
   if (!cloudMigrated()) { cloudMigrate(true).catch(function () {}); return; }
   cloudAutoSyncNew('open').catch(function () {});
   if (cloudState() === 'DEGRADED_SHEET') cloudArmRetry();
+  if (typeof fbListenLoop === 'function') fbListenLoop().catch(function () {});
 }
 
 </script>
