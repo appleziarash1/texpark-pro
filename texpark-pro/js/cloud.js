@@ -117,12 +117,67 @@ function fbAuthReply(j, email) {
   };
 }
 
+/* ===================== Firebase JS SDK (realtime only) =====================
+   Reads and writes stay on the REST path: it is cheap, testable, and needs no
+   dependency. Realtime push is the exception. Firestore's realtime stream is NOT
+   plain REST - it rides gRPC-Web (WebChannel) - so a raw `documents:listen` POST is
+   refused with INVALID_ARGUMENT even with a valid token (verified against this
+   project). The one supported way to get true push in a browser is the SDK's
+   onSnapshot, so firebase-app/auth/firestore are loaded from the CDN and used ONLY
+   for auth and the listener. If the CDN is unreachable the load resolves false and
+   every caller falls back to the REST auth + adaptive poll it had before, so a
+   blocked CDN can never stop the app from saving data. */
+const FB_SDK_VER = '10.12.0';
+const FB_SDK_BASE = 'https://www.gstatic.com/firebasejs/' + FB_SDK_VER + '/';
+var fbSdkReady = false;
+var fbSdkPromise = null;
+var fbSdkApp = null;
+var fbSdkAuth = null;
+var fbSdkAuthApi = null;
+var fbSdkDb = null;
+var fbSdkFsApi = null;
+
+function fbSdkLoad() {
+  if (fbSdkReady) return Promise.resolve(true);
+  if (fbSdkPromise) return fbSdkPromise;
+  const c = fbConfig();
+  if (!c.apiKey || !c.projectId) return Promise.resolve(false);
+  fbSdkPromise = (async function () {
+    const appMod = await import(FB_SDK_BASE + 'firebase-app.js');
+    const authMod = await import(FB_SDK_BASE + 'firebase-auth.js');
+    const fsMod = await import(FB_SDK_BASE + 'firebase-firestore.js');
+    fbSdkApp = appMod.initializeApp({ apiKey: c.apiKey, projectId: c.projectId });
+    fbSdkAuth = authMod.getAuth(fbSdkApp);
+    fbSdkDb = fsMod.getFirestore(fbSdkApp);
+    fbSdkAuthApi = authMod;
+    fbSdkFsApi = fsMod;
+    fbSdkReady = true;
+    return true;
+  })().catch(function () { fbSdkPromise = null; return false; });   // allow a later retry
+  return fbSdkPromise;
+}
+
 /* Sign in with the SAME email + password on every device. Both devices must use one
    account: the shop lives under that account's uid, so an anonymous sign-in on each
-   device would put them in different shops and they would never see each other. */
+   device would put them in different shops and they would never see each other.
+
+   Sign-in goes through the SDK when it is available, because the listener shares that
+   signed-in session; otherwise the same email/password call is made against the Auth
+   REST API, so the app behaves exactly as it did before the SDK. */
 async function fbSignIn(email, password) {
   const c = fbConfig();
   if (!c.apiKey) throw new Error('No Firebase API key set.');
+  if (await fbSdkLoad() && fbSdkAuth && fbSdkAuthApi) {
+    try {
+      const cred = await fbSdkAuthApi.signInWithEmailAndPassword(fbSdkAuth, email, password);
+      const a = await fbSdkAuthCred(cred.user, email);
+      fbAuthSave(a);
+      cloudBackoffStep = 0;
+      cloudStateSet('ONLINE_FIRESTORE', '', 0);
+      fbRealtimeStart();
+      return a;
+    } catch (e) { throw new Error(fbSdkAuthError(e)); }
+  }
   const res = await jsonPost(FB_AUTH_URL + '/accounts:signInWithPassword?key=' + encodeURIComponent(c.apiKey),
     { email: email, password: password, returnSecureToken: true });
   const j = await res.json();
@@ -137,6 +192,15 @@ async function fbSignIn(email, password) {
 async function fbSignUp(email, password) {
   const c = fbConfig();
   if (!c.apiKey) throw new Error('No Firebase API key set.');
+  if (await fbSdkLoad() && fbSdkAuth && fbSdkAuthApi) {
+    try {
+      const cred = await fbSdkAuthApi.createUserWithEmailAndPassword(fbSdkAuth, email, password);
+      const a = await fbSdkAuthCred(cred.user, email);
+      fbAuthSave(a);
+      fbRealtimeStart();
+      return a;
+    } catch (e) { throw new Error(fbSdkAuthError(e)); }
+  }
   const res = await jsonPost(FB_AUTH_URL + '/accounts:signUp?key=' + encodeURIComponent(c.apiKey),
     { email: email, password: password, returnSecureToken: true });
   const j = await res.json();
@@ -144,6 +208,32 @@ async function fbSignUp(email, password) {
   const a = fbAuthReply(j, email);
   fbAuthSave(a);
   return a;
+}
+
+/* The stored auth shape the rest of cloud.js expects, derived from an SDK user. The
+   SDK refreshes the idToken itself, so fbEnsureAuth() can simply ask it again. */
+async function fbSdkAuthCred(user, email) {
+  const tok = await user.getIdToken();
+  return {
+    idToken: tok, refreshToken: '', uid: user.uid,
+    email: user.email || email || '', expiresAt: Date.now() + 3000000
+  };
+}
+
+function fbSdkAuthError(e) {
+  const code = (e && e.code) || 'AUTH_FAILED';
+  const map = {
+    'auth/email-already-in-use': 'That email is already registered - use Sign in instead.',
+    'auth/user-not-found': 'No account with that email - use Create account instead.',
+    'auth/wrong-password': 'Wrong password.',
+    'auth/invalid-credential': 'Wrong email or password.',
+    'auth/invalid-email': 'That email address looks wrong.',
+    'auth/weak-password': 'The password must be at least 6 characters.',
+    'auth/network-request-failed': 'Network problem - check the internet connection.',
+    'auth/operation-not-allowed': 'Email/password sign-in is not enabled in Firebase.',
+    'auth/too-many-requests': 'Too many attempts - wait a minute and try again.'
+  };
+  return map[code] || ('Firebase said: ' + String(code).replace(/^auth\//, ''));
 }
 
 function fbAuthError(j) {
@@ -160,14 +250,23 @@ function fbAuthError(j) {
 }
 
 function fbSignOut() {
-  if (typeof fbListenStop === 'function') fbListenStop();
+  fbRealtimeStop();
+  if (fbSdkReady && fbSdkAuth && fbSdkAuthApi) { try { fbSdkAuthApi.signOut(fbSdkAuth); } catch (e) {} }
   fbAuthClear();
   if (typeof cloudStatusRender === 'function') cloudStatusRender();
 }
 
-/* A fresh idToken, or null. Refresh 60s early so a request never leaves with a token
-   that expires in flight. */
+/* A fresh idToken, or null. Ask the SDK first (it owns the listener's session, and
+   refreshes the token itself); fall back to the stored token and the REST refresh. */
 async function fbEnsureAuth() {
+  await fbSdkLoad();
+  if (fbSdkReady && fbSdkAuth && fbSdkAuth.currentUser) {
+    try {
+      const a = await fbSdkAuthCred(fbSdkAuth.currentUser, fbSdkAuth.currentUser.email);
+      fbAuthSave(a);
+      return a;
+    } catch (e) { /* fall through to the stored-token path */ }
+  }
   const a = fbAuthLoad();
   if (!a) return null;
   if (Number(a.expiresAt || 0) > Date.now()) return a;
@@ -452,112 +551,50 @@ async function cloudSendJob(job) {
 }
 
 
-/* ===================== realtime push (documents:listen) =====================
-   The fast lane above polls the delta, so the worst-case lag is the poll period.
-   This is the true "0" the owner asked for: one long-lived HTTP stream, so the
-   server pushes each change the instant it is written and the other device lands
-   it with no poll delay at all.
+/* ===================== realtime push (onSnapshot) =====================
+   The true "0" path: one live stream so the server pushes each change the instant it
+   is written. Firestore's realtime stream is gRPC-Web (WebChannel), not plain REST, so
+   this is the SDK's onSnapshot - a raw `documents:listen` POST is refused even with a
+   valid token (verified against this project). Writes and the delta pull stay on the
+   REST path; this is a pure wake-up.
 
-   It reuses the ONE merge (cloudPullMerge) the sync tests already prove, so there
-   is still no second definition of "newer wins" and no new merge risk. The stream
-   is a *wake-up*: on a change it runs cloudPullMerge() and reads the change through
-   the exact same path the poll uses. If the stream is refused (the REST listen
-   framing is not something this code can be sure of against every project), it
-   falls back silently to the adaptive poll, which is itself the safety net - so
-   the app is never worse than before, and gets true push when the stream works.
+   On any change it calls the SAME cloudPullMerge() the sync tests already prove, so
+   there is exactly one definition of "newer-wins" and no second merge path. Bursts
+   coalesce, and it stands down while this device is busy or has an unsent edit, so it
+   cannot race its own upload. If the SDK or the stream is unavailable, the adaptive
+   poll (2 s active / 10 s idle) is the guaranteed floor - the app is never worse than
+   a fast poll, and reaches true push when the stream is up. */
+var fbRealtimeUnsub = null;
+var fbRealtimeStarting = false;
+var fbRealtimeMergeQueued = false;
 
-   The protocol is Firestore's HTTP streaming listen: a POST whose body is the
-   first frame (addTarget with a query target over the records subcollection) and
-   whose response is newline-delimited ListenResponse JSON. A targetChange carries a
-   resumeToken; after any reconnect the next addTarget resumes from that token, so
-   changes that land between frames are not lost. */
-const FB_LISTEN_RETRY_MS = 5000;
-var fbListenAbort = null;
-var fbListenActive = false;
-var fbListenTimer = null;
-var fbListenResumeToken = null;
-var fbListenResumeWait = 0;
-var fbListenMergeQueued = false;
-
-function fbListenShouldRun() {
+function fbRealtimeShouldRun() {
   return cloudConfigured() && fbSignedIn() && (typeof session !== 'undefined' && !!session);
 }
-
-function fbListenStop() {
-  if (fbListenTimer) { clearTimeout(fbListenTimer); fbListenTimer = null; }
-  if (fbListenAbort) { try { fbListenAbort.abort(); } catch (e) {} fbListenAbort = null; }
-  fbListenActive = false;
+function fbRealtimeStop() {
+  fbRealtimeStarting = false;
+  if (fbRealtimeUnsub) { try { fbRealtimeUnsub(); } catch (e) {} fbRealtimeUnsub = null; }
 }
-
-/* A change arrived. Coalesce bursts, and never merge under the owner's fingers or
-   over an upload of this device's own change - the poll and the 30 s net catch it. */
-function fbListenOnChange() {
-  fbListenResumeWait = 0;
-  if (fbListenMergeQueued) return;
+function fbRealtimeOnChange() {
+  if (fbRealtimeMergeQueued) return;
   if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) return;
-  fbListenMergeQueued = true;
-  cloudPullMerge().catch(function () {}).then(function () { fbListenMergeQueued = false; });
+  fbRealtimeMergeQueued = true;
+  cloudPullMerge().catch(function () {}).then(function () { fbRealtimeMergeQueued = false; });
 }
-
-/* Newline-delimited JSON: chunks can split a frame, so keep the tail in the buffer. */
-function fbListenHandleLine(line) {
-  if (!line) return;
-  let msg;
-  try { msg = JSON.parse(line); } catch (e) { return; }
-  if (msg && msg.targetChange && msg.targetChange.resumeToken) {
-    fbListenResumeToken = msg.targetChange.resumeToken;
-  }
-  if (msg && (msg.documentChange || msg.documentDelete)) fbListenOnChange();
-}
-
-async function fbListenLoop() {
-  if (fbListenActive) return;
-  if (!fbListenShouldRun()) { fbListenStop(); return; }
-  const auth = await fbEnsureAuth();
-  if (!auth) { fbListenStop(); return; }
-  const c = fbConfig();
-  const url = 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(c.projectId) +
-    '/databases/(default)/documents:listen';
-  const target = {
-    query: {
-      parent: 'projects/' + c.projectId + '/databases/(default)/documents/shops/' + auth.uid,
-      structuredQuery: { from: [{ collectionId: 'records' }] }
-    }
-  };
-  if (fbListenResumeToken) target.resumeToken = fbListenResumeToken;
-  const ac = new AbortController();
-  fbListenAbort = ac;
-  fbListenActive = true;
+async function fbRealtimeStart() {
+  if (fbRealtimeUnsub || fbRealtimeStarting) return;   // already listening, or starting
+  if (!fbRealtimeShouldRun()) return;
+  fbRealtimeStarting = true;
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + auth.idToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ addTarget: { targetId: 1, ...target } }) + '\n',
-      signal: ac.signal
-    });
-    if (!res.ok || !res.body) throw new Error('listen http ' + res.status);
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const r = await reader.read();
-      if (r.done) break;
-      buf += dec.decode(r.value, { stream: true });
-      let i;
-      while ((i = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, i).trim();
-        buf = buf.slice(i + 1);
-        fbListenHandleLine(line);
-      }
-    }
-    throw new Error('listen closed');       // a clean close is still a reconnect
-  } catch (e) {
-    if (e && e.name === 'AbortError') { fbListenActive = false; return; }   // sign-out / stop
-    fbListenActive = false;
-    fbListenResumeWait = Math.min((fbListenResumeWait || 0) + FB_LISTEN_RETRY_MS, 30000);
-    if (fbListenTimer) clearTimeout(fbListenTimer);
-    fbListenTimer = setTimeout(function () { fbListenTimer = null; fbListenLoop().catch(function () {}); }, fbListenResumeWait);
-  }
+    if (!(await fbSdkLoad()) || !fbSdkAuth || !fbSdkAuth.currentUser) return;
+    if (!fbRealtimeShouldRun()) return;                // signed out while loading
+    const uid = fbSdkAuth.currentUser.uid;
+    fbRealtimeUnsub = fbSdkFsApi.onSnapshot(
+      fbSdkFsApi.collection(fbSdkDb, 'shops', uid, 'records'),
+      function () { fbRealtimeOnChange(); },
+      function () { /* refused stream: the adaptive poll carries the load */ });
+  } catch (e) { fbRealtimeUnsub = null; }
+  finally { fbRealtimeStarting = false; }
 }
 
 /* ===================== pull + merge ===================== */
@@ -684,5 +721,5 @@ function cloudBoot() {
   if (!cloudMigrated()) { cloudMigrate(true).catch(function () {}); return; }
   cloudAutoSyncNew('open').catch(function () {});
   if (cloudState() === 'DEGRADED_SHEET') cloudArmRetry();
-  if (typeof fbListenLoop === 'function') fbListenLoop().catch(function () {});
+  if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
 }
