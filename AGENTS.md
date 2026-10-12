@@ -374,26 +374,28 @@ gets "almost at once" without it.
 
 ### Realtime push: the true "0" path (2026-10-12)
 
-The owner asked for a real 0 - not a fast poll. `fbListenLoop` in `cloud.js` opens one
-long-lived HTTP stream to Firestore's `documents:listen`, so the server pushes each change the
-instant it is written. A `documentChange`/`documentDelete` is a *wake-up*: it calls the SAME
-`cloudPullMerge()` the tests already prove, so there is still exactly one definition of
-"newer-wins" and no second merge path. Bursts coalesce (`fbListenMergeQueued`), and it stands
-down while `cloudBusy`/`cloudDirty` so it cannot race the device's own upload.
+The owner asked for a real 0 - not a fast poll. Firestore's realtime stream is **not** plain
+REST - it rides gRPC-Web/WebChannel - so a raw `documents:listen` POST is refused with
+`INVALID_ARGUMENT` even with a valid token (a first attempt at `fbListenLoop` proved this against
+the live project, then was removed). The one supported browser path is the Firebase JS SDK's
+`onSnapshot`, so `cloud.js` lazily imports `firebase-app/auth/firestore` (10.12.0) from the CDN
+**only for auth and the listener**; reads and writes stay on the cheap REST path. `fbSdkLoad()`
+resolves `false` if the CDN is blocked, and every caller falls back to the REST auth + adaptive
+poll, so a blocked CDN can never stop a save.
 
-The target is a query target over `shops/{uid}` scoped to `records`, the same scope as the delta
-query, so the same rule proves it. A `targetChange.resumeToken` is kept and sent in the next
-`addTarget`, so a reconnect does not drop changes that landed between frames; a dropped stream
-reconnects with 5 s..30 s backoff, and `fbListenStop()` (called from `fbSignOut`) aborts the
-stream with no reconnect.
+The listener is a *wake-up*: a snapshot change calls the SAME `cloudPullMerge()` the tests already
+prove, so there is still exactly one definition of "newer-wins". Bursts coalesce
+(`fbRealtimeMergeQueued`), it stands down while `cloudBusy`/`cloudDirty` so it cannot race the
+device's own upload, and `fbRealtimeStop()` (from `fbSignOut`) unsubscribes.
 
-**The honest risk:** the REST listen framing is not something this code can be certain of against
-every project, and it could not be tested against the owner's live Firebase. So the stream is a
-best-effort accelerator: if it is refused or does not stream, it fails silently and the adaptive
-poll (2 s active / 10 s idle) remains the guaranteed floor. The app is therefore never worse
-than before, and reaches true push when the stream works. `test/realtime.test.js` (17 checks)
-drives the framing, the wake-up merge, the coalescing, the resume token, the reconnect backoff,
-and the abort-on-sign-out through the real `cloud.js` against a fake streaming fetch.
+**Boot must start the listener regardless of migration.** `cloudBoot()` used to `return` right
+after kicking off `cloudMigrate(true)` when the device had not finished its first full push - so a
+*fresh install that imported its old book* sat on the slow poll (up to ~10 s, and only after
+`cloudDirty` cleared) until its migration happened to finish, which is exactly the "sometimes it
+doesn't update right away" the owner reported. The migration is idempotent and independent of the
+listener and the open pull, so the boot now starts all three; migration no longer gates live
+sync. `test/realtime.test.js` (19 checks) drives sign-in-through-the-SDK, the wake-up merge, the
+coalescing, the burst, the sign-out unsubscribe, the no-SDK fallback, and this boot case.
 
 ### The Firebase keys are baked into the build (2026-10-12)
 

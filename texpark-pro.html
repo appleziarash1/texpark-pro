@@ -4258,7 +4258,12 @@ function cloudBoot() {
   cloudStateLoad();
   if (!cloudConfigured()) return;
   if (!fbSignedIn()) return;
-  if (!cloudMigrated()) { cloudMigrate(true).catch(function () {}); return; }
+  /* The first full push and live sync are independent: an un-migrated device used
+     to skip the listener and the open pull entirely, so a fresh install that had
+     imported its old book sat on the slow poll until its migration finished. Start
+     the pull and the listener regardless; the migration is idempotent and no longer
+     gates them. */
+  if (!cloudMigrated()) cloudMigrate(true).catch(function () {});
   cloudAutoSyncNew('open').catch(function () {});
   if (cloudState() === 'DEGRADED_SHEET') cloudArmRetry();
   if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});

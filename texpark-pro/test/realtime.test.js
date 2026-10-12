@@ -142,6 +142,19 @@ function makeSandbox(sdk) {
     eq(sdk.snaps.length, 0, 'signed out: no listener');
   }
 
+  console.log('\n--- boot: a saved session starts the listener even before migration ---');
+  {
+    const sdk = makeSdk();
+    const s = makeSandbox(sdk);
+    s.cloudPullMerge = async () => ({});
+    s.cloudMigrate = async () => true;             // migration is not the subject; keep the boot quiet
+    sdk.currentUser = sdk.user('uid-1', 'shop@example.com');
+    s.fbAuthSave({ idToken: 'tok', uid: 'uid-1', email: 'shop@example.com', expiresAt: Date.now() + 1e7 });
+    s.cloudBoot(); await ticks(8);
+    eq(sdk.snaps.length, 1, 'a device that imported its book still starts the live listener at boot');
+    eq(s.cloudMigrated(), false, 'still un-migrated, proving the listener did not wait for the first full push');
+  }
+
   console.log('\n--- without the SDK there is no listener, so the adaptive poll is the floor ---');
   {
     const sdk = makeSdk();
