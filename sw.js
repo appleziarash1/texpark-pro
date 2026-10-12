@@ -67,7 +67,11 @@ self.addEventListener('fetch', e => {
 
   if (mustBeFresh) {
     e.respondWith(
-      fetch(req)
+      /* Revalidate rather than trust the HTTP cache: GitHub Pages serves js/css
+         with a 10-minute max-age, so a plain fetch() would keep serving the old
+         build to a device that just reloaded for a new release. 'no-cache' sends
+         a conditional request and takes the new body when the server has one. */
+      fetch(req, { cache: 'no-cache' })
         .then(res => {
           const copy = res.clone();
           caches.open(CACHE).then(c => c.put(req, copy));

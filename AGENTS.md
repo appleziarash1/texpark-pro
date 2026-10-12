@@ -321,6 +321,31 @@ lives in device `localStorage` and in the owner's Google Sheet. `Code.gs` is pub
 Pages and carries the spreadsheet ID in plain text, which is harmless while that Sheet is
 private — anyone able to read `Code.gs` gains nothing without access to the Sheet itself.
 
+### Live update: a device reloads itself when a release lands (2026-10-12)
+
+The owner wanted a push to reach every device without a manual reload, and to stay on GitHub
+Pages. A static host cannot push, so each device polls. `applyLiveUpdate_` in `app.js` sends a
+HEAD for `RELEASE_URL/js/app.js` and compares the **ETag** (a few bytes; GitHub Pages sends one)
+with the tag it stored. A changed ETag means a new build is published - even when `APP_VERSION`
+was not bumped, which is the common case because the version only moves when the APK must be
+rebuilt. The first run only records the tag; a changed tag reloads the page.
+
+It reloads **only at a safe moment** (`updatePaused_`): never while a field has focus, never
+with a `.modal.show` open, never on the `memo` page (a half-written sales memo), never while
+`cloudDirty` (an unsent edit), never in a hidden tab. A held reload keeps the *old* tag, so the
+release is picked up as soon as the moment passes; the new tag is recorded *before* reloading,
+so a stale ETag cannot make a device reload in a loop. A reload keeps the device's data, which
+lives in `localStorage` and the sheet - only the screen is rebuilt.
+
+`sw.js` fetches app files with `cache: 'no-cache'` so the reload revalidates instead of trusting
+Pages' 10-minute `max-age` and serving the old build back. `test/liveupdate.test.js` drives all
+of this through the real `app.js` against a DOM shim, with `fetch` as the only seam (14 checks).
+
+This does **not** bump `APP_VERSION` and does not touch the APK: an installed native app still
+updates through the APK rebuild path. It only makes the *web* build reach every device faster.
+(The alternative - a host with a faster build, e.g. Cloudflare Pages - was not taken: it would
+need the owner's account and a migration away from Pages, and this closes the gap without it.)
+
 ### The repo root *is* the site
 `build.js` writes the app to the repo root (`index.html`, `js/`, `css/`, `sw.js`, icons,
 `version.txt`, `TexparkPro.apk`) because GitHub Pages serves the root of the branch it is

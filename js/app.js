@@ -20,6 +20,57 @@ function versionNewer(a, b) {
   return false;
 }
 
+/* ---- live update: a device picks up a new release without a manual reload ----
+   GitHub Pages serves the app with an ETag, and that ETag changes the moment a
+   new build is published. A HEAD request reads it in a few bytes, so a device can
+   tell a release has landed even when APP_VERSION was not bumped - the version
+   number only moves when the APK has to be rebuilt, which is a much rarer event.
+
+   It reloads only when it is safe: never while the owner is typing, never with a
+   modal open, never on the New Sales Memo page, and never with unsent cloud
+   changes. A reload keeps this device's data (it lives in localStorage and in the
+   sheet); throwing away a half-written memo would be far worse than an old screen.
+   The new release is recorded before reloading, so a device cannot reload in a
+   loop even if a host serves a stale ETag. */
+const LIVE_UPDATE_KEY = 'texpark_pro_live_etag';
+function liveUpdateTag_(next) {
+  try {
+    if (next) { localStorage.setItem(LIVE_UPDATE_KEY, next); return next; }
+    return localStorage.getItem(LIVE_UPDATE_KEY) || '';
+  } catch (e) { return ''; }
+}
+function updatePaused_() {
+  if (typeof document === 'undefined' || document.hidden) return true;
+  try {
+    const a = document.activeElement;
+    if (a && a.tagName && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+    if (a && a.isContentEditable) return true;
+  } catch (e) {}
+  const modals = document.querySelectorAll ? document.querySelectorAll('.modal.show') : null;
+  if (modals && modals.length) return true;
+  if (typeof currentPage !== 'undefined' && currentPage === 'memo') return true;
+  return typeof cloudDirty !== 'undefined' && cloudDirty;
+}
+function applyLiveUpdate_() {
+  return fetch(RELEASE_URL + '/js/app.js', { method: 'HEAD', cache: 'no-store' })
+    .then(r => r.headers.get('etag') || r.headers.get('last-modified') || '')
+    .then(tag => {
+      if (!tag) return;
+      const last = liveUpdateTag_();
+      if (!last) { liveUpdateTag_(tag); return; }   /* first run: just remember it */
+      if (tag === last) return;                      /* same release as last time */
+      if (updatePaused_()) return;                   /* not a safe moment - try again later */
+      liveUpdateTag_(tag);
+      location.reload();
+    })
+    .catch(() => {});
+}
+window.addEventListener('load', function () {
+  setTimeout(applyLiveUpdate_, 4000);
+  setInterval(function () { if (!document.hidden) applyLiveUpdate_(); }, 60000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) applyLiveUpdate_(); });
+});
+
 const PAGES = [
   { id: 'dashboard',  label: 'Dashboard',      ic: '\u25A3', group: 'Overview' },
   { id: 'orders',     label: 'Orders',         ic: '\u26A1', group: 'Overview' },
