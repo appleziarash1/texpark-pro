@@ -41,12 +41,13 @@ jobs:
           rm -rf _site && mkdir _site && unzip -q texpark-hosting.zip -d _site
           test -f _site/index.html && test -f _site/js/app.js
 
+      # Run Cloudflare's own CLI directly, so the token is only ever given to
+      # wrangler - not to a third-party action's code.
       - name: Publish to Cloudflare Pages
         if: steps.cf.outputs.ready == 'true'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Create the project once; ignore the "already exists" error on later runs.
-          preCommands: npx wrangler pages project create texpark-pro --production-branch=main || true
-          command: pages deploy _site --project-name=texpark-pro --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@3 pages project create texpark-pro --production-branch=main || true
+          npx --yes wrangler@3 pages deploy _site --project-name=texpark-pro --branch=main
