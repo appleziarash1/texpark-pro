@@ -1089,23 +1089,31 @@ tbody tr:hover td{background:#f7fafd}
             itself, then recovers when the cloud comes back.
           </div>
           <div class="note" style="margin-top:6px">
-            The cloud is already wired in — there is nothing to type here. Sign in below once on each
-            device with the same account; after that the devices sync by themselves.
+            The cloud is already wired in — there is nothing to type. Open the owner's private
+            setup link once on each device and it signs in by itself; after that the devices sync
+            on their own. The link is under <b>Advanced → Get private setup link</b>.
           </div>
           <div class="row" style="margin-top:11px">
             <button class="btn-light" onclick="testFirebase()">Test cloud</button>
             <button class="btn-light" onclick="migrateToCloud()">Send all data to cloud</button>
           </div>
-          <label style="margin-top:14px">Cloud account (email)</label>
-          <input id="stFbEmail" autocomplete="username" placeholder="shop@example.com (same on every device)">
-          <label>Cloud password</label>
-          <input id="stFbPass" type="password" autocomplete="current-password" placeholder="at least 6 characters">
-          <div class="row" style="margin-top:11px">
-            <button class="btn-pink" onclick="cloudSignIn()">Sign in</button>
-            <button class="btn-light" onclick="cloudCreateAccount()">Create account</button>
-            <button class="btn-light" onclick="cloudSignOutNow()">Sign out of cloud</button>
-          </div>
-          <div id="cloudTestOut" style="margin-top:10px;font-size:13px"></div>
+          <div id="cloudProv" style="margin-top:11px"></div>
+          <details style="margin-top:12px">
+            <summary class="muted" style="cursor:pointer">Advanced</summary>
+            <div class="row" style="margin-top:9px">
+              <button class="btn-light" onclick="cloudShowLink()">Get private setup link</button>
+              <button class="btn-light" onclick="cloudSignOutNow()">Sign out of cloud</button>
+            </div>
+            <div id="cloudTestOut" style="margin-top:10px;font-size:13px"></div>
+            <label style="margin-top:12px">Cloud account (email)</label>
+            <input id="stFbEmail" autocomplete="username" placeholder="shop@example.com (same on every device)">
+            <label>Cloud password</label>
+            <input id="stFbPass" type="password" autocomplete="current-password" placeholder="at least 6 characters">
+            <div class="row" style="margin-top:9px">
+              <button class="btn-pink" onclick="cloudSignIn()">Sign in</button>
+              <button class="btn-light" onclick="cloudCreateAccount()">Create account</button>
+            </div>
+          </details>
         </div>
       </section>
 
