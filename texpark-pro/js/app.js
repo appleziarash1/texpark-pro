@@ -3034,9 +3034,10 @@ function cloudProvRender() {
   }
   const setup = document.getElementById('cloudCardSetup');
   if (setup && cfOn) {
-    setup.innerHTML = 'Set this device up in one step: open your private setup link once (or paste it / the ' +
-      'shop token into Connect below). The token is never stored in this public repo — it lives only in your ' +
-      'private link and on your devices. Anyone who has it can reach the shop, so never post it publicly.';
+    setup.innerHTML = 'Set this device up in one step: just open your private setup link once on it. ' +
+      'The key rides inside that link and is adopted by itself — there is nothing to type. It is never ' +
+      'stored in this public repo; it lives only in your private link and on your devices. Anyone who has ' +
+      'the link can reach the shop, so never post it publicly.';
   }
   const adv = document.getElementById('cloudAdvanced');
   if (adv && cfOn) adv.style.display = 'none';
@@ -3051,7 +3052,7 @@ function cloudProvRender() {
     const has = typeof cfProvToken_ === 'function' && !!cfProvToken_();
     el.innerHTML = has
       ? '<div class="note" style="color:var(--green)">This device is connected — live sync starts by itself.</div>'
-      : '<div class="note">Paste your private setup link (or the shop token) above and press Connect to turn on live sync on this device.</div>';
+      : '<div class="note">Open your private setup link once on this device — it connects by itself, nothing to type.</div>';
     return;
   }
   const has = typeof fbProvLoad === 'function' && !!fbProvLoad();
@@ -3069,7 +3070,7 @@ function cloudShowLink() {
     : ((typeof fbProvisionLink === 'function') ? fbProvisionLink() : '');
   if (!link) {
     cloudOut('<span class="red">' + (cfOn
-      ? 'This device has no shop token yet — paste your setup link (or the token) above and press Connect.'
+      ? 'This device has no key yet — open your private setup link once on it.'
       : 'This device has no saved account yet — sign in once (Advanced) to create the link.') + '</span>');
     return;
   }
@@ -3077,8 +3078,9 @@ function cloudShowLink() {
     '<input readonly id="cloudProvLink" value="' + esc(link) + '" onclick="this.select()" ' +
     'style="width:100%;margin:6px 0">' +
     '<button class="btn-light btn-sm" onclick="copyCloudLink(this)">Copy link</button>' +
-    '<div class="muted" style="margin-top:6px">Send this to your own phone (WhatsApp/SMS) and open it there ' +
-    'once — that device turns live by itself. Anyone with the link can reach the shop, so never post it publicly.</div></div>');
+    '<div class="muted" style="margin-top:6px">Open this link once on each of your own devices ' +
+    '(send it to your phone on WhatsApp) — that device turns live by itself, nothing to type. ' +
+    'Anyone with the link can reach the shop, so never post it publicly.</div></div>');
 }
 
 /* One device, one paste: accept either the whole private link or just the token, so

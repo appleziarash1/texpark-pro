@@ -704,9 +704,10 @@
             itself, then recovers when the cloud comes back.
           </div>
           <div class="note" style="margin-top:6px" id="cloudCardSetup">
-            The cloud is already wired in — there is nothing to type. Open the owner's private
-            setup link once on each device and it signs in by itself; after that the devices sync
-            on their own. The link is under <b>Advanced → Get private setup link</b>.
+            The cloud is already wired in — there is <b>nothing to type</b>. Just open your private
+            setup link once on each device: it adopts the key by itself, and after that the devices
+            sync on their own. Get the link under <b>Advanced → Get private setup link</b> and send
+            it to your own phone once.
           </div>
           <div class="row" style="margin-top:11px">
             <button class="btn-light" onclick="testFirebase()">Test cloud</button>
@@ -715,8 +716,8 @@
           </div>
           <div id="cloudProv" style="margin-top:11px"></div>
           <div id="cloudCfSetup" style="display:none;margin-top:11px">
-            <label>Connect this device — paste your private setup link, or just the shop token</label>
-            <input id="cloudCfInput" placeholder="https://…/#cloud=…  or  the shop token">
+            <label>Not set up on this device yet — just open your private setup link once. No typing needed.</label>
+            <input id="cloudCfInput" placeholder="Paste the private setup link here (https://…/#cloud=…)">
             <div class="row" style="margin-top:9px">
               <button class="btn-light" onclick="cloudCfConnect()">Connect</button>
               <button class="btn-light" onclick="cloudShowLink()">Get setup link</button>
