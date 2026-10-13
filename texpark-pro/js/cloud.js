@@ -930,11 +930,16 @@ function cloudMigrated() { try { return !!localStorage.getItem(FB_MIGRATED_KEY);
    pop an alert. */
 function cloudBoot() {
   cloudStateLoad();
-  if (!cloudConfigured()) return;
-  /* Adopt a private #cloud= link before anything else, then sign in from it if this
-     device has no live session yet. That is the whole of the "nothing to type" setup. */
+  /* Adopt a private #cloud= link FIRST, before the configured check. A brand-new
+     device has no token yet, so cloudConfigured() is false and this function used to
+     return here - the link was never read, and the device stayed blank until the
+     owner reloaded. Reading the link first turns the very first open into a live
+     device: no reload, nothing to type. */
   let adopted = false;
   try { adopted = fbAdoptProvision(); } catch (e) {}
+  if (!cloudConfigured()) return;
+  /* Then sign in from the link if this device has no live session yet. That is the
+     whole of the "nothing to type" setup. */
   /* On the Cloudflare backend the shop token is the auth, so a Firebase session is
      neither needed nor created; the Firestore sign-in path stays for `firebase`. */
   if (!cfOn_() && !fbSignedIn()) {
@@ -950,4 +955,17 @@ function cloudBoot() {
   cloudAutoSyncNew('open').catch(function () {});
   if (cloudState() === 'DEGRADED_SHEET') cloudArmRetry();
   if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
+}
+
+/* The `hashchange` half of the private-link setup. Opening a #cloud= link inside the
+   tab that is already open changes only the fragment, so the browser does not reload
+   and boot()/cloudBoot() never run again. Adopt the token here and bring the backend
+   up on this very page: no manual reload, which was the one step the owner kept
+   missing. Cleans the fragment (fbAdoptProvision scrubs it) and is a no-op otherwise. */
+function cloudAdoptFromHash_() {
+  let adopted = false;
+  try { adopted = (typeof fbAdoptProvision === 'function') && fbAdoptProvision(); } catch (e) { adopted = false; }
+  if (!adopted) return false;
+  try { cloudBoot(); } catch (e) {}
+  return true;
 }

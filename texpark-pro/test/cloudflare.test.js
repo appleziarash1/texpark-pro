@@ -229,6 +229,35 @@ function makeSandbox(cfg) {
     eq(fetch.calls[0].opts.headers.Authorization, 'Bearer ' + token, 'requests then carry the adopted token');
   }
 
+  console.log('\n--- a brand-new device goes live on the FIRST open of the link ---');
+  {
+    const { s } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: '' });
+    ok(!s.cfBackendOn(), 'before any link the backend is off (this device has no token)');
+    // The link arrives in the fragment; cloudBoot() is what DOMContentLoaded calls.
+    s.location.hash = '#cloud=' + encodeURIComponent(Buffer.from('cf|tok-first-open').toString('base64'));
+    s.cloudMigrate = async () => true;          // keep the test off the network
+    s.cloudAutoSyncNew = async () => ({});
+    s.cloudBoot();
+    ok(s.cfBackendOn(), 'cloudBoot adopts the link BEFORE the configured check, so it is live with no reload');
+    eq(s.cfProvToken_(), 'tok-first-open', 'and the token is stored on this device');
+  }
+
+  console.log('\n--- a link opened in an ALREADY-open tab (hashchange) goes live too ---');
+  {
+    const { s } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: '' });
+    ok(!s.cfBackendOn(), 'the page is already open and not yet live');
+    s.cloudMigrate = async () => true;
+    s.cloudAutoSyncNew = async () => ({});
+    // Opening a link in the same tab changes only the fragment: no reload, so boot()
+    // never runs again. The hashchange handler is the only thing that can catch it.
+    s.location.hash = '#cloud=' + encodeURIComponent(Buffer.from('cf|tok-hashchange').toString('base64'));
+    eq(s.cloudAdoptFromHash_(), true, 'the hashchange handler adopts the link');
+    ok(s.cfBackendOn(), 'and the backend turns on right there, without a reload');
+    eq(s.cfProvToken_(), 'tok-hashchange', 'with the token stored');
+    eq(s.location.hash, '', 'the secret is scrubbed from the address bar');
+    eq(s.cloudAdoptFromHash_(), false, 'a later hashchange carrying no link is a harmless no-op');
+  }
+
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
   if (fail) process.exit(1);

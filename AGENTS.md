@@ -1055,6 +1055,18 @@ How it is wired, and the rule that keeps it reversible:
   link, and check it pulls the full book (memos/customers), not the demo seed. The seed
   products (`seed-k3s` etc.) have stable ids by design and are *meant* to sync; a device
   whose OWN ids are missing started blank, it did not fail to sync.
+- **The private `#cloud=` link did nothing until a manual reload.** Two faults stacked:
+  (1) `cloudBoot()` checked `cloudConfigured()` and returned before `fbAdoptProvision()`,
+  so on a device that had no token yet the link was never read - the device stayed blank
+  (reading zero) until the owner reloaded; (2) opening the link in an already-open tab
+  only changes the fragment, which is a same-document navigation - `boot()` never runs
+  again and no handler listened for `hashchange`. Fixed: adopt the link first, and add a
+  `hashchange` handler (`cloudAdoptFromHash_`) that adopts and brings the cloud up on the
+  spot. `test/cloudflare.test.js` pins both (first-open and same-tab). The owner's
+  "everything is 0" was this - the Worker never lost a record.
+- **A device reading zero is usually reading a book it never pulled, not a deleted
+  book.** Check the Worker before believing a wipe: the records are still there. `/records`
+  (read-only, Bearer token) is the source of truth.
 - **Cloudflare's edge 403s `Python-urllib`.** A scripted check must send a browser
   `User-Agent`, or it sees 403 while the app (a real browser) is fine. Rule this out
   before chasing a phantom auth bug.

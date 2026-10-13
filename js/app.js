@@ -3435,6 +3435,13 @@ window.addEventListener('DOMContentLoaded', function () {
      first. It only fetches; it never touches the data path. */
   if (typeof fbSdkLoad === 'function') { try { fbSdkLoad(); } catch (e) {} }
   boot();
+  /* A private #cloud= link pasted into the SAME tab only changes the fragment, so
+     the browser does a same-document navigation and boot() never runs again - the
+     device sat blank until a manual reload. Adopt the link the moment the fragment
+     changes, then bring the cloud up, so pasting/opening the link "just works". */
+  window.addEventListener('hashchange', function () {
+    if (typeof cloudAdoptFromHash_ === 'function') { try { cloudAdoptFromHash_(); } catch (e) {} }
+  });
   window.addEventListener('online', () => { cloudAutoSync('online'); if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('online'); });
   // Push a full cloud backup once a day when the app is opened, so at least one
   // recent restorable copy always exists off-device without anyone remembering.
