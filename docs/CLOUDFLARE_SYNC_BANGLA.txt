@@ -48,27 +48,42 @@ https://texpark-sync.<tomar-subdomain>.workers.dev
 ```
 
 ### Step 5 — Client ta sei URL-er dike ghuray din
-`texpark-pro/js/cloudflare-config.js` khulun, 3 ta line bosan:
+`texpark-pro/js/cloudflare-config.js` khulun, `backend` ar `url` bosan
+(**token ta khali rakhen** — eta public repo, token ekhane likhben na):
 
 ```js
 window.CLOUDFLARE_SYNC = {
   backend: 'cloudflare',
   url: 'https://texpark-sync.<tomar-subdomain>.workers.dev',
-  token: 'CLOUDFLARE_SYNC_TOKEN er sei value-i'
+  token: ''          // khali: token asbe private link diye (Step 6)
 };
 ```
 
-Tarpor commit + push. Push holei site-e build hobe, ar sob device **Firebase chara**
-live sync-e cholbe. Badge-e **"☁ Cloudflare live"** dekhabe.
+Tarpor commit + push.
+
+### Step 6 — Prottek device-e token din (ek bar, kono typing chara)
+Token ta public repo-te thakle keu-i tomar shop porte parto, tai token ta
+**private setup link** diye dewa hoy (Firebase-er moto-i):
+
+1. Ekta device-e site khulun → **Settings → Cloud sync → Connect**.
+2. Niche **"Get setup link"** chepun — link ta asbe ei rokom:
+   `https://appleziarash1.github.io/texpark-pro/#cloud=<gopon>`
+   (link-er modhye tomar token ache; eta **karo shathe share korben na**).
+3. Oi link ta **nijer phone-e** (WhatsApp/SMS) pathan, ar sekhane **ekbar khulun**।
+   Device ta token nijer modhye rekhe ney, ar address bar theke secret muchhe jay.
+   Erpor oi device **Firebase chara** live sync-e cholbe, badge **"☁ Cloudflare live"**।
+
+> Jodi link chara sudhu token-i paste korte chan, tahole Connect box-e token ta
+> likhe Connect chepun — kaaj korbe.
 
 ## Bhalo dike (verify) korbo kivabe
-- Duita device (PC + phone) khulun, dutoi login thakbe.
+- Duita device (PC + phone) khulun, dutoi token peyeche.
 - PC-te ekta customer/memo likhun → phone-e **sathe-sathe** ashbe (laghbhag 0.1s)।
 - Badge "Live" hole stream cholche.
 
 ## Kichu kharap hole
-- Badge "Cloud degraded → Sheet" hole Worker-e pouchche na: `url`/`token` thik ache
-  kina dekhen, ar `CLOUDFLARE_SYNC_TOKEN` set kora ache kina.
+- Badge "Cloud degraded → Sheet" hole Worker-e pouchche na: `url` thik ache kina,
+  ar device-e token bosa ache kina (Connect box) dekhen.
 - Abar Firebase-e firte chan? `backend: 'firebase'` kore din — purono path hubohu
   pabe (code much jay ni).
 - Data mitche na: Sheet mirror ta ekhono ache, tai ekta safety net sob somoy thake.

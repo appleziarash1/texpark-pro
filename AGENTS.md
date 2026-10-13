@@ -998,10 +998,14 @@ How it is wired, and the rule that keeps it reversible:
 - **One interface, two backends.** `js/cloud.js` still owns the merge, the cursor and the
   write queue; every Firebase function now first asks `cfOn_()` (in `js/cloudcf.js`) and, when
   the Cloudflare backend is on, calls its `cf*` twin instead. Nothing else in the app changed.
-- **`js/cloudflare-config.js`** is the whole switch: `window.CLOUDFLARE_SYNC = {backend, url,
-  token}`. It ships with `backend:'firebase'` and blanks, so **the deployed app is unchanged
-  until the owner sets it** - Firestore stays the fallback behind the same interface. Baked
-  values mean no device ever types anything; the token is the shop password, so keep it secret.
+- **`js/cloudflare-config.js`** carries the URL and the `backend` switch only. It ships
+  with `backend:'firebase'` and a blank URL, so **the deployed app is unchanged until the
+  owner sets it** - Firestore stays the fallback behind the same interface. The shop
+  **token is never committed** (this repo is public; a committed token would expose the
+  whole shop). It is delivered per device through the same private-link mechanism the
+  Firebase account uses: `fbAdoptProvision()` also accepts a `cf|<token>` payload, stores
+  it in `db.settings.cloudflare` (which `cfConfig()` already reads) and scrubs the address
+  bar. The owner can also paste the link/token in Settings -> Cloud sync -> Connect.
 - **CORS is required and easy to miss.** The app is served from a different origin than the
   Worker (Pages -> Workers), so the Worker answers `OPTIONS` and sends
   `access-control-allow-origin: *`. Without it every fetch fails with "Failed to fetch" while

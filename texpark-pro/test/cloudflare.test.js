@@ -72,6 +72,10 @@ function makeSandbox(cfg) {
     setTimeout: () => 0, clearTimeout: () => {},
     fetch: fetchFn,
     WebSocket: ws.Fake,
+    atob: (s) => Buffer.from(String(s), 'base64').toString('binary'),
+    btoa: (s) => Buffer.from(String(s), 'binary').toString('base64'),
+    location: { hash: '', pathname: '/', search: '', origin: 'https://site.example' },
+    history: { replaceState: (st, ti, url) => { const i = String(url || '').indexOf('#'); sandbox.location.hash = i >= 0 ? String(url).slice(i) : ''; } },
     document: { getElementById: () => null, addEventListener() {} },
     import: () => Promise.reject(new Error('the test forbids the CDN'))
   };
@@ -184,6 +188,35 @@ function makeSandbox(cfg) {
     const r = await s.cloudAutoSyncNew('test');
     ok(!(r && r.skipped === 'firebase not signed in'), 'it did not stand down for a Firebase session it does not use');
     eq(s.fbSignedIn(), false, 'and there is genuinely no Firebase session');
+  }
+
+  console.log('\n--- the shop token arrives by private link, never from the repo ---');
+  {
+    const token = 'sh0p-s3cret-abcdef';
+    const { s, fetch } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: '' });
+    ok(!s.cfBackendOn(), 'with no token the backend stays off, so a public build cannot reach the shop');
+
+    // the link carries base64('cf|' + token) in the fragment, like the Firebase one
+    s.location.hash = '#cloud=' + encodeURIComponent(Buffer.from('cf|' + token).toString('base64'));
+    const adopted = s.fbAdoptProvision();
+    ok(adopted, 'opening the private link is adopted');
+    eq(s.location.hash, '', 'and the secret is scrubbed from the address bar');
+    eq(s.cfProvToken_(), token, 'the token is now stored on this device');
+    ok(s.cfBackendOn(), 'and the Cloudflare backend turns on');
+
+    // a token-only paste (no link) works too
+    s.cfProvSave('another-token');
+    eq(s.cfProvToken_(), 'another-token', 'a pasted token is saved the same way');
+    s.cfProvSave(token);   // restore for the link check
+
+    const link = s.cfProvisionLink();
+    ok(link.indexOf('#cloud=') > 0, 'the device can re-issue its own private link');
+    eq(Buffer.from(decodeURIComponent(link.split('#cloud=')[1]), 'base64').toString('binary'), 'cf|' + token,
+      'and that link carries the same cf| token');
+
+    fetch.reply(200, { records: [], now: '' });
+    await s.cfPullDelta();
+    eq(fetch.calls[0].opts.headers.Authorization, 'Bearer ' + token, 'requests then carry the adopted token');
   }
 
   console.log('\n=================');

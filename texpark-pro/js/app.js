@@ -3034,18 +3034,24 @@ function cloudProvRender() {
   }
   const setup = document.getElementById('cloudCardSetup');
   if (setup && cfOn) {
-    setup.innerHTML = 'Nothing to type on any device: the shop token is already in the build, so opening ' +
-      'the app is the whole setup. Keep that token secret — anyone who has it can reach the shop.';
+    setup.innerHTML = 'Set this device up in one step: open your private setup link once (or paste it / the ' +
+      'shop token into Connect below). The token is never stored in this public repo — it lives only in your ' +
+      'private link and on your devices. Anyone who has it can reach the shop, so never post it publicly.';
   }
   const adv = document.getElementById('cloudAdvanced');
   if (adv && cfOn) adv.style.display = 'none';
   const rec = document.getElementById('cloudReconnect');
   if (rec) rec.style.display = cfOn ? '' : 'none';
+  const cfSetup = document.getElementById('cloudCfSetup');
+  if (cfSetup) cfSetup.style.display = cfOn ? '' : 'none';
 
   const el = document.getElementById('cloudProv');
   if (!el) return;
   if (cfOn) {
-    el.innerHTML = '<div class="note" style="color:var(--green)">This device is set up — live sync starts by itself.</div>';
+    const has = typeof cfProvToken_ === 'function' && !!cfProvToken_();
+    el.innerHTML = has
+      ? '<div class="note" style="color:var(--green)">This device is connected — live sync starts by itself.</div>'
+      : '<div class="note">Paste your private setup link (or the shop token) above and press Connect to turn on live sync on this device.</div>';
     return;
   }
   const has = typeof fbProvLoad === 'function' && !!fbProvLoad();
@@ -3057,9 +3063,14 @@ function cloudProvRender() {
 }
 
 function cloudShowLink() {
-  const link = (typeof fbProvisionLink === 'function') ? fbProvisionLink() : '';
+  const cfOn = typeof cfSelected_ === 'function' && cfSelected_();
+  const link = cfOn
+    ? (typeof cfProvisionLink === 'function' ? cfProvisionLink() : '')
+    : ((typeof fbProvisionLink === 'function') ? fbProvisionLink() : '');
   if (!link) {
-    cloudOut('<span class="red">This device has no saved account yet — sign in once (Advanced) to create the link.</span>');
+    cloudOut('<span class="red">' + (cfOn
+      ? 'This device has no shop token yet — paste your setup link (or the token) above and press Connect.'
+      : 'This device has no saved account yet — sign in once (Advanced) to create the link.') + '</span>');
     return;
   }
   cloudOut('<div style="word-break:break-all;font-size:12px">Private setup link (keep it secret):<br>' +
@@ -3068,6 +3079,33 @@ function cloudShowLink() {
     '<button class="btn-light btn-sm" onclick="copyCloudLink(this)">Copy link</button>' +
     '<div class="muted" style="margin-top:6px">Send this to your own phone (WhatsApp/SMS) and open it there ' +
     'once — that device turns live by itself. Anyone with the link can reach the shop, so never post it publicly.</div></div>');
+}
+
+/* One device, one paste: accept either the whole private link or just the token, so
+   the owner can set up a phone without hunting for the fragment. */
+function cloudCfConnect() {
+  const el = document.getElementById('cloudCfInput');
+  const raw = (el && el.value || '').trim();
+  if (!raw) return cloudOut('<span class="red">Paste your setup link or the shop token first.</span>');
+  let token = raw;
+  try {
+    const m = /[#&]cloud=([^&]+)/.exec(raw);
+    if (m) {
+      const s = atob(decodeURIComponent(m[1]));
+      token = (s.indexOf('cf|') === 0) ? s.slice(3) : s;   // a cf link, or a bare token
+    }
+  } catch (e) { /* not a link; treat what was pasted as the token itself */ }
+  token = String(token || '').trim();
+  if (!token) return cloudOut('<span class="red">That link carried no token.</span>');
+  if (!(typeof cfProvSave === 'function' && cfProvSave(token))) {
+    return cloudOut('<span class="red">Could not save the token.</span>');
+  }
+  if (el) el.value = '';
+  cloudProvRender();
+  cloudOut('<span style="color:var(--green)">Saved. Live sync starts now.</span>');
+  try {
+    if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('provisioned').catch(function () {});
+  } catch (e) {}
 }
 
 /* Same copy gesture the Sheet pairing link uses, so the owner has one habit for both. */

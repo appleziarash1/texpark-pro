@@ -145,6 +145,11 @@ function fbAdoptProvision() {
   if (raw) {
     try {
       const s = (typeof atob === 'function') ? atob(raw) : '';
+      /* A `cf|<token>` payload is the Cloudflare shop token, not an email:password. */
+      if (s.indexOf('cf|') === 0) {
+        const token = s.slice(3);
+        if (token) { cfAdoptToken_(token); scrub(); return true; }
+      }
       const i = s.indexOf(':');
       if (i > 0) {
         const email = s.slice(0, i), password = s.slice(i + 1);
@@ -157,6 +162,47 @@ function fbAdoptProvision() {
 }
 function fbProvSave(email, password) {
   try { localStorage.setItem(FB_PROV_KEY, JSON.stringify({ email: email, password: password })); } catch (e) {}
+}
+
+/* ===================== Cloudflare shop token (same private-link idea) =====================
+   This repository is public, so the shop token must NOT live in a committed file - a
+   token in cloudflare-config.js would let anyone read and write the shop. Instead the
+   token travels exactly like the Firebase account: in the URL *fragment* of a link the
+   owner keeps privately. Opening the link once stores it in this device's own data
+   (db.settings.cloudflare, which cfConfig() already reads) and scrubs the address bar.
+
+   The token lives inside the same base64 blob as the Firebase account, with a `cf|`
+   prefix so the two can share one link; a token-only link (no Firebase account) is
+   `#cloud=<base64('cf|<token>')>`.
+
+   NOTE: because the fragment rides the same `cloud=` parameter the app also re-issues
+   on every host, a device provisioned with the token carries it in its own link. Keep
+   that link as secret as the token itself. */
+function cfProvToken_() {
+  try { return String((db.settings.cloudflare && db.settings.cloudflare.token) || '').trim(); } catch (e) { return ''; }
+}
+function cfProvSave(token) {
+  const t = String(token || '').trim();
+  if (!t) return false;
+  try {
+    if (!db.settings.cloudflare) db.settings.cloudflare = {};
+    db.settings.cloudflare.token = t;
+    commit();
+  } catch (e) { return false; }
+  return true;
+}
+/* The token for THIS host's link, so another device can be set up in one tap. */
+function cfProvisionLink() {
+  const t = cfProvToken_();
+  if (!t) return '';
+  try { return location.origin + location.pathname + '#cloud=' + encodeURIComponent(btoa('cf|' + t)); }
+  catch (e) { return ''; }
+}
+/* Called from fbAdoptProvision() when a `cf|` payload was seen. */
+function cfAdoptToken_(token) {
+  if (!cfProvSave(token)) return false;
+  if (typeof cloudProvRender === 'function') { try { cloudProvRender(); } catch (e) {} }
+  return true;
 }
 
 /* The link for THIS host, rebuilt from the stored account. A different host (GitHub

@@ -714,6 +714,14 @@
             <button class="btn-light" id="cloudReconnect" style="display:none" onclick="cloudReconnectNow()">Reconnect live sync</button>
           </div>
           <div id="cloudProv" style="margin-top:11px"></div>
+          <div id="cloudCfSetup" style="display:none;margin-top:11px">
+            <label>Connect this device — paste your private setup link, or just the shop token</label>
+            <input id="cloudCfInput" placeholder="https://…/#cloud=…  or  the shop token">
+            <div class="row" style="margin-top:9px">
+              <button class="btn-light" onclick="cloudCfConnect()">Connect</button>
+              <button class="btn-light" onclick="cloudShowLink()">Get setup link</button>
+            </div>
+          </div>
           <details style="margin-top:12px" id="cloudAdvanced">
             <summary class="muted" style="cursor:pointer">Advanced</summary>
             <div class="row" style="margin-top:9px">

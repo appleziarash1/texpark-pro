@@ -1106,6 +1106,14 @@ tbody tr:hover td{background:#f7fafd}
             <button class="btn-light" id="cloudReconnect" style="display:none" onclick="cloudReconnectNow()">Reconnect live sync</button>
           </div>
           <div id="cloudProv" style="margin-top:11px"></div>
+          <div id="cloudCfSetup" style="display:none;margin-top:11px">
+            <label>Connect this device — paste your private setup link, or just the shop token</label>
+            <input id="cloudCfInput" placeholder="https://…/#cloud=…  or  the shop token">
+            <div class="row" style="margin-top:9px">
+              <button class="btn-light" onclick="cloudCfConnect()">Connect</button>
+              <button class="btn-light" onclick="cloudShowLink()">Get setup link</button>
+            </div>
+          </div>
           <details style="margin-top:12px" id="cloudAdvanced">
             <summary class="muted" style="cursor:pointer">Advanced</summary>
             <div class="row" style="margin-top:9px">
@@ -3566,24 +3574,30 @@ window.FIREBASE_CONFIG = {
 /* bundle 4 */
 /* Texpark Pro - Cloudflare sync endpoint, baked into the build.
  *
- * This is the replacement backend for Firebase Firestore. It is a Cloudflare Worker
- * plus one Durable Object per shop (see /cloudflare). The URL and the shop token are
- * public build values: the token is the ONLY thing guarding the shop, so treat it like
- * the shop password. It is baked here so no device ever types anything - opening the
- * site is the whole setup.
+ * This is the replacement backend for Firebase Firestore: a Cloudflare Worker plus one
+ * Durable Object per shop (see /cloudflare). The Worker pushes every change to the
+ * other devices over a WebSocket, so a change lands in ~0.1s.
+ *
+ * The URL is public, so it is baked here. The shop TOKEN is a secret and is NOT baked
+ * here - this repository is public, and a token in a committed file would let anyone
+ * read and write the shop. The token is delivered per device through the private setup
+ * link instead: open the app, go to Settings -> Cloud sync -> Connect, and paste the
+ * link (or the token). A device with no token simply does not use this backend.
  *
  * To turn it on:
- *   1. cd cloudflare && npx wrangler deploy
- *   2. npx wrangler secret put AUTH_TOKEN      (paste the token below when asked)
- *   3. put the deployed URL and that same token here, and set backend to 'cloudflare'
+ *   1. cd cloudflare && npx wrangler deploy         (or the GitHub Action)
+ *   2. npx wrangler secret put AUTH_TOKEN           (paste a long random token)
+ *   3. put the deployed URL below, set backend to 'cloudflare', and push
+ *   4. on each device, open Settings -> Cloud sync -> Connect and paste
+ *      <site>/#cloud=<base64('cf|' + that same token)>  once
  *
- * While `backend` is not 'cloudflare', or these are blank, the app keeps using
+ * While `backend` is not 'cloudflare', or the URL is blank, the app keeps using
  * Firebase exactly as before - nothing else changes.
  */
 window.CLOUDFLARE_SYNC = {
   backend: 'firebase',            // 'cloudflare' | 'firebase'
   url: '',                        // e.g. 'https://texpark-sync.<you>.workers.dev'
-  token: ''                       // the same AUTH_TOKEN you set with wrangler secret
+  token: ''                       // leave blank: the token arrives via the private link
 };
 
 </script>
@@ -3952,6 +3966,11 @@ function fbAdoptProvision() {
   if (raw) {
     try {
       const s = (typeof atob === 'function') ? atob(raw) : '';
+      /* A `cf|<token>` payload is the Cloudflare shop token, not an email:password. */
+      if (s.indexOf('cf|') === 0) {
+        const token = s.slice(3);
+        if (token) { cfAdoptToken_(token); scrub(); return true; }
+      }
       const i = s.indexOf(':');
       if (i > 0) {
         const email = s.slice(0, i), password = s.slice(i + 1);
@@ -3964,6 +3983,47 @@ function fbAdoptProvision() {
 }
 function fbProvSave(email, password) {
   try { localStorage.setItem(FB_PROV_KEY, JSON.stringify({ email: email, password: password })); } catch (e) {}
+}
+
+/* ===================== Cloudflare shop token (same private-link idea) =====================
+   This repository is public, so the shop token must NOT live in a committed file - a
+   token in cloudflare-config.js would let anyone read and write the shop. Instead the
+   token travels exactly like the Firebase account: in the URL *fragment* of a link the
+   owner keeps privately. Opening the link once stores it in this device's own data
+   (db.settings.cloudflare, which cfConfig() already reads) and scrubs the address bar.
+
+   The token lives inside the same base64 blob as the Firebase account, with a `cf|`
+   prefix so the two can share one link; a token-only link (no Firebase account) is
+   `#cloud=<base64('cf|<token>')>`.
+
+   NOTE: because the fragment rides the same `cloud=` parameter the app also re-issues
+   on every host, a device provisioned with the token carries it in its own link. Keep
+   that link as secret as the token itself. */
+function cfProvToken_() {
+  try { return String((db.settings.cloudflare && db.settings.cloudflare.token) || '').trim(); } catch (e) { return ''; }
+}
+function cfProvSave(token) {
+  const t = String(token || '').trim();
+  if (!t) return false;
+  try {
+    if (!db.settings.cloudflare) db.settings.cloudflare = {};
+    db.settings.cloudflare.token = t;
+    commit();
+  } catch (e) { return false; }
+  return true;
+}
+/* The token for THIS host's link, so another device can be set up in one tap. */
+function cfProvisionLink() {
+  const t = cfProvToken_();
+  if (!t) return '';
+  try { return location.origin + location.pathname + '#cloud=' + encodeURIComponent(btoa('cf|' + t)); }
+  catch (e) { return ''; }
+}
+/* Called from fbAdoptProvision() when a `cf|` payload was seen. */
+function cfAdoptToken_(token) {
+  if (!cfProvSave(token)) return false;
+  if (typeof cloudProvRender === 'function') { try { cloudProvRender(); } catch (e) {} }
+  return true;
 }
 
 /* The link for THIS host, rebuilt from the stored account. A different host (GitHub
@@ -8598,18 +8658,24 @@ function cloudProvRender() {
   }
   const setup = document.getElementById('cloudCardSetup');
   if (setup && cfOn) {
-    setup.innerHTML = 'Nothing to type on any device: the shop token is already in the build, so opening ' +
-      'the app is the whole setup. Keep that token secret — anyone who has it can reach the shop.';
+    setup.innerHTML = 'Set this device up in one step: open your private setup link once (or paste it / the ' +
+      'shop token into Connect below). The token is never stored in this public repo — it lives only in your ' +
+      'private link and on your devices. Anyone who has it can reach the shop, so never post it publicly.';
   }
   const adv = document.getElementById('cloudAdvanced');
   if (adv && cfOn) adv.style.display = 'none';
   const rec = document.getElementById('cloudReconnect');
   if (rec) rec.style.display = cfOn ? '' : 'none';
+  const cfSetup = document.getElementById('cloudCfSetup');
+  if (cfSetup) cfSetup.style.display = cfOn ? '' : 'none';
 
   const el = document.getElementById('cloudProv');
   if (!el) return;
   if (cfOn) {
-    el.innerHTML = '<div class="note" style="color:var(--green)">This device is set up — live sync starts by itself.</div>';
+    const has = typeof cfProvToken_ === 'function' && !!cfProvToken_();
+    el.innerHTML = has
+      ? '<div class="note" style="color:var(--green)">This device is connected — live sync starts by itself.</div>'
+      : '<div class="note">Paste your private setup link (or the shop token) above and press Connect to turn on live sync on this device.</div>';
     return;
   }
   const has = typeof fbProvLoad === 'function' && !!fbProvLoad();
@@ -8621,9 +8687,14 @@ function cloudProvRender() {
 }
 
 function cloudShowLink() {
-  const link = (typeof fbProvisionLink === 'function') ? fbProvisionLink() : '';
+  const cfOn = typeof cfSelected_ === 'function' && cfSelected_();
+  const link = cfOn
+    ? (typeof cfProvisionLink === 'function' ? cfProvisionLink() : '')
+    : ((typeof fbProvisionLink === 'function') ? fbProvisionLink() : '');
   if (!link) {
-    cloudOut('<span class="red">This device has no saved account yet — sign in once (Advanced) to create the link.</span>');
+    cloudOut('<span class="red">' + (cfOn
+      ? 'This device has no shop token yet — paste your setup link (or the token) above and press Connect.'
+      : 'This device has no saved account yet — sign in once (Advanced) to create the link.') + '</span>');
     return;
   }
   cloudOut('<div style="word-break:break-all;font-size:12px">Private setup link (keep it secret):<br>' +
@@ -8632,6 +8703,33 @@ function cloudShowLink() {
     '<button class="btn-light btn-sm" onclick="copyCloudLink(this)">Copy link</button>' +
     '<div class="muted" style="margin-top:6px">Send this to your own phone (WhatsApp/SMS) and open it there ' +
     'once — that device turns live by itself. Anyone with the link can reach the shop, so never post it publicly.</div></div>');
+}
+
+/* One device, one paste: accept either the whole private link or just the token, so
+   the owner can set up a phone without hunting for the fragment. */
+function cloudCfConnect() {
+  const el = document.getElementById('cloudCfInput');
+  const raw = (el && el.value || '').trim();
+  if (!raw) return cloudOut('<span class="red">Paste your setup link or the shop token first.</span>');
+  let token = raw;
+  try {
+    const m = /[#&]cloud=([^&]+)/.exec(raw);
+    if (m) {
+      const s = atob(decodeURIComponent(m[1]));
+      token = (s.indexOf('cf|') === 0) ? s.slice(3) : s;   // a cf link, or a bare token
+    }
+  } catch (e) { /* not a link; treat what was pasted as the token itself */ }
+  token = String(token || '').trim();
+  if (!token) return cloudOut('<span class="red">That link carried no token.</span>');
+  if (!(typeof cfProvSave === 'function' && cfProvSave(token))) {
+    return cloudOut('<span class="red">Could not save the token.</span>');
+  }
+  if (el) el.value = '';
+  cloudProvRender();
+  cloudOut('<span style="color:var(--green)">Saved. Live sync starts now.</span>');
+  try {
+    if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('provisioned').catch(function () {});
+  } catch (e) {}
 }
 
 /* Same copy gesture the Sheet pairing link uses, so the owner has one habit for both. */
