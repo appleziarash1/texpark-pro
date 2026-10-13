@@ -1058,3 +1058,21 @@ How it is wired, and the rule that keeps it reversible:
 - **Cloudflare's edge 403s `Python-urllib`.** A scripted check must send a browser
   `User-Agent`, or it sees 403 while the app (a real browser) is fine. Rule this out
   before chasing a phantom auth bug.
+- **A future-stamped record must never become the cursor.** The pull cursor is "newest
+  `at` pulled". A record whose `at` is ahead of real time - another device with a wrong
+  clock, or a hand repair - would push the cursor past every later change and the device
+  would silently stop syncing until real time caught up. `cfPullDelta()` now clamps the
+  cursor to this device's own clock, so a poisoned cursor is also pulled back on the next
+  pull and the device heals itself. `test/cloudflare.test.js` pins it.
+- **`PHJF72` is the phone's web app, not the Android APK.** Device tags are minted once
+  (`PH`+4 chars on a mobile browser, `PC`+4 on desktop). All 52 memos carry `PHJF72`,
+  so the owner creates memos on the phone's browser/PWA, which syncs over the Worker.
+  The APK is a native app that syncs to Google Sheets only - it never writes to the
+  Worker, and its `syncUrl` is separate. Check which device a record's `device` names
+  before blaming a device that was never in the loop.
+- **The phone's web app can go quiet.** `PHJF72` last pushed at 04:03Z on 10/13; no
+  10/13 memo exists anywhere, so "my memo is not showing" was a *not-written-or-not-pushed
+  on the phone*, not a Worker/merge fault. When a day's memo is missing everywhere,
+  confirm whether the writing device pushed at all (its records' `at` on the Worker)
+  before hunting a sync bug.
+
