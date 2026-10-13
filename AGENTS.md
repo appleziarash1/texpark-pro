@@ -1012,6 +1012,15 @@ How it is wired, and the rule that keeps it reversible:
   `tokenMatches` trims both sides. With a newline the stored secret was `<token>\n`, so every
   correct token was rejected with 401 while the Worker looked perfectly healthy - that was the
   second bug here, and `logic.test.mjs` now covers both the newline and the whitespace cases.
+- **Zero-typing without a public token needs a gate.** A token baked into a public site's JS
+  is readable by anyone, so the app stays token-free and uses the private setup link by
+  default. The one safe way to drop the link is to put the Cloudflare Pages site behind
+  **Cloudflare Access** (free up to 50 users; the JS is then not served to the public) and
+  bake the token into *that* build. The bake is a separate, opt-in workflow step gated on the
+  repo variable `CLOUDFLARE_BAKE_TOKEN == 'true'`; it edits only the built `_site` copy, so the
+  committed file and the public GitHub Pages build never carry the token. GitHub Pages cannot
+  be put behind Access, so it must stay link-based. Enable Access first, then flip the
+  variable - the order is the whole safety argument. See `docs/CLOUDFLARE_ACCESS_BANGLA.txt`.
 - **CORS is required and easy to miss.** The app is served from a different origin than the
   Worker (Pages -> Workers), so the Worker answers `OPTIONS` and sends
   `access-control-allow-origin: *`. Without it every fetch fails with "Failed to fetch" while

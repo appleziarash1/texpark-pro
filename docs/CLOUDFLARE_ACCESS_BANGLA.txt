@@ -1,0 +1,89 @@
+# Texpark Pro — Cloudflare Access diye dorja (data safe + zero typing)
+
+Ei guide ta diye **Cloudflare Pages** site-er samne ekta **login dorja** bosano hoy,
+jate **token chara** o device khullei live sync chalu hoy — kintu **data safe** thake.
+
+Mone rakhun: token ta jekhane-i bake kora hok, seta **public site-er JS file-e** thake.
+Tai **dorja (Access) age, bake pore** — ei krom ta ulta korle token public hoye jabe.
+
+---
+
+## Ei dorja ki kore
+
+- Cloudflare Access ekta **gatekeeper**: site khulley age ekbar **email one-time PIN**
+  (ba Google) diye login chaibe. Login na korle **site-er JS file-i download hoy na**,
+  tai token keu churi korte parbe na.
+- Ekbar login korle oi device **session** mone rakhe (koyek mash), tarpor bar bar
+  login chaibe na — tai **zero typing** thake.
+- Free plan-e **50 user** porjonto — apnar poribar/staff-er jonno jotheshto.
+
+## Kothay Access cholbe
+
+- **Cloudflare Pages** (`texpark-pro.pages.dev`) — ek button-e Access chalu hoy. **Eta-i
+  amra bake korbo.**
+- **GitHub Pages** (`appleziarash1.github.io/texpark-pro`) — ekhane Access chalu kora
+  jay na (GitHub-er control-e). Tai GitHub Pages **public-i** thakbe, ar sekhane token
+  **kokhono bake korbo na** (oikhane private link diye device setup hobe).
+
+Tai protiti device-er jonno: **Cloudflare Pages link ta khulun** (dorja-r pichone), ar
+sekhan theke chole jabe. GitHub Pages link ta rakhun backup hisebe.
+
+---
+
+## Step 1 — Zero Trust (Access) chalu korun
+1. https://one.dash.cloudflare.com/ e jaan.
+2. Prothom bar hole team name dite hobe (e.g. `texpark`) — ei name ta URL-e thake.
+3. Plan-e **Free** select korun.
+
+## Step 2 — Pages project-e Access bosan
+1. https://dash.cloudflare.com/ → **Workers & Pages** → **texpark-pro** project.
+2. **Settings → General** → **Access policy** → **Enable access policy**.
+3. **Manage policies** chepun → Access tab khulbe, sekhane ekta application toiri hobe.
+4. Application ta Edit korun:
+   - **Overview**: domain-e `texpark-pro.pages.dev` ache kina dekhen.
+   - **Policies**: ekta policy thakbe. Tar **Include** rule e **Emails** select kore
+     apnar email(gulo) add korun (e.g. `apnar@email.com`, staff-er email).
+   - **Authentication**: identity provider hisebe **One-time PIN** (email OTP) thakle
+     shobcheye shohoj — alada kichu setup lage na.
+5. **Save**.
+
+> Ekhon theke `texpark-pro.pages.dev` khulle email OTP chaibe. Nijer email-e PIN eshe
+> **ekbar** login korlei device ta dhuke jabe.
+
+## Step 3 — Token bake chalu korun (ebar, dorja chalu howar PORE)
+1. GitHub repo → **Settings → Secrets and variables → Actions** → tab **Variables**.
+2. **New repository variable**: name `CLOUDFLARE_BAKE_TOKEN`, value `true`.
+   (Ei variable na thakle bake hobe na — eta safety switch.)
+3. **Actions → "Deploy to Cloudflare Pages" → Run workflow** chepun.
+
+Ekhon Cloudflare Pages build-e token bake hoye jabe (`_site` copy-te, committed file-e
+na), ar device-gulo **kono setup link chara-i** live sync-e chole jabe.
+
+## Step 4 — Verify
+1. `texpark-pro.pages.dev` khulun → email OTP → login.
+2. Badge dekhabe **"☁ Cloudflare live"**, ar **Settings → Cloud sync** e kichu paste
+   korte hobe na.
+3. Duita device-ei eivabe khulun → ek device-e likhun, onnotay sathe-sathe ashbe.
+
+---
+
+## Ki bhabe safe thake
+
+- **Cloudflare Pages** → dorja-r pichone → token public noy. ✅
+- **GitHub Pages** → public, kintu token nai (private link diye setup). ✅
+- **Worker (data server)** → token chara 401, ar `workers.dev` URL-tao Access diye
+  dhaka jay (optional, niche dekhen). ✅
+- Data Durable Object-e **AES-256 encrypt** (at rest), transfer **TLS**. ✅
+
+## Optional — Worker URL-tao Access diye dhakun
+`texpark-sync.apple-ziarash1.workers.dev` ta jodi keu jene jay, tara token chhara kichu
+korte parbe na (401). Tarpor-o aro shakto korte chan? tahole:
+**Workers & Pages → texpark-sync → Settings → Domains & Routes → workers.dev → Enable
+Cloudflare Access**. Eta korle site-er Worker call gulo-o ek Access session-e cholbe —
+kintu takhon device-er session ta thik rakhte eki policy-te email add thakte hobe.
+
+## Kichu kharap hole
+- Site-e `403` / login loop → Access policy-te apnar email ache kina dekhen.
+- Badge "Cloud degraded → Sheet" → token bake hoyeche kina (`vars.CLOUDFLARE_BAKE_TOKEN`)
+  ar `CLOUDFLARE_SYNC_TOKEN` set ache kina dekhen.
+- Abar Firebase-e firte chan? `backend: 'firebase'` — purono path hubohu pabe.

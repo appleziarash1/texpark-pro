@@ -41,6 +41,35 @@ jobs:
           rm -rf _site && mkdir _site && unzip -q texpark-hosting.zip -d _site
           test -f _site/index.html && test -f _site/js/app.js
 
+      # OPT-IN: bake the shop token into THIS deployment, so devices need no setup link
+      # at all. This is only safe when the site is behind Cloudflare Access - the gate
+      # stops the public from reading the JS (and thus the token). It is OFF unless the
+      # repo variable CLOUDFLARE_BAKE_TOKEN is 'true'. Even then it edits only the built
+      # _site copy: the committed file and the public GitHub Pages build stay token-free.
+      # Enable Access FIRST, then flip this on.
+      - name: Bake the shop token (only if Access protects this site)
+        if: steps.cf.outputs.ready == 'true' && vars.CLOUDFLARE_BAKE_TOKEN == 'true'
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_SYNC_TOKEN }}
+        run: |
+          test -n "$CF_TOKEN" || { echo "::error::CLOUDFLARE_BAKE_TOKEN is on but CLOUDFLARE_SYNC_TOKEN is empty"; exit 1; }
+          python3 - "$CF_TOKEN" <<'PY'
+          import io, sys
+          tok = sys.argv[1]
+          p = '_site/js/cloudflare-config.js'
+          s = io.open(p, encoding='utf-8').read()
+          out, n = [], 0
+          for line in s.splitlines(True):
+              if line.strip().startswith('token:') and n == 0:
+                  out.append("  token: " + repr(tok) + "   // baked at deploy time (Access-protected build)\n")
+                  n += 1
+              else:
+                  out.append(line)
+          assert n == 1, 'could not find the token line'
+          io.open(p, 'w', encoding='utf-8').write(''.join(out))
+          print('baked the shop token into the Cloudflare Pages build only')
+          PY
+
       # Run Cloudflare's own CLI directly, so the token is only ever given to
       # wrangler - not to a third-party action's code.
       - name: Publish to Cloudflare Pages
