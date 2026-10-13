@@ -21,7 +21,7 @@
  * Firebase exactly as before - nothing else changes.
  */
 window.CLOUDFLARE_SYNC = {
-  backend: 'firebase',            // 'cloudflare' | 'firebase'
-  url: '',                        // e.g. 'https://texpark-sync.<you>.workers.dev'
+  backend: 'cloudflare',            // 'cloudflare' | 'firebase'
+  url: 'https://texpark-sync.apple-ziarash1.workers.dev',                        // e.g. 'https://texpark-sync.<you>.workers.dev'
   token: ''                       // leave blank: the token arrives via the private link
 };
