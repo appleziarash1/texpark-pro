@@ -71,7 +71,15 @@ function money(n) {
   const v = round2(n);
   return '\u09F3' + v.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
-function today() { return new Date().toISOString().slice(0, 10); }
+/* The date as the shop sees it, in the device's own timezone. toISOString() is UTC,
+   so before 6am in Bangladesh it answered yesterday - a memo written at 1am was dated
+   the previous day and "Today's sales" read zero. */
+function ymd_(d) {
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+function today() { return ymd_(new Date()); }
 function esc(s) {
   return String(s ?? '').replace(/[&<>'"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[m]));
 }

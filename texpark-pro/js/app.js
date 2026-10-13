@@ -561,7 +561,7 @@ function renderDashboard() {
   const days = [];
   for (let i = 13; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
-    days.push(d.toISOString().slice(0, 10));
+    days.push(ymd_(d));
   }
   const per = days.map(d => {
     let s = 0, pr = 0;
@@ -3482,7 +3482,7 @@ function maybeDailyCloudBackup() {
 /* ===================== date range shortcuts ===================== */
 function setRange(fromId, toId, mode) {
   const now = new Date();
-  const iso = d => d.toISOString().slice(0, 10);
+  const iso = d => ymd_(d);
   if (mode === 'today') {
     document.getElementById(fromId).value = iso(now);
     document.getElementById(toId).value = iso(now);

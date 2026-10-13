@@ -1490,7 +1490,15 @@ function money(n) {
   const v = round2(n);
   return '\u09F3' + v.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
-function today() { return new Date().toISOString().slice(0, 10); }
+/* The date as the shop sees it, in the device's own timezone. toISOString() is UTC,
+   so before 6am in Bangladesh it answered yesterday - a memo written at 1am was dated
+   the previous day and "Today's sales" read zero. */
+function ymd_(d) {
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+function today() { return ymd_(new Date()); }
 function esc(s) {
   return String(s ?? '').replace(/[&<>'"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[m]));
 }
@@ -6194,7 +6202,7 @@ function renderDashboard() {
   const days = [];
   for (let i = 13; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
-    days.push(d.toISOString().slice(0, 10));
+    days.push(ymd_(d));
   }
   const per = days.map(d => {
     let s = 0, pr = 0;
@@ -9115,7 +9123,7 @@ function maybeDailyCloudBackup() {
 /* ===================== date range shortcuts ===================== */
 function setRange(fromId, toId, mode) {
   const now = new Date();
-  const iso = d => d.toISOString().slice(0, 10);
+  const iso = d => ymd_(d);
   if (mode === 'today') {
     document.getElementById(fromId).value = iso(now);
     document.getElementById(toId).value = iso(now);
