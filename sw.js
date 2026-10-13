@@ -16,6 +16,8 @@ const ASSETS = [
   './js/voice.js',
   './js/sync.js',
   './js/firebase-config.js',
+  './js/cloudflare-config.js',
+  './js/cloudcf.js',
   './js/cloud.js',
   './js/memoexport.js',
   './js/courier.js',

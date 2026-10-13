@@ -983,3 +983,40 @@ After the change `js/courier.js`, `index.html`, `js/app.js`, `js/db.js`, `sw.js`
 **byte-identical to `c30e14b`**, and the built `index.html`/`texpark-pro.html` are identical too.
 `test/courier.test.js` keeps only its 71 pre-area checks; the full suite is green and `ci/check-site.py`
 and `ci/check-zip.py` pass. No `APP_VERSION` bump, so the APK and its signature are untouched.
+
+
+## Live sync now runs on Cloudflare, not Firestore (2026-10-13)
+
+The owner wanted the business data off Firebase and Sheets, and truly instant. Live sync is
+now a **Cloudflare Worker + one Durable Object per shop** (`cloudflare/`), holding each shop's
+records in the object's SQLite and fanning every write out over a WebSocket. A change typed on
+one device reaches the others in **~0.1 s** (measured 106-107 ms in a real two-browser test),
+not the 1-2 s of the old poll.
+
+How it is wired, and the rule that keeps it reversible:
+
+- **One interface, two backends.** `js/cloud.js` still owns the merge, the cursor and the
+  write queue; every Firebase function now first asks `cfOn_()` (in `js/cloudcf.js`) and, when
+  the Cloudflare backend is on, calls its `cf*` twin instead. Nothing else in the app changed.
+- **`js/cloudflare-config.js`** is the whole switch: `window.CLOUDFLARE_SYNC = {backend, url,
+  token}`. It ships with `backend:'firebase'` and blanks, so **the deployed app is unchanged
+  until the owner sets it** - Firestore stays the fallback behind the same interface. Baked
+  values mean no device ever types anything; the token is the shop password, so keep it secret.
+- **CORS is required and easy to miss.** The app is served from a different origin than the
+  Worker (Pages -> Workers), so the Worker answers `OPTIONS` and sends
+  `access-control-allow-origin: *`. Without it every fetch fails with "Failed to fetch" while
+  the badge silently degrades - that was the first bug here. The token, not the origin, guards
+  the shop.
+- **The WebSocket uses the hibernation API** (`ctx.acceptWebSocket(server)`, never a bare
+  `accept()` first - that throws "already accepted"). The Worker allows the token-in-query form
+  on loopback http for local dev and requires https elsewhere.
+- **"Newer wins" lives in one pure function** (`decideApply`), the delta window in another
+  (`selectDelta`); the Durable Object calls them, and `cloudflare/test/logic.test.mjs` tests
+  them without a Worker. `cloudflare/test/e2e.test.js` is the on-the-wire check (run a
+  `wrangler dev` first, or point it at the deployed URL).
+- **Deploy**: `.github/workflows/cloudflare-sync.yml` deploys `cloudflare/` when the secrets
+  `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_SYNC_TOKEN` exist, pushing the
+  token as a Worker secret. `docs/CLOUDFLARE_SYNC_BANGLA.txt` is the owner-facing guide.
+- **Tests**: `test/cloudflare.test.js` (28 checks) drives the real `cloud.js`+`cloudcf.js`
+  against a stand-in WebSocket/fetch; it is in `npm test`, and `verify.yml` also runs the
+  Worker's `logic.test.mjs`.

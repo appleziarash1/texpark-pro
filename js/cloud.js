@@ -1,17 +1,25 @@
-/* Texpark Pro — live multi-device sync over Firestore (Spark, free plan) with the
-   Google Sheet as fallback.
+/* Texpark Pro — live multi-device sync, with the Google Sheet as fallback.
+
+   Two interchangeable backends sit behind one interface:
+     - Cloudflare Worker + Durable Object (js/cloudcf.js), selected by
+       window.CLOUDFLARE_SYNC.backend = 'cloudflare'. One Durable Object per shop holds
+       the records and pushes each change over a WebSocket, so the data lives in the
+       owner's own Cloudflare account, not Firebase.
+     - Firebase Firestore (this file's own REST calls), the previous backend, kept
+       whole as the fallback and selected by backend = 'firebase'.
+   Everything above the transport - merge, "newer wins", the cursor, the outbox, the
+   badges - is shared, so the two backends cannot drift.
 
    The Google Sheet sync in js/sync.js ships a whole JSON snapshot per device and the
    newest snapshot wins as a set. That is fine and it stays, but it is not live: a memo
    typed on the phone reaches the PC only after the next snapshot round. This layer
-   adds per-record sync over Firestore, so one changed memo is one document write and
-   one document read - not the whole book - and it arrives in seconds.
+   adds per-record sync, so one changed memo is one write and one read - not the whole
+   book - and it arrives in well under a second.
 
-   It is additive and reversible. With no Firebase keys configured nothing here runs
-   and the app behaves exactly as before. When Firestore is down, over quota, or
-   unreachable, every write also goes to the Sheet's Records tab through the SAME
-   outbox in js/sync.js, and a backoff timer tries Firestore again. See
-   docs/FIRESTORE_PLAN.md for the full design.
+   It is additive and reversible. With no backend configured nothing here runs and the
+   app behaves exactly as before. When the cloud is down, over quota, or unreachable,
+   every write also goes to the Sheet's Records tab through the SAME outbox in
+   js/sync.js, and a backoff timer tries the cloud again.
 
    No Firebase SDK is loaded - the app has no build step and must keep working from a
    USB stick - so Auth and Firestore are spoken over their REST APIs directly. */
@@ -36,7 +44,15 @@ function fbConfig() {
     projectId: String(saved.projectId || baked.projectId || '').trim()
   };
 }
-function cloudConfigured() { const c = fbConfig(); return !!(c.apiKey && c.projectId); }
+function cloudConfigured() {
+  if (cfOn_()) return true;
+  const c = fbConfig(); return !!(c.apiKey && c.projectId);
+}
+
+/* True when this build is running on the Cloudflare backend (js/cloudcf.js). The
+   Firestore path below stays fully intact as the fallback, so switching the build
+   back to `backend:'firebase'` restores it exactly. */
+function cfOn_() { return typeof cfBackendOn === 'function' && cfBackendOn(); }
 
 function fbDocsUrl() {
   const c = fbConfig();
@@ -416,6 +432,7 @@ function fsRecordFields_(key, rec, at, deleted, device) {
 /* ===================== Firestore writes ===================== */
 /* One upsert. Returns {ok:true} or throws a message the state machine can classify. */
 async function fbWriteRecord(key, rec, opts) {
+  if (cfOn_()) return cfWriteRecord(key, rec, opts);
   const auth = await fbEnsureAuth();
   if (!auth) throw new Error('NOT_SIGNED_IN');
   const o = opts || {};
@@ -432,6 +449,7 @@ async function fbWriteRecord(key, rec, opts) {
 /* Many records in one request, to stay inside the free write quota during a
    migration. Chunked so a book cannot exceed the request size limit. */
 async function fbWriteBatch(pairs) {
+  if (cfOn_()) return cfWriteBatch(pairs);
   const auth = await fbEnsureAuth();
   if (!auth) throw new Error('NOT_SIGNED_IN');
   const writes = pairs.map(p => ({
@@ -460,6 +478,11 @@ async function fbErrorText(res) {
 
 /* ===================== Firestore reads (delta only) ===================== */
 function fbCursor() { try { return localStorage.getItem(FB_CURSOR_KEY) || ''; } catch (e) { return ''; } }
+/* The cursor is a plain "newest at pulled" value, independent of which backend wrote
+   it, so both transports share it: switching backends resumes as a delta, not a full
+   re-read. */
+function cloudCursor() { return cfOn_() ? cfCursor() : fbCursor(); }
+function cloudCursorSet(at) { if (cfOn_()) cfCursorSet(at); else fbCursorSet(at); }
 function fbCursorSet(at) { try { localStorage.setItem(FB_CURSOR_KEY, String(at || '')); } catch (e) {} }
 
 /* Every record whose `at` is newer than the cursor, in one runQuery. This is the
@@ -467,6 +490,7 @@ function fbCursorSet(at) { try { localStorage.setItem(FB_CURSOR_KEY, String(at |
    never the whole collection, and the field is range-filtered so Firestore uses its
    automatic single-field index (no composite index to create by hand). */
 async function fbPullDelta() {
+  if (cfOn_()) return cfPullDelta();
   const auth = await fbEnsureAuth();
   if (!auth) throw new Error('NOT_SIGNED_IN');
   const cursor = fbCursor();
@@ -548,7 +572,9 @@ function cloudStatusRender() {
     return;
   }
   const st = cloudState();
-  if (st === 'ONLINE_FIRESTORE') { el.className = 'sync-badge sync-green'; el.textContent = '☁ Firestore live'; }
+  const cf = typeof cfOn_ === 'function' && cfOn_();
+  const liveName = cf ? 'Cloudflare' : 'Firestore';
+  if (st === 'ONLINE_FIRESTORE') { el.className = 'sync-badge sync-green'; el.textContent = '☁ ' + liveName + ' live'; }
   else if (st === 'DEGRADED_SHEET') { el.className = 'sync-badge sync-amber'; el.textContent = 'Cloud degraded → Sheet'; }
   else { el.className = 'sync-badge sync-red'; el.textContent = 'Cloud offline'; }
 }
@@ -667,12 +693,14 @@ function fbRealtimeShouldRun() {
    cadence: calm when push is doing the work, fast while the stream is down and the
    poll is the only path left. That keeps "always live" without paying for a 2 s poll
    on a healthy device all day. */
-function fbRealtimeLive() { return !!fbRealtimeUnsub; }
+function fbRealtimeLive() { return cfOn_() ? cfRealtimeLive() : !!fbRealtimeUnsub; }
 function fbRealtimeRetryClear() {
+  if (cfOn_()) return cfRealtimeRetryClear();
   if (fbRealtimeRetryTimer) { try { clearTimeout(fbRealtimeRetryTimer); } catch (e) {} fbRealtimeRetryTimer = null; }
   fbRealtimeRetryMs = 1000;
 }
 function fbRealtimeArmRetry() {
+  if (cfOn_()) return cfRealtimeArmRetry();
   if (fbRealtimeRetryTimer || fbRealtimeUnsub) return;
   if (!fbRealtimeShouldRun()) return;
   var wait = fbRealtimeRetryMs;
@@ -683,17 +711,20 @@ function fbRealtimeArmRetry() {
   }, wait);
 }
 function fbRealtimeStop() {
+  if (cfOn_()) return cfRealtimeStop();
   fbRealtimeStarting = false;
   fbRealtimeRetryClear();
   if (fbRealtimeUnsub) { try { fbRealtimeUnsub(); } catch (e) {} fbRealtimeUnsub = null; }
 }
 function fbRealtimeOnChange() {
+  if (cfOn_()) return cfRealtimeOnChange();
   if (fbRealtimeMergeQueued) return;
   if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) return;
   fbRealtimeMergeQueued = true;
   cloudPullMerge().catch(function () {}).then(function () { fbRealtimeMergeQueued = false; });
 }
 async function fbRealtimeStart() {
+  if (cfOn_()) return cfRealtimeStart();
   if (fbRealtimeUnsub || fbRealtimeStarting) return;   // already listening, or starting
   if (!fbRealtimeShouldRun()) return;
   fbRealtimeStarting = true;
@@ -736,7 +767,7 @@ async function cloudPullMerge() {
   if (!cloudConfigured()) return { merged: false, reason: 'not configured' };
   try {
     const delta = await fbPullDelta();
-    if (!delta.records.length) { fbCursorSet(delta.newest); return { merged: false, reason: 'no change' }; }
+    if (!delta.records.length) { cloudCursorSet(delta.newest); return { merged: false, reason: 'no change' }; }
     const incoming = cloudMergeDelta(delta);
     snapshot();
     mergeCloudInto_(incoming);
@@ -744,7 +775,7 @@ async function cloudPullMerge() {
     let saved = false;
     try { saved = commit(); } finally { cloudMuted = false; }
     if (!saved) return { merged: false, reason: 'save failed' };
-    fbCursorSet(delta.newest);
+    cloudCursorSet(delta.newest);
     await cloudPullCatchupSettings();
     cloudBackoffStep = 0;
     cloudStateSet('ONLINE_FIRESTORE', '', 0);
@@ -788,7 +819,9 @@ var cloudRetryTimer = null;
 async function cloudAutoSyncNew(reason) {
   if (!cloudConfigured()) return { skipped: 'not configured' };
   if (typeof session === 'undefined' || !session) return { skipped: 'signed out' };
-  if (!fbSignedIn()) return { skipped: 'firebase not signed in' };
+  /* The Cloudflare backend authenticates with the shop token, not a Firebase session,
+     so the sign-in guard only applies to the Firestore path. */
+  if (!cfOn_() && !fbSignedIn()) return { skipped: 'firebase not signed in' };
   if (cloudBusy) return { skipped: 'busy' };
   if (CLOUD_STATE.retryAt && Date.now() < CLOUD_STATE.retryAt) {
     cloudArmRetry();
@@ -817,7 +850,7 @@ function cloudArmRetry() {
    record id, so re-running or resuming is safe. */
 async function cloudMigrate(quiet) {
   if (!cloudConfigured()) { if (!quiet) alert('Set the Firebase keys first.'); return false; }
-  if (!fbSignedIn()) { if (!quiet) alert('Sign in to Firebase sync first.'); return false; }
+  if (!cfOn_() && !fbSignedIn()) { if (!quiet) alert('Sign in to Firebase sync first.'); return false; }
   try {
     if (typeof syncFlush === 'function') { try { syncFlush(); } catch (e) {} }
     const pairs = [];
@@ -856,7 +889,9 @@ function cloudBoot() {
      device has no live session yet. That is the whole of the "nothing to type" setup. */
   let adopted = false;
   try { adopted = fbAdoptProvision(); } catch (e) {}
-  if (!fbSignedIn()) {
+  /* On the Cloudflare backend the shop token is the auth, so a Firebase session is
+     neither needed nor created; the Firestore sign-in path stays for `firebase`. */
+  if (!cfOn_() && !fbSignedIn()) {
     if (adopted || fbProvLoad()) fbSignInDefault().catch(function () {});
     return;
   }

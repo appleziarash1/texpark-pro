@@ -1,0 +1,56 @@
+name: Deploy sync backend (Cloudflare Worker)
+
+# The Worker + Durable Object that replaces Firebase for live sync (see cloudflare/).
+# It deploys only when that folder changes, and only when the secrets exist, so a repo
+# without them stays green.
+#
+#   CLOUDFLARE_API_TOKEN    - a token with the "Workers Scripts: Edit" permission
+#   CLOUDFLARE_ACCOUNT_ID   - the account id from the Cloudflare dashboard
+#   CLOUDFLARE_SYNC_TOKEN   - the shop token; the SAME value goes in
+#                             texpark-pro/js/cloudflare-config.js as `token`
+#
+# The token is pushed as a Worker SECRET (never into the code), so it cannot be read
+# out of the deployed script. See docs/CLOUDFLARE_SYNC.md for the click-by-click steps.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare/**'
+      - '.github/workflows/cloudflare-sync.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Are the Cloudflare secrets set?
+        id: cf
+        run: echo "ready=${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' && secrets.CLOUDFLARE_SYNC_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: The backend's decision logic still holds
+        if: steps.cf.outputs.ready == 'true'
+        working-directory: cloudflare
+        run: node test/logic.test.mjs
+
+      - name: Publish the token as a Worker secret
+        if: steps.cf.outputs.ready == 'true'
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: echo "${{ secrets.CLOUDFLARE_SYNC_TOKEN }}" | npx --yes wrangler@4 secret put AUTH_TOKEN
+
+      - name: Deploy the Worker + Durable Object
+        if: steps.cf.outputs.ready == 'true'
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 deploy

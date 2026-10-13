@@ -1,0 +1,15 @@
+{
+  "name": "texpark-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Texpark Pro sync backend: Cloudflare Worker + Durable Object",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node test/logic.test.mjs",
+    "test:e2e": "node test/e2e.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

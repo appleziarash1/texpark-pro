@@ -31,6 +31,10 @@ jobs:
         working-directory: texpark-pro
         run: npm test
 
+      - name: The sync backend's decision logic (no Worker needed)
+        working-directory: cloudflare
+        run: node test/logic.test.mjs
+
       - name: The app the repo serves is the app the source builds
         run: |
           node texpark-pro/build.js

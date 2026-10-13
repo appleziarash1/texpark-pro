@@ -1087,15 +1087,15 @@ tbody tr:hover td{background:#f7fafd}
         </div>
 
         <div class="card">
-          <h2>Cloud sync (Firestore) <span id="cloudStatus" class="sync-badge sync-blue">Cloud off (Sheet only)</span></h2>
-          <div class="note">
+          <h2><span id="cloudCardTitle">Cloud sync</span> <span id="cloudStatus" class="sync-badge sync-blue">Cloud off (Sheet only)</span></h2>
+          <div class="note" id="cloudCardNote">
             The Google Sheet above ships the whole book and is not instant. This adds
             <b>live</b> sync: one changed memo is one small update, so a sale typed on the phone shows
             on the PC in seconds. It uses Firebase's <b>free</b> plan — no card, no server. If the
             cloud is unreachable, or over quota, the app keeps saving and falls back to the Sheet by
             itself, then recovers when the cloud comes back.
           </div>
-          <div class="note" style="margin-top:6px">
+          <div class="note" style="margin-top:6px" id="cloudCardSetup">
             The cloud is already wired in — there is nothing to type. Open the owner's private
             setup link once on each device and it signs in by itself; after that the devices sync
             on their own. The link is under <b>Advanced → Get private setup link</b>.
@@ -1103,9 +1103,10 @@ tbody tr:hover td{background:#f7fafd}
           <div class="row" style="margin-top:11px">
             <button class="btn-light" onclick="testFirebase()">Test cloud</button>
             <button class="btn-light" onclick="migrateToCloud()">Send all data to cloud</button>
+            <button class="btn-light" id="cloudReconnect" style="display:none" onclick="cloudReconnectNow()">Reconnect live sync</button>
           </div>
           <div id="cloudProv" style="margin-top:11px"></div>
-          <details style="margin-top:12px">
+          <details style="margin-top:12px" id="cloudAdvanced">
             <summary class="muted" style="cursor:pointer">Advanced</summary>
             <div class="row" style="margin-top:9px">
               <button class="btn-light" onclick="cloudShowLink()">Get private setup link</button>
@@ -3563,20 +3564,269 @@ window.FIREBASE_CONFIG = {
 </script>
 <script>
 /* bundle 4 */
-/* Texpark Pro — live multi-device sync over Firestore (Spark, free plan) with the
-   Google Sheet as fallback.
+/* Texpark Pro - Cloudflare sync endpoint, baked into the build.
+ *
+ * This is the replacement backend for Firebase Firestore. It is a Cloudflare Worker
+ * plus one Durable Object per shop (see /cloudflare). The URL and the shop token are
+ * public build values: the token is the ONLY thing guarding the shop, so treat it like
+ * the shop password. It is baked here so no device ever types anything - opening the
+ * site is the whole setup.
+ *
+ * To turn it on:
+ *   1. cd cloudflare && npx wrangler deploy
+ *   2. npx wrangler secret put AUTH_TOKEN      (paste the token below when asked)
+ *   3. put the deployed URL and that same token here, and set backend to 'cloudflare'
+ *
+ * While `backend` is not 'cloudflare', or these are blank, the app keeps using
+ * Firebase exactly as before - nothing else changes.
+ */
+window.CLOUDFLARE_SYNC = {
+  backend: 'firebase',            // 'cloudflare' | 'firebase'
+  url: '',                        // e.g. 'https://texpark-sync.<you>.workers.dev'
+  token: ''                       // the same AUTH_TOKEN you set with wrangler secret
+};
+
+</script>
+<script>
+/* bundle 5 */
+/* Texpark Pro - Cloudflare sync transport (client side).
+ *
+ * The app's sync logic (merge, cursor, outbox, badges) lives in js/cloud.js and does
+ * not care where records are stored. This file is the storage half: the same handful
+ * of primitives cloud.js used to call directly on Firestore, implemented against the
+ * Cloudflare Worker + Durable Object in /cloudflare.
+ *
+ *   cfBackendOn()   is this the selected backend?
+ *   cfPullDelta()   every record newer than the cursor          (GET  /records)
+ *   cfWriteBatch()  send many records in one request             (POST /records)
+ *   cfRealtime*()   the live stream, so a change lands in ~0.1s   (WebSocket /live)
+ *
+ * Records keep the exact shape cloud.js already speaks - {key, id, at, deleted,
+ * device, data} - so the merge and "newer wins" rules are untouched and there is no
+ * second copy of that logic to drift.
+ *
+ * Auth is one shop token, sent as `Authorization: Bearer` on requests and as a query
+ * parameter on the WebSocket (a browser cannot set a header on one). The token is a
+ * build value, like the old Firebase apiKey: it names the shop, it does not grant
+ * access to anything else. */
+
+const CF_STATE_KEY = 'texpark_pro_cloudflare_state';   // {state, reason, retryAt}
+
+function cfConfig() {
+  const c = (typeof window !== 'undefined' && window.CLOUDFLARE_SYNC) || {};
+  const saved = (db && db.settings && db.settings.cloudflare) || {};
+  return {
+    url: String(saved.url || c.url || '').trim().replace(/\/+$/, ''),
+    token: String(saved.token || c.token || '').trim()
+  };
+}
+
+/* Which transport this device uses. Defaults to Firestore so an existing install is
+   not switched by surprise; the build turns it on by setting backend:'cloudflare'. */
+function cfSelected_() {
+  const c = (typeof window !== 'undefined' && window.CLOUDFLARE_SYNC) || {};
+  return String(c.backend || 'firebase') === 'cloudflare';
+}
+
+function cfBackendOn() { const c = cfConfig(); return cfSelected_() && !!(c.url && c.token); }
+
+/* Records live under one shop, like the old shops/{uid}. With one token there is one
+   shop, so the name is a constant - the object is created on first use. */
+const CF_SHOP = 'shop';
+const CF_CURSOR_KEY = 'texpark_pro_cloudflare_cursor';
+
+function cfCursor() { try { return localStorage.getItem(CF_CURSOR_KEY) || ''; } catch (e) { return ''; } }
+function cfCursorSet(at) { try { localStorage.setItem(CF_CURSOR_KEY, String(at || '')); } catch (e) {} }
+
+function cfHeaders_() {
+  const c = cfConfig();
+  return { 'Authorization': 'Bearer ' + c.token, 'Content-Type': 'application/json' };
+}
+
+/* The records array out of a response body, tolerant of a transient proxy page. */
+function cfRecords_(body) { return (body && Array.isArray(body.records)) ? body.records : []; }
+
+/* Every record whose `at` is newer than the cursor. Same delta contract as before, so
+   the free plan stays free and the merge is unchanged. */
+async function cfPullDelta() {
+  const c = cfConfig();
+  const cursor = cfCursor();
+  const res = await fetch(c.url + '/records?since=' + encodeURIComponent(cursor),
+    { headers: cfHeaders_() });
+  if (!res.ok) throw new Error(await cfErrorText_(res));
+  const body = await res.json();
+  const records = cfRecords_(body).map(r => ({
+    key: r.key,
+    rec: r.data,
+    at: r.at,
+    deleted: !!r.deleted
+  }));
+  let newest = cursor;
+  records.forEach(r => { if (String(r.at) > String(newest)) newest = r.at; });
+  return { records: records, newest: newest };
+}
+
+/* Many records in one request - used by the first migration and by settings pushes. */
+async function cfWriteBatch(pairs) {
+  const c = cfConfig();
+  const records = (pairs || []).map(p => ({
+    key: p.key,
+    id: (p.rec && p.rec.id) != null ? p.rec.id : '',
+    at: (p.rec && p.rec.at) || new Date().toISOString(),
+    deleted: !!p.deleted,
+    device: (typeof deviceTag === 'function' ? deviceTag() : ''),
+    data: p.rec || { id: p.rec && p.rec.id }
+  }));
+  if (!records.length) return true;
+  const res = await fetch(c.url + '/records',
+    { method: 'POST', headers: cfHeaders_(), body: JSON.stringify({ records: records }) });
+  if (!res.ok) throw new Error(await cfErrorText_(res));
+  return true;
+}
+
+/* One record. cloudSendJob() calls this with {key, record, at, deleted}; the batch
+   form is the same write, so both paths share one implementation. */
+async function cfWriteRecord(key, rec, opts) {
+  const o = opts || {};
+  const at = o.at || (rec && rec.at) || new Date().toISOString();
+  return cfWriteBatch([{ key: key, rec: Object.assign({}, rec, { at: at }), deleted: !!o.deleted }]);
+}
+
+async function cfErrorText_(res) {
+  let t = '';
+  try { t = (await res.text()).slice(0, 200); } catch (e) {}
+  if (res.status === 401) return 'cloudflare unauthorized (token mismatch)';
+  if (res.status === 503) return 'cloudflare not configured (AUTH_TOKEN not set)';
+  return 'cloudflare HTTP ' + res.status + (t ? ': ' + t : '');
+}
+
+/* ===================== the live stream =====================
+   A WebSocket from the Worker: the Durable Object pushes {type:'change',records:[...]}
+   the instant a write lands, so there is no polling at all on a healthy device. On any
+   change it calls the SAME cloudPullMerge() the rest of the app uses, so there is one
+   definition of "newer wins". The stream reconnects with bounded backoff, and the
+   adaptive poll stays the floor if the socket cannot be held. */
+var cfRtSocket = null;
+var cfRtStarting = false;
+var cfRtMergeQueued = false;
+var cfRtRetryTimer = null;
+var cfRtRetryMs = 1000;
+var CF_RT_RETRY_MAX_MS = 30000;
+/* A token that is not accepted will not be accepted on retry; stop instead of
+   hammering the endpoint. Cleared by a manual reconnect or a page reload. */
+var cfRtFatal = false;
+
+function cfRealtimeShouldRun() {
+  return cfBackendOn() && (typeof session !== 'undefined' && !!session);
+}
+function cfRealtimeLive() { return !!cfRtSocket; }
+function cfRealtimeRetryClear() {
+  if (cfRtRetryTimer) { try { clearTimeout(cfRtRetryTimer); } catch (e) {} cfRtRetryTimer = null; }
+  cfRtRetryMs = 1000;
+}
+function cfRealtimeArmRetry() {
+  if (cfRtFatal) return;
+  if (cfRtRetryTimer || cfRtSocket) return;
+  if (!cfRealtimeShouldRun()) return;
+  var wait = cfRtRetryMs;
+  cfRtRetryMs = Math.min(cfRtRetryMs * 2, CF_RT_RETRY_MAX_MS);
+  cfRtRetryTimer = setTimeout(function () {
+    cfRtRetryTimer = null;
+    return cfRealtimeStart().catch(function () {});
+  }, wait);
+}
+function cfRealtimeStop() {
+  cfRtStarting = false;
+  cfRealtimeRetryClear();
+  if (cfRtSocket) { try { cfRtSocket.close(); } catch (e) {} cfRtSocket = null; }
+}
+function cfRealtimeOnChange() {
+  if (cfRtMergeQueued) return;
+  if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) return;
+  cfRtMergeQueued = true;
+  cloudPullMerge().catch(function () {}).then(function () { cfRtMergeQueued = false; });
+}
+function cfRealtimeStart() {
+  if (cfRtSocket || cfRtStarting) return Promise.resolve();
+  if (!cfRealtimeShouldRun()) return Promise.resolve();
+  cfRtStarting = true;
+  return new Promise(function (resolve) {
+    const c = cfConfig();
+    let ws;
+    try {
+      ws = new WebSocket(c.url.replace(/^http/, 'ws') + '/live?token=' + encodeURIComponent(c.token));
+    } catch (e) { cfRtStarting = false; cfRealtimeArmRetry(); resolve(); return; }
+    /* A stream that never opens would hang the promise forever; give it 8 s. */
+    const openTimer = setTimeout(function () {
+      if (cfRtSocket !== ws) { try { ws.close(); } catch (e) {} }
+    }, 8000);
+    ws.addEventListener('open', function () {
+      clearTimeout(openTimer);
+      cfRtSocket = ws;
+      cfRtStarting = false;
+      cfRealtimeRetryClear();
+      cfRtFatal = false;
+      if (typeof syncStatusRender === 'function') { try { syncStatusRender(); } catch (e) {} }
+      resolve();
+    });
+    ws.addEventListener('message', function (ev) {
+      let msg = null;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || msg.type !== 'change') return;
+      cfRtRetryMs = 1000;                       // a healthy message resets the backoff
+      cfRealtimeOnChange();
+    });
+    ws.addEventListener('close', function (ev) {
+      clearTimeout(openTimer);
+      if (cfRtSocket === ws) cfRtSocket = null;
+      cfRtStarting = false;
+      if (typeof syncStatusRender === 'function') { try { syncStatusRender(); } catch (e) {} }
+      /* 1008 policy violation / 1002 protocol error are the server refusing the
+         token; retrying cannot help until the token changes. */
+      if (ev && (ev.code === 1008 || ev.code === 1002)) cfRtFatal = true;
+      cfRealtimeArmRetry();
+      resolve();
+    });
+    ws.addEventListener('error', function () {
+      /* 'close' always follows and does the bookkeeping; nothing to do here. */
+    });
+  });
+}
+
+/* The endpoint is reachable and the token works. Used by the cloud card's test. */
+async function cfPing() {
+  const c = cfConfig();
+  const res = await fetch(c.url + '/records?since=', { headers: cfHeaders_() });
+  if (!res.ok) throw new Error(await cfErrorText_(res));
+  return await res.json();
+}
+
+
+</script>
+<script>
+/* bundle 6 */
+/* Texpark Pro — live multi-device sync, with the Google Sheet as fallback.
+
+   Two interchangeable backends sit behind one interface:
+     - Cloudflare Worker + Durable Object (js/cloudcf.js), selected by
+       window.CLOUDFLARE_SYNC.backend = 'cloudflare'. One Durable Object per shop holds
+       the records and pushes each change over a WebSocket, so the data lives in the
+       owner's own Cloudflare account, not Firebase.
+     - Firebase Firestore (this file's own REST calls), the previous backend, kept
+       whole as the fallback and selected by backend = 'firebase'.
+   Everything above the transport - merge, "newer wins", the cursor, the outbox, the
+   badges - is shared, so the two backends cannot drift.
 
    The Google Sheet sync in js/sync.js ships a whole JSON snapshot per device and the
    newest snapshot wins as a set. That is fine and it stays, but it is not live: a memo
    typed on the phone reaches the PC only after the next snapshot round. This layer
-   adds per-record sync over Firestore, so one changed memo is one document write and
-   one document read - not the whole book - and it arrives in seconds.
+   adds per-record sync, so one changed memo is one write and one read - not the whole
+   book - and it arrives in well under a second.
 
-   It is additive and reversible. With no Firebase keys configured nothing here runs
-   and the app behaves exactly as before. When Firestore is down, over quota, or
-   unreachable, every write also goes to the Sheet's Records tab through the SAME
-   outbox in js/sync.js, and a backoff timer tries Firestore again. See
-   docs/FIRESTORE_PLAN.md for the full design.
+   It is additive and reversible. With no backend configured nothing here runs and the
+   app behaves exactly as before. When the cloud is down, over quota, or unreachable,
+   every write also goes to the Sheet's Records tab through the SAME outbox in
+   js/sync.js, and a backoff timer tries the cloud again.
 
    No Firebase SDK is loaded - the app has no build step and must keep working from a
    USB stick - so Auth and Firestore are spoken over their REST APIs directly. */
@@ -3601,7 +3851,15 @@ function fbConfig() {
     projectId: String(saved.projectId || baked.projectId || '').trim()
   };
 }
-function cloudConfigured() { const c = fbConfig(); return !!(c.apiKey && c.projectId); }
+function cloudConfigured() {
+  if (cfOn_()) return true;
+  const c = fbConfig(); return !!(c.apiKey && c.projectId);
+}
+
+/* True when this build is running on the Cloudflare backend (js/cloudcf.js). The
+   Firestore path below stays fully intact as the fallback, so switching the build
+   back to `backend:'firebase'` restores it exactly. */
+function cfOn_() { return typeof cfBackendOn === 'function' && cfBackendOn(); }
 
 function fbDocsUrl() {
   const c = fbConfig();
@@ -3981,6 +4239,7 @@ function fsRecordFields_(key, rec, at, deleted, device) {
 /* ===================== Firestore writes ===================== */
 /* One upsert. Returns {ok:true} or throws a message the state machine can classify. */
 async function fbWriteRecord(key, rec, opts) {
+  if (cfOn_()) return cfWriteRecord(key, rec, opts);
   const auth = await fbEnsureAuth();
   if (!auth) throw new Error('NOT_SIGNED_IN');
   const o = opts || {};
@@ -3997,6 +4256,7 @@ async function fbWriteRecord(key, rec, opts) {
 /* Many records in one request, to stay inside the free write quota during a
    migration. Chunked so a book cannot exceed the request size limit. */
 async function fbWriteBatch(pairs) {
+  if (cfOn_()) return cfWriteBatch(pairs);
   const auth = await fbEnsureAuth();
   if (!auth) throw new Error('NOT_SIGNED_IN');
   const writes = pairs.map(p => ({
@@ -4025,6 +4285,11 @@ async function fbErrorText(res) {
 
 /* ===================== Firestore reads (delta only) ===================== */
 function fbCursor() { try { return localStorage.getItem(FB_CURSOR_KEY) || ''; } catch (e) { return ''; } }
+/* The cursor is a plain "newest at pulled" value, independent of which backend wrote
+   it, so both transports share it: switching backends resumes as a delta, not a full
+   re-read. */
+function cloudCursor() { return cfOn_() ? cfCursor() : fbCursor(); }
+function cloudCursorSet(at) { if (cfOn_()) cfCursorSet(at); else fbCursorSet(at); }
 function fbCursorSet(at) { try { localStorage.setItem(FB_CURSOR_KEY, String(at || '')); } catch (e) {} }
 
 /* Every record whose `at` is newer than the cursor, in one runQuery. This is the
@@ -4032,6 +4297,7 @@ function fbCursorSet(at) { try { localStorage.setItem(FB_CURSOR_KEY, String(at |
    never the whole collection, and the field is range-filtered so Firestore uses its
    automatic single-field index (no composite index to create by hand). */
 async function fbPullDelta() {
+  if (cfOn_()) return cfPullDelta();
   const auth = await fbEnsureAuth();
   if (!auth) throw new Error('NOT_SIGNED_IN');
   const cursor = fbCursor();
@@ -4113,7 +4379,9 @@ function cloudStatusRender() {
     return;
   }
   const st = cloudState();
-  if (st === 'ONLINE_FIRESTORE') { el.className = 'sync-badge sync-green'; el.textContent = '☁ Firestore live'; }
+  const cf = typeof cfOn_ === 'function' && cfOn_();
+  const liveName = cf ? 'Cloudflare' : 'Firestore';
+  if (st === 'ONLINE_FIRESTORE') { el.className = 'sync-badge sync-green'; el.textContent = '☁ ' + liveName + ' live'; }
   else if (st === 'DEGRADED_SHEET') { el.className = 'sync-badge sync-amber'; el.textContent = 'Cloud degraded → Sheet'; }
   else { el.className = 'sync-badge sync-red'; el.textContent = 'Cloud offline'; }
 }
@@ -4232,12 +4500,14 @@ function fbRealtimeShouldRun() {
    cadence: calm when push is doing the work, fast while the stream is down and the
    poll is the only path left. That keeps "always live" without paying for a 2 s poll
    on a healthy device all day. */
-function fbRealtimeLive() { return !!fbRealtimeUnsub; }
+function fbRealtimeLive() { return cfOn_() ? cfRealtimeLive() : !!fbRealtimeUnsub; }
 function fbRealtimeRetryClear() {
+  if (cfOn_()) return cfRealtimeRetryClear();
   if (fbRealtimeRetryTimer) { try { clearTimeout(fbRealtimeRetryTimer); } catch (e) {} fbRealtimeRetryTimer = null; }
   fbRealtimeRetryMs = 1000;
 }
 function fbRealtimeArmRetry() {
+  if (cfOn_()) return cfRealtimeArmRetry();
   if (fbRealtimeRetryTimer || fbRealtimeUnsub) return;
   if (!fbRealtimeShouldRun()) return;
   var wait = fbRealtimeRetryMs;
@@ -4248,17 +4518,20 @@ function fbRealtimeArmRetry() {
   }, wait);
 }
 function fbRealtimeStop() {
+  if (cfOn_()) return cfRealtimeStop();
   fbRealtimeStarting = false;
   fbRealtimeRetryClear();
   if (fbRealtimeUnsub) { try { fbRealtimeUnsub(); } catch (e) {} fbRealtimeUnsub = null; }
 }
 function fbRealtimeOnChange() {
+  if (cfOn_()) return cfRealtimeOnChange();
   if (fbRealtimeMergeQueued) return;
   if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) return;
   fbRealtimeMergeQueued = true;
   cloudPullMerge().catch(function () {}).then(function () { fbRealtimeMergeQueued = false; });
 }
 async function fbRealtimeStart() {
+  if (cfOn_()) return cfRealtimeStart();
   if (fbRealtimeUnsub || fbRealtimeStarting) return;   // already listening, or starting
   if (!fbRealtimeShouldRun()) return;
   fbRealtimeStarting = true;
@@ -4301,7 +4574,7 @@ async function cloudPullMerge() {
   if (!cloudConfigured()) return { merged: false, reason: 'not configured' };
   try {
     const delta = await fbPullDelta();
-    if (!delta.records.length) { fbCursorSet(delta.newest); return { merged: false, reason: 'no change' }; }
+    if (!delta.records.length) { cloudCursorSet(delta.newest); return { merged: false, reason: 'no change' }; }
     const incoming = cloudMergeDelta(delta);
     snapshot();
     mergeCloudInto_(incoming);
@@ -4309,7 +4582,7 @@ async function cloudPullMerge() {
     let saved = false;
     try { saved = commit(); } finally { cloudMuted = false; }
     if (!saved) return { merged: false, reason: 'save failed' };
-    fbCursorSet(delta.newest);
+    cloudCursorSet(delta.newest);
     await cloudPullCatchupSettings();
     cloudBackoffStep = 0;
     cloudStateSet('ONLINE_FIRESTORE', '', 0);
@@ -4353,7 +4626,9 @@ var cloudRetryTimer = null;
 async function cloudAutoSyncNew(reason) {
   if (!cloudConfigured()) return { skipped: 'not configured' };
   if (typeof session === 'undefined' || !session) return { skipped: 'signed out' };
-  if (!fbSignedIn()) return { skipped: 'firebase not signed in' };
+  /* The Cloudflare backend authenticates with the shop token, not a Firebase session,
+     so the sign-in guard only applies to the Firestore path. */
+  if (!cfOn_() && !fbSignedIn()) return { skipped: 'firebase not signed in' };
   if (cloudBusy) return { skipped: 'busy' };
   if (CLOUD_STATE.retryAt && Date.now() < CLOUD_STATE.retryAt) {
     cloudArmRetry();
@@ -4382,7 +4657,7 @@ function cloudArmRetry() {
    record id, so re-running or resuming is safe. */
 async function cloudMigrate(quiet) {
   if (!cloudConfigured()) { if (!quiet) alert('Set the Firebase keys first.'); return false; }
-  if (!fbSignedIn()) { if (!quiet) alert('Sign in to Firebase sync first.'); return false; }
+  if (!cfOn_() && !fbSignedIn()) { if (!quiet) alert('Sign in to Firebase sync first.'); return false; }
   try {
     if (typeof syncFlush === 'function') { try { syncFlush(); } catch (e) {} }
     const pairs = [];
@@ -4421,7 +4696,9 @@ function cloudBoot() {
      device has no live session yet. That is the whole of the "nothing to type" setup. */
   let adopted = false;
   try { adopted = fbAdoptProvision(); } catch (e) {}
-  if (!fbSignedIn()) {
+  /* On the Cloudflare backend the shop token is the auth, so a Firebase session is
+     neither needed nor created; the Firestore sign-in path stays for `firebase`. */
+  if (!cfOn_() && !fbSignedIn()) {
     if (adopted || fbProvLoad()) fbSignInDefault().catch(function () {});
     return;
   }
@@ -4438,7 +4715,7 @@ function cloudBoot() {
 
 </script>
 <script>
-/* bundle 5 */
+/* bundle 7 */
 /* Texpark Pro — save a memo as a picture (PNG) or as a PDF.
 
    The owner prints memos, but he also sends them on WhatsApp and keeps copies for
@@ -4684,7 +4961,7 @@ function toast(msg) {
 
 </script>
 <script>
-/* bundle 6 */
+/* bundle 8 */
 /* Texpark Pro — Steadfast courier link.
 
    A parcel's Steadfast tracking is tied to the memo/order that promised it, so the
@@ -5284,7 +5561,7 @@ function bookOrderCourier() {
 
 </script>
 <script>
-/* bundle 7 */
+/* bundle 9 */
 /* Texpark Pro — UI + actions. */
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
@@ -5428,7 +5705,8 @@ function liveDelay_() {
 async function liveDeltaPull_() {
   if (typeof cloudConfigured !== 'function' || !cloudConfigured()) return;
   if (typeof session === 'undefined' || !session) return;
-  if (typeof fbSignedIn !== 'function' || !fbSignedIn()) return;
+  const cfOn = typeof cfBackendOn === 'function' && cfBackendOn();
+  if (!cfOn && typeof fbSignedIn === 'function' && !fbSignedIn()) return;
   if (typeof cloudBusy !== 'undefined' && cloudBusy) return;
   if (typeof cloudDirty !== 'undefined' && cloudDirty) return;   // our own edit is going up
   if (liveSyncInFlight) return;
@@ -5671,7 +5949,11 @@ function renderSyncWarning() {
      signed in to the cloud. Without that it only gets the poll, which is the "live is
      not working" the owner hit with no explanation on screen. Say it out loud. */
   const cloudOn = typeof cloudConfigured === 'function' && cloudConfigured();
-  const cloudIn = typeof fbSignedIn === 'function' && fbSignedIn();
+  const cfOn = typeof cfBackendOn === 'function' && cfBackendOn();
+  /* On the Cloudflare backend the shop token is the setup, so "configured" already
+     means "this device can reach the cloud"; only the Firestore backend still needs a
+     per-device sign-in. */
+  const cloudIn = cfOn || (typeof fbSignedIn === 'function' && fbSignedIn());
   if (on && cloudOn && !cloudIn) {
     const hasLink = typeof fbProvisionLink === 'function' && !!fbProvisionLink();
     box.style.display = '';
@@ -8300,11 +8582,36 @@ function cloudSignOutNow() {
   cloudOut('Signed out of the cloud. The Google Sheet sync keeps working.');
 }
 
-/* The provisioning status shown in the cloud card: whether this device carries the
-   private account, and the one button that reveals the link to set up another. */
+/* The provisioning status shown in the cloud card. On the Cloudflare backend the
+   token is the setup, so the card says so and hides the Firebase sign-in; on Firebase
+   it keeps the private-link flow. */
 function cloudProvRender() {
+  const cfOn = typeof cfBackendOn === 'function' && cfBackendOn();
+  const title = document.getElementById('cloudCardTitle');
+  if (title) title.textContent = 'Cloud sync' + (cfOn ? ' (Cloudflare)' : ' (Firestore)');
+  const note = document.getElementById('cloudCardNote');
+  if (note && cfOn) {
+    note.innerHTML = 'This adds <b>live</b> sync over your own Cloudflare account: one changed memo is ' +
+      'one small update, pushed to the other devices over a WebSocket the moment it is written — no ' +
+      'Firebase, no Sheets. The data stays in your Cloudflare. If the cloud is unreachable the app ' +
+      'keeps saving and falls back to the Sheet by itself, then recovers when it comes back.';
+  }
+  const setup = document.getElementById('cloudCardSetup');
+  if (setup && cfOn) {
+    setup.innerHTML = 'Nothing to type on any device: the shop token is already in the build, so opening ' +
+      'the app is the whole setup. Keep that token secret — anyone who has it can reach the shop.';
+  }
+  const adv = document.getElementById('cloudAdvanced');
+  if (adv && cfOn) adv.style.display = 'none';
+  const rec = document.getElementById('cloudReconnect');
+  if (rec) rec.style.display = cfOn ? '' : 'none';
+
   const el = document.getElementById('cloudProv');
   if (!el) return;
+  if (cfOn) {
+    el.innerHTML = '<div class="note" style="color:var(--green)">This device is set up — live sync starts by itself.</div>';
+    return;
+  }
   const has = typeof fbProvLoad === 'function' && !!fbProvLoad();
   if (has) {
     el.innerHTML = '<div class="note" style="color:var(--green)">This device is set up — live sync starts by itself.</div>';
@@ -8346,9 +8653,24 @@ async function testFirebase() {
   } catch (e) { cloudOut('<span class="red">' + e.message + '</span>'); }
 }
 
+/* On the Cloudflare backend there is no per-device sign-in: the shop token in the
+   build is the setup, so a device that shows "degraded" is usually just a dropped
+   socket. This puts it back without a reload. */
+function cloudReconnectNow() {
+  cloudOut('Reconnecting live sync...');
+  try {
+    if (typeof fbRealtimeStop === 'function') fbRealtimeStop();
+    if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
+    cloudAutoSyncNew('manual').catch(function () {});
+    cloudOut('<span style="color:var(--green)">Reconnecting. The badge turns green when it is live.</span>');
+  } catch (e) { cloudOut('<span class="red">' + e.message + '</span>'); }
+}
+
 async function migrateToCloud() {
   if (!cloudConfigured()) return cloudOut('<span class="red">Cloud is not set up in this build.</span>');
-  if (!fbSignedIn()) return cloudOut('<span class="red">Sign in to the cloud first.</span>');
+  if (typeof fbSignedIn === 'function' && !fbSignedIn() && !(typeof cfBackendOn === 'function' && cfBackendOn())) {
+    return cloudOut('<span class="red">Sign in to the cloud first.</span>');
+  }
   cloudOut('Sending every record to the cloud...');
   const ok = await cloudMigrate(false);
   cloudOut(ok ? '<span style="color:var(--green)">All data is in the cloud.</span>'

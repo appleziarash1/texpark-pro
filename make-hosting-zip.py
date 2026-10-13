@@ -34,6 +34,8 @@ SITE_FILES = [
     'js/db.js',
     'js/sync.js',
     'js/firebase-config.js',
+    'js/cloudflare-config.js',
+    'js/cloudcf.js',
     'js/cloud.js',
     'js/voice.js',
     'js/memoexport.js',

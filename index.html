@@ -695,15 +695,15 @@
         </div>
 
         <div class="card">
-          <h2>Cloud sync (Firestore) <span id="cloudStatus" class="sync-badge sync-blue">Cloud off (Sheet only)</span></h2>
-          <div class="note">
+          <h2><span id="cloudCardTitle">Cloud sync</span> <span id="cloudStatus" class="sync-badge sync-blue">Cloud off (Sheet only)</span></h2>
+          <div class="note" id="cloudCardNote">
             The Google Sheet above ships the whole book and is not instant. This adds
             <b>live</b> sync: one changed memo is one small update, so a sale typed on the phone shows
             on the PC in seconds. It uses Firebase's <b>free</b> plan — no card, no server. If the
             cloud is unreachable, or over quota, the app keeps saving and falls back to the Sheet by
             itself, then recovers when the cloud comes back.
           </div>
-          <div class="note" style="margin-top:6px">
+          <div class="note" style="margin-top:6px" id="cloudCardSetup">
             The cloud is already wired in — there is nothing to type. Open the owner's private
             setup link once on each device and it signs in by itself; after that the devices sync
             on their own. The link is under <b>Advanced → Get private setup link</b>.
@@ -711,9 +711,10 @@
           <div class="row" style="margin-top:11px">
             <button class="btn-light" onclick="testFirebase()">Test cloud</button>
             <button class="btn-light" onclick="migrateToCloud()">Send all data to cloud</button>
+            <button class="btn-light" id="cloudReconnect" style="display:none" onclick="cloudReconnectNow()">Reconnect live sync</button>
           </div>
           <div id="cloudProv" style="margin-top:11px"></div>
-          <details style="margin-top:12px">
+          <details style="margin-top:12px" id="cloudAdvanced">
             <summary class="muted" style="cursor:pointer">Advanced</summary>
             <div class="row" style="margin-top:9px">
               <button class="btn-light" onclick="cloudShowLink()">Get private setup link</button>
@@ -1008,6 +1009,8 @@
 <script src="js/voice.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/firebase-config.js"></script>
+<script src="js/cloudflare-config.js"></script>
+<script src="js/cloudcf.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/memoexport.js"></script>
 <script src="js/courier.js"></script>

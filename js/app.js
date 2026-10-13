@@ -141,7 +141,8 @@ function liveDelay_() {
 async function liveDeltaPull_() {
   if (typeof cloudConfigured !== 'function' || !cloudConfigured()) return;
   if (typeof session === 'undefined' || !session) return;
-  if (typeof fbSignedIn !== 'function' || !fbSignedIn()) return;
+  const cfOn = typeof cfBackendOn === 'function' && cfBackendOn();
+  if (!cfOn && typeof fbSignedIn === 'function' && !fbSignedIn()) return;
   if (typeof cloudBusy !== 'undefined' && cloudBusy) return;
   if (typeof cloudDirty !== 'undefined' && cloudDirty) return;   // our own edit is going up
   if (liveSyncInFlight) return;
@@ -384,7 +385,11 @@ function renderSyncWarning() {
      signed in to the cloud. Without that it only gets the poll, which is the "live is
      not working" the owner hit with no explanation on screen. Say it out loud. */
   const cloudOn = typeof cloudConfigured === 'function' && cloudConfigured();
-  const cloudIn = typeof fbSignedIn === 'function' && fbSignedIn();
+  const cfOn = typeof cfBackendOn === 'function' && cfBackendOn();
+  /* On the Cloudflare backend the shop token is the setup, so "configured" already
+     means "this device can reach the cloud"; only the Firestore backend still needs a
+     per-device sign-in. */
+  const cloudIn = cfOn || (typeof fbSignedIn === 'function' && fbSignedIn());
   if (on && cloudOn && !cloudIn) {
     const hasLink = typeof fbProvisionLink === 'function' && !!fbProvisionLink();
     box.style.display = '';
@@ -3013,11 +3018,36 @@ function cloudSignOutNow() {
   cloudOut('Signed out of the cloud. The Google Sheet sync keeps working.');
 }
 
-/* The provisioning status shown in the cloud card: whether this device carries the
-   private account, and the one button that reveals the link to set up another. */
+/* The provisioning status shown in the cloud card. On the Cloudflare backend the
+   token is the setup, so the card says so and hides the Firebase sign-in; on Firebase
+   it keeps the private-link flow. */
 function cloudProvRender() {
+  const cfOn = typeof cfBackendOn === 'function' && cfBackendOn();
+  const title = document.getElementById('cloudCardTitle');
+  if (title) title.textContent = 'Cloud sync' + (cfOn ? ' (Cloudflare)' : ' (Firestore)');
+  const note = document.getElementById('cloudCardNote');
+  if (note && cfOn) {
+    note.innerHTML = 'This adds <b>live</b> sync over your own Cloudflare account: one changed memo is ' +
+      'one small update, pushed to the other devices over a WebSocket the moment it is written — no ' +
+      'Firebase, no Sheets. The data stays in your Cloudflare. If the cloud is unreachable the app ' +
+      'keeps saving and falls back to the Sheet by itself, then recovers when it comes back.';
+  }
+  const setup = document.getElementById('cloudCardSetup');
+  if (setup && cfOn) {
+    setup.innerHTML = 'Nothing to type on any device: the shop token is already in the build, so opening ' +
+      'the app is the whole setup. Keep that token secret — anyone who has it can reach the shop.';
+  }
+  const adv = document.getElementById('cloudAdvanced');
+  if (adv && cfOn) adv.style.display = 'none';
+  const rec = document.getElementById('cloudReconnect');
+  if (rec) rec.style.display = cfOn ? '' : 'none';
+
   const el = document.getElementById('cloudProv');
   if (!el) return;
+  if (cfOn) {
+    el.innerHTML = '<div class="note" style="color:var(--green)">This device is set up — live sync starts by itself.</div>';
+    return;
+  }
   const has = typeof fbProvLoad === 'function' && !!fbProvLoad();
   if (has) {
     el.innerHTML = '<div class="note" style="color:var(--green)">This device is set up — live sync starts by itself.</div>';
@@ -3059,9 +3089,24 @@ async function testFirebase() {
   } catch (e) { cloudOut('<span class="red">' + e.message + '</span>'); }
 }
 
+/* On the Cloudflare backend there is no per-device sign-in: the shop token in the
+   build is the setup, so a device that shows "degraded" is usually just a dropped
+   socket. This puts it back without a reload. */
+function cloudReconnectNow() {
+  cloudOut('Reconnecting live sync...');
+  try {
+    if (typeof fbRealtimeStop === 'function') fbRealtimeStop();
+    if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
+    cloudAutoSyncNew('manual').catch(function () {});
+    cloudOut('<span style="color:var(--green)">Reconnecting. The badge turns green when it is live.</span>');
+  } catch (e) { cloudOut('<span class="red">' + e.message + '</span>'); }
+}
+
 async function migrateToCloud() {
   if (!cloudConfigured()) return cloudOut('<span class="red">Cloud is not set up in this build.</span>');
-  if (!fbSignedIn()) return cloudOut('<span class="red">Sign in to the cloud first.</span>');
+  if (typeof fbSignedIn === 'function' && !fbSignedIn() && !(typeof cfBackendOn === 'function' && cfBackendOn())) {
+    return cloudOut('<span class="red">Sign in to the cloud first.</span>');
+  }
   cloudOut('Sending every record to the cloud...');
   const ok = await cloudMigrate(false);
   cloudOut(ok ? '<span style="color:var(--green)">All data is in the cloud.</span>'

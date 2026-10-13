@@ -1,0 +1,18 @@
+name = "texpark-sync"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# One Durable Object per shop. The object holds that shop's records in SQLite and
+# fans a change out over WebSocket, so a write on one device reaches the others in
+# tens of milliseconds - no Firebase, no Sheets, data stays in the owner's Cloudflare.
+[[durable_objects.bindings]]
+name = "SHOP"
+class_name = "Shop"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Shop"]
+
+# Set the token as a SECRET (never commit it):
+#   npx wrangler secret put AUTH_TOKEN
+# Until it is set the API answers 503, so the endpoint cannot be used by accident.

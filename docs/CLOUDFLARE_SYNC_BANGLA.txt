@@ -1,0 +1,74 @@
+# Texpark Pro — Cloudflare live sync (Firebase chara, nijer control-e)
+
+Ei guide ta diye live sync ta **Firebase theke Cloudflare-e** sora jabe. Data thakbe
+**tomar nijer Cloudflare account-e** — Google Sheet ba Firebase-er upor kono nirbhor
+thakbe na. Live update aro **druto** hobe: ek device-e likhle onno device-e **~0.1
+second**-e pouchay (WebSocket push, poll na).
+
+> Cloudflare-er free plan-i jotheshto. Durable Object + Workers 2025 theke free.
+> Ekhon ja cholche (Sheet + Firebase) ta **thakbe** — kichu bhange na. Aponi chalu
+> korle seta Cloudflare-e jabe, na korle purono moto-i cholbe.
+
+---
+
+## Eta ki kore
+
+- **Cloudflare Worker** ekta chhoto server, ar **Durable Object** shop-er sob record
+  (customer, product, memo...) rakhe SQLite-e.
+- Kono device likhle Worker sathe-sathe onno device-gulote ekta **WebSocket** message
+  pathay. Tai 1-2 second na, **tens of milliseconds**.
+- Auth ekta **shop token**. Eta `js/cloudflare-config.js`-e bake kora thake, tai
+  device-e kichu type korte hoy na — site khullei cholbe.
+
+## Apnar ki korte hobe (click-by-click)
+
+### Step 1 — Cloudflare account
+1. https://dash.cloudflare.com/signup (email diye free account)
+2. Dashboard-e **Workers & Pages** e jaan, **Account ID** copy korun.
+
+### Step 2 — API token
+1. https://dash.cloudflare.com/profile/api-tokens
+2. **Create Token** → **"Edit Cloudflare Workers"** template → Continue → Create.
+3. Token ta ekbar-i dekhay — copy kore rakhun.
+
+### Step 3 — GitHub repo-te 3 ta secret
+Repo: `appleziarash1/texpark-pro` → **Settings → Secrets and variables → Actions**:
+- `CLOUDFLARE_API_TOKEN` = Step 2-er token
+- `CLOUDFLARE_ACCOUNT_ID` = Step 1-er Account ID
+- `CLOUDFLARE_SYNC_TOKEN` = **nijer ekta lamba gopon token** (e.g. 32 random
+  character). Eta-i shop-er password. Keu jodi jene jay, tara shop dekhte parbe —
+  tai eta **karo shathe share korben na**.
+
+### Step 4 — Chalu korun
+`cloudflare/` folder ta push korle **Actions → "Deploy sync backend"** apni-i run
+hobe (ba **Run workflow** chepe hate chalu korun). Sesh hole ekta URL pabben:
+
+```
+https://texpark-sync.<tomar-subdomain>.workers.dev
+```
+
+### Step 5 — Client ta sei URL-er dike ghuray din
+`texpark-pro/js/cloudflare-config.js` khulun, 3 ta line bosan:
+
+```js
+window.CLOUDFLARE_SYNC = {
+  backend: 'cloudflare',
+  url: 'https://texpark-sync.<tomar-subdomain>.workers.dev',
+  token: 'CLOUDFLARE_SYNC_TOKEN er sei value-i'
+};
+```
+
+Tarpor commit + push. Push holei site-e build hobe, ar sob device **Firebase chara**
+live sync-e cholbe. Badge-e **"☁ Cloudflare live"** dekhabe.
+
+## Bhalo dike (verify) korbo kivabe
+- Duita device (PC + phone) khulun, dutoi login thakbe.
+- PC-te ekta customer/memo likhun → phone-e **sathe-sathe** ashbe (laghbhag 0.1s)।
+- Badge "Live" hole stream cholche.
+
+## Kichu kharap hole
+- Badge "Cloud degraded → Sheet" hole Worker-e pouchche na: `url`/`token` thik ache
+  kina dekhen, ar `CLOUDFLARE_SYNC_TOKEN` set kora ache kina.
+- Abar Firebase-e firte chan? `backend: 'firebase'` kore din — purono path hubohu
+  pabe (code much jay ni).
+- Data mitche na: Sheet mirror ta ekhono ache, tai ekta safety net sob somoy thake.
