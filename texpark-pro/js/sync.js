@@ -293,13 +293,17 @@ var cloudPushTimer = null;
 const CLOUD_PUSH_QUIET_MS = 2000;
 
 function scheduleCloudPush() {
-  if (!syncUrl()) return;
   if (typeof session === 'undefined' || !session) return;
   if (cloudPushTimer) clearTimeout(cloudPushTimer);
   cloudPushTimer = setTimeout(function () {
     cloudPushTimer = null;
-    if (typeof window !== 'undefined') window.cloudDirty = false;
     cloudBackupNow(true);
+    /* Clear the dirty flag only once the snapshot has been queued. A device with no
+       Sheet URL never runs cloudBackupNow(), so clearing it first - or bailing out at
+       the top when there is no URL - left it stuck true, and the Firestore listener
+       and the live poll both stand down while it is set. That silently froze live
+       updates on a cloud-only device. */
+    if (typeof window !== 'undefined') window.cloudDirty = false;
   }, CLOUD_PUSH_QUIET_MS);
 }
 
@@ -308,8 +312,8 @@ function scheduleCloudPush() {
    for the request to leave. */
 function flushCloudPush() {
   if (cloudPushTimer) { clearTimeout(cloudPushTimer); cloudPushTimer = null; }
-  if (typeof window !== 'undefined') window.cloudDirty = false;
   try { cloudBackupNow(true); } catch (e) { /* offline is normal */ }
+  if (typeof window !== 'undefined') window.cloudDirty = false;
 }
 
 function autosyncEnabled() {

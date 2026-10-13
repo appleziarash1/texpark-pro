@@ -186,6 +186,20 @@ addMemo(ph, 'TXP/SM/1-PH001', 'Phone Customer', 3, 250);
   ok(posts >= 1, 'the flush pushed to the sheet');
   ok(/TXP\/SM\/9-PC001/.test(sheet.rows.PC || ''), 'the sheet now holds the memo made on the web app');
 
+  /* ------------------------------ a cloud-only device (no Sheet URL) ------------------------------ */
+  console.log('\n--- the unsent mark clears even with no Sheet URL, so live sync is not frozen ---');
+  /* commit() sets cloudDirty on every save; the Firestore listener and the live poll
+     both stand down while it is true. It used to be cleared only by the Sheet-push
+     timer, which no-ops without a sheet URL - so on a Firestore-only device the flag
+     stuck true and live updates never ran again. */
+  const cloudOnly = makeDevice('WEB', sheet);
+  cloudOnly.db.settings.syncUrl = '';        // cloud only, no Google Sheet
+  cloudOnly.window.cloudDirty = true;
+  cloudOnly.scheduleCloudPush();
+  ok(cloudOnly.cloudPushTimer, 'a save still schedules its quiet period with no Sheet URL');
+  await new Promise(r => setTimeout(r, (cloudOnly.CLOUD_PUSH_QUIET_MS || 2000) + 60));
+  eq(cloudOnly.window.cloudDirty, false, 'and the unsent mark clears so the live listener can wake again');
+
   /* ------------------------------ device tags are unique per install ------------------------------ */
   console.log('\n--- two machines cannot claim one sheet row ---');
   const a = makeDevice('', sheet), b = makeDevice('', sheet);

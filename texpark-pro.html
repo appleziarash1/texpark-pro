@@ -3407,13 +3407,17 @@ var cloudPushTimer = null;
 const CLOUD_PUSH_QUIET_MS = 2000;
 
 function scheduleCloudPush() {
-  if (!syncUrl()) return;
   if (typeof session === 'undefined' || !session) return;
   if (cloudPushTimer) clearTimeout(cloudPushTimer);
   cloudPushTimer = setTimeout(function () {
     cloudPushTimer = null;
-    if (typeof window !== 'undefined') window.cloudDirty = false;
     cloudBackupNow(true);
+    /* Clear the dirty flag only once the snapshot has been queued. A device with no
+       Sheet URL never runs cloudBackupNow(), so clearing it first - or bailing out at
+       the top when there is no URL - left it stuck true, and the Firestore listener
+       and the live poll both stand down while it is set. That silently froze live
+       updates on a cloud-only device. */
+    if (typeof window !== 'undefined') window.cloudDirty = false;
   }, CLOUD_PUSH_QUIET_MS);
 }
 
@@ -3422,8 +3426,8 @@ function scheduleCloudPush() {
    for the request to leave. */
 function flushCloudPush() {
   if (cloudPushTimer) { clearTimeout(cloudPushTimer); cloudPushTimer = null; }
-  if (typeof window !== 'undefined') window.cloudDirty = false;
   try { cloudBackupNow(true); } catch (e) { /* offline is normal */ }
+  if (typeof window !== 'undefined') window.cloudDirty = false;
 }
 
 function autosyncEnabled() {
@@ -4021,7 +4025,11 @@ async function fbPullDelta() {
     orderBy: [{ field: { fieldPath: 'at' }, direction: 'ASCENDING' }]
   };
   if (where) query.where = where;
-  const res = await fetch(fbDocsUrl() + '/shops/' + encodeURIComponent(auth.uid) + '/records:runQuery',
+  /* The :runQuery endpoint's parent is the SHOP document, so the path ends at
+     `shops/{uid}:runQuery` - not `shops/{uid}/records:runQuery`. Firestore reads the
+     parent out of the path itself and rejects a collection ("...records lacks \"/\""
+     INVALID_ARGUMENT), which silently degraded every device to the Sheet. */
+  const res = await fetch(fbDocsUrl() + '/shops/' + encodeURIComponent(auth.uid) + ':runQuery',
     { method: 'POST', headers: { 'Authorization': 'Bearer ' + auth.idToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({ structuredQuery: query }) });
   if (!res.ok) throw new Error(await fbErrorText(res));

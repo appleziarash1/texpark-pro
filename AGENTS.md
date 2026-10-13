@@ -440,6 +440,32 @@ checks) drives a fresh device adopting the link, signing in by itself into the s
 forgetting it on sign-out.
 
 
+### The live path had two silent blockers (2026-10-13)
+
+After the provisioning link shipped, the owner still saw no live updates. Two bugs, each of
+which degraded the device quietly rather than failing loudly:
+
+- **The delta query called the wrong endpoint.** `fbPullDelta()` POSTed to
+  `.../shops/{uid}/records:runQuery`. `:runQuery`'s parent is the **shop document**, so the path
+  must end at `.../shops/{uid}:runQuery`; the collection form is rejected with
+  `INVALID_ARGUMENT: Document parent name ... lacks "/"`. Every pull returned HTTP 400, so the
+  device sat in `DEGRADED_SHEET` and the listener's wake-up merge never had anything to merge.
+  The in-memory fake accepted any `:runQuery` URL, which is exactly why the suite stayed green -
+  the fake now returns the real 400 for a `/records:runQuery` path so it cannot regress.
+- **`cloudDirty` could stick true and freeze the listener.** `commit()` sets `window.cloudDirty`
+  on every save, and both `fbRealtimeOnChange()` and `liveDeltaPull_()` stand down while it is
+  true. It was cleared only by the Sheet-push timer, which returned early when there was no Sheet
+  URL - so a **Firestore-only** device latched `cloudDirty = true` on its first save and never
+  live-synced again. `scheduleCloudPush()` no longer requires a Sheet URL and clears the flag
+  after `cloudBackupNow()`; `flushCloudPush()` always clears it.
+
+Both were confirmed in a real headless-Chromium run against `texpark-62700`: before the fix the
+console showed the 400s and `DEGRADED_SHEET`; after it the state is `ONLINE_FIRESTORE` and a
+write from another session lands on `onSnapshot` and merges (`cloudPullMerge` runs). Verified
+both with and without a Sheet URL, so a cloud-only device is covered.
+`test/autopull.test.js` adds the no-Sheet-URL `cloudDirty` regression (41 checks).
+
+
 ### Cloudflare Pages as an optional second host (2026-10-12)
 
 The owner asked to add Cloudflare Pages *and keep* GitHub Pages. Cloudflare needs the owner's

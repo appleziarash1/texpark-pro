@@ -473,7 +473,11 @@ async function fbPullDelta() {
     orderBy: [{ field: { fieldPath: 'at' }, direction: 'ASCENDING' }]
   };
   if (where) query.where = where;
-  const res = await fetch(fbDocsUrl() + '/shops/' + encodeURIComponent(auth.uid) + '/records:runQuery',
+  /* The :runQuery endpoint's parent is the SHOP document, so the path ends at
+     `shops/{uid}:runQuery` - not `shops/{uid}/records:runQuery`. Firestore reads the
+     parent out of the path itself and rejects a collection ("...records lacks \"/\""
+     INVALID_ARGUMENT), which silently degraded every device to the Sheet. */
+  const res = await fetch(fbDocsUrl() + '/shops/' + encodeURIComponent(auth.uid) + ':runQuery',
     { method: 'POST', headers: { 'Authorization': 'Bearer ' + auth.idToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({ structuredQuery: query }) });
   if (!res.ok) throw new Error(await fbErrorText(res));

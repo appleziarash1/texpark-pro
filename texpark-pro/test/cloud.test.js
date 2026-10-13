@@ -41,7 +41,8 @@ function makeFirestore() {
     return { ok: true, status: 200, json: async () => (body || {}), text: async () => JSON.stringify(body || {}) };
   }
   function uidFrom(url) {
-    const m = url.match(/\/documents\/shops\/([^/]+)\//);
+    // Matches both `shops/{uid}/...` and the query parent `shops/{uid}:runQuery`.
+    const m = url.match(/\/documents\/shops\/([^/:?]+)/);
     return m ? decodeURIComponent(m[1]) : '';
   }
   function docFrom(url) {
@@ -85,6 +86,13 @@ function makeFirestore() {
     // Firestore: delta query. Reimplements the where at > cursor + orderBy at that
     // cloud.js asks for, so the test is exercising the documented query, not a stand-in.
     if (/firestore.googleapis.com/.test(url) && /:runQuery/.test(url)) {
+      /* The real endpoint rejects a collection as the parent ("...records lacks \"/\"",
+       * INVALID_ARGUMENT). Enforce the same rule here so the path can never regress to
+       * `shops/{uid}/records:runQuery` without a test going red. */
+      if (/\/records:runQuery/.test(url)) {
+        return fsJson(400, 'INVALID_ARGUMENT',
+          'Document parent name "' + url.split('/documents/')[1].split(':runQuery')[0] + '" lacks "/" at index 95.');
+      }
       const uid = uidFrom(url);
       const sq = JSON.parse(opts.body).structuredQuery;
       let cursor = '';
