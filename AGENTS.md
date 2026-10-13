@@ -861,10 +861,16 @@ for the rest of the session. That is exactly the "sometimes live, sometimes 20 s
   force the fast cadence.
 - **Returning to the tab re-arms the stream.** `visibilitychange` calls `fbRealtimeStart()` when
   `fbRealtimeLive()` is false, because a backgrounded tab often has its stream torn down.
+- **The owner must be able to SEE it.** The top `syncBadge` reads **"Live"** with a pulsing dot
+  (`.sync-live`) whenever `fbRealtimeLive()` is true and nothing is pending, and `livePulse_()`
+  flashes a `.sync-bump` animation the moment `cloudPullMerge` applies a remote change. The point
+  is that a sub-second arrival is otherwise indistinguishable from "nothing happened", which is
+  exactly what made the owner doubt the sync. Both are pure UI and fully guarded.
 - **There is no exact 0 s, and none is promised.** A write crosses a network; ~0.2–0.5 s is the
-  floor. The guarantee is "always sub-second while the stream is up, never worse than a 2 s poll
-  when it is not". Android is native (no Firestore) and polls the Sheet on its own cadence; making
-  it instant would be an APK change, and the APK cannot be rebuilt here (see the version note).
+  floor (measured ~0.33 s). The guarantee is "always sub-second while the stream is up, never
+  worse than a 2 s poll when it is not". Android is native (no Firestore) and polls the Sheet on
+  its own cadence; making it instant would be an APK change, and the APK cannot be rebuilt here
+  (see the version note).
 
 ## Orders Command Center (2026-10-06)
 
