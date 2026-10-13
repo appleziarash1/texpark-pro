@@ -178,6 +178,10 @@ function makeDevice(name, firestore, auth, sheet) {
     // keep the process alive or fire mid-assertion. Tests call the functions directly.
     setTimeout: (fn, ms) => { timers.push({ fn: fn, ms: ms }); return timers.length; },
     clearTimeout: () => {},
+    atob: s => Buffer.from(String(s), 'base64').toString('binary'),
+    btoa: s => Buffer.from(String(s), 'binary').toString('base64'),
+    location: { hash: '', pathname: '/', search: '', origin: 'https://example.test' },
+    history: { replaceState() {} },
     APP_VERSION: 'test',
     window: null,
     fetch: (url, opts) => {
@@ -393,6 +397,27 @@ async function flush(dev) {
   plain.db.memos.push(p2);
   plain.commit();
   eq(plain.syncQueue.filter(j => j.via === 'firestore').length, 0, 'a commit queues no Firestore job');
+
+  /* ------------------- the private setup link ------------------- */
+  console.log('\n--- a private link sets a device up with nothing typed ---');
+  const prov = makeDevice('PROV', firestore, auth, sheet);
+  await prov.fbSignUp('owner+prov@example.com', 'shop-pass-9');
+  prov.fbProvSave('owner+prov@example.com', 'shop-pass-9');   // as cloudCreateAccount does
+  const link = prov.fbProvisionLink();
+  ok(link.indexOf('#cloud=') > 0, 'the owner device can produce its own private setup link');
+  ok(link.indexOf('shop-pass-9') < 0, 'the raw password is not in the link text');
+  const provDev = makeDevice('FRESH', firestore, auth, sheet);
+  provDev.window.location = { hash: link.slice(link.indexOf('#')), pathname: '/', search: '', origin: 'https://appleziarash1.github.io' };
+  provDev.window.history = { replaceState() {} };
+  eq(provDev.fbAdoptProvision(), true, 'a brand-new device adopts the link');
+  await provDev.fbSignInDefault();
+  ok(provDev.fbSignedIn(), 'and signs in by itself, with nothing typed');
+  eq(provDev.fbAuthLoad().uid, prov.fbAuthLoad().uid, 'into the same shop as the owner device');
+  provDev.window.location = { hash: '', pathname: '/', search: '', origin: 'https://appleziarash1.github.io' };
+  ok(provDev.fbProvisionLink().indexOf('#cloud=') > 0, 'a later open with no link rebuilds the link for this host');
+  provDev.fbSignOut(); provDev.fbProvClear();
+  ok(!provDev.fbProvLoad(), 'signing out forgets the saved account');
+  eq(provDev.fbProvisionLink(), '', 'and no longer offers a link');
 
   console.log('\n=================');
   console.log('cloud: ' + pass + ' pass / ' + fail + ' fail');

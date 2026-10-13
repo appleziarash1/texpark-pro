@@ -98,6 +98,64 @@ function fbAuthClear() {
 function fbSignedIn() { const a = fbAuthLoad(); return !!(a && a.idToken && a.uid); }
 function fbEmail() { const a = fbAuthLoad(); return (a && a.email) || ''; }
 
+/* ===================== one-tap provisioning (private link) =====================
+   The owner wants every device to reach the live shop without typing anything, and
+   without the shop's email + password living in this public repository. A link the
+   owner keeps privately carries the account and password in the URL *fragment*: the
+   fragment is never sent to a server and never lands in a referrer, so the hosts and
+   any access log only ever see a clean page load. Opening the link signs the device
+   in once and drops the secret from the address bar; the session is then cached, so
+   every later open is silent.
+
+   This is the one place a password may be stored on the device. It is stored in the
+   device's own localStorage under its own key - never in a file, never in a request
+   body, never in the page's own URL once adopted. */
+const FB_PROV_KEY = 'texpark_pro_firebase_prov';
+function fbProvLoad() { try { return JSON.parse(localStorage.getItem(FB_PROV_KEY) || 'null'); } catch (e) { return null; } }
+function fbProvClear() { try { localStorage.removeItem(FB_PROV_KEY); } catch (e) {} }
+
+/* Reads #cloud=<base64(email:password)> and adopts it. Returns true when it adopted
+   something, so the caller can sign in and re-issue the link for this host. */
+function fbAdoptProvision() {
+  let raw = '';
+  try {
+    const m = /(?:^|[#&])cloud=([^&]+)/.exec(location.hash || '');
+    if (m) raw = decodeURIComponent(m[1]);
+  } catch (e) { raw = ''; }
+  const cleanHash = (function () { try { return (location.hash || '').replace(/[#&]?cloud=[^&]+/, ''); } catch (e) { return ''; } })();
+  const scrub = function () {
+    try { history.replaceState(null, '', location.pathname + location.search + cleanHash); } catch (e) {}
+  };
+  if (raw) {
+    try {
+      const s = (typeof atob === 'function') ? atob(raw) : '';
+      const i = s.indexOf(':');
+      if (i > 0) {
+        const email = s.slice(0, i), password = s.slice(i + 1);
+        if (email && password) { fbProvSave(email, password); scrub(); return true; }
+      }
+    } catch (e) { /* not a provisioning link; leave it */ }
+    scrub();
+  }
+  return false;
+}
+function fbProvSave(email, password) {
+  try { localStorage.setItem(FB_PROV_KEY, JSON.stringify({ email: email, password: password })); } catch (e) {}
+}
+
+/* The link for THIS host, rebuilt from the stored account. A different host (GitHub
+   Pages vs Cloudflare Pages) needs its own link, so the app re-issues one whenever it
+   is opened with the other host's link - same secret, this host's address. */
+function fbProvisionLink() {
+  const p = fbProvLoad();
+  if (!p || !p.email || !p.password) return '';
+  try {
+    const b64 = btoa(p.email + ':' + p.password);
+    return location.origin + location.pathname + '#cloud=' + encodeURIComponent(b64);
+  } catch (e) { return ''; }
+}
+
+
 function jsonPost(url, body) {
   return fetch(url, {
     method: 'POST',
@@ -186,7 +244,25 @@ async function fbSignIn(email, password) {
   fbAuthSave(a);
   cloudBackoffStep = 0;
   cloudStateSet('ONLINE_FIRESTORE', '', 0);
+  if (typeof fbRealtimeStart === 'function') fbRealtimeStart();
   return a;
+}
+
+/* Sign in from the provisioned account when there is no live session. Quiet: the
+   device was set up once, so a failure here just leaves the app on the Sheet path
+   until the owner re-opens the private link. */
+async function fbSignInDefault() {
+  const p = fbProvLoad();
+  if (!p || !p.email || !p.password) return false;
+  try {
+    const a = await fbSignIn(p.email, p.password);
+    if (!cloudMigrated()) cloudMigrate(true).catch(function () {});
+    if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('provisioned').catch(function () {});
+    return !!a;
+  } catch (e) {
+    cloudStateSet('DEGRADED_SHEET', String(e.message || e), 0);
+    return false;
+  }
 }
 
 async function fbSignUp(email, password) {
@@ -717,7 +793,14 @@ function cloudMigrated() { try { return !!localStorage.getItem(FB_MIGRATED_KEY);
 function cloudBoot() {
   cloudStateLoad();
   if (!cloudConfigured()) return;
-  if (!fbSignedIn()) return;
+  /* Adopt a private #cloud= link before anything else, then sign in from it if this
+     device has no live session yet. That is the whole of the "nothing to type" setup. */
+  let adopted = false;
+  try { adopted = fbAdoptProvision(); } catch (e) {}
+  if (!fbSignedIn()) {
+    if (adopted || fbProvLoad()) fbSignInDefault().catch(function () {});
+    return;
+  }
   /* The first full push and live sync are independent: an un-migrated device used
      to skip the listener and the open pull entirely, so a fresh install that had
      imported its old book sat on the slow poll until its migration finished. Start

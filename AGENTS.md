@@ -413,6 +413,32 @@ baking the *account password* would put the owner's books in a public repo. `tes
 now asserts a fresh device reports `cloudConfigured() === true` with no typing, and still checks
 the keyless-build fallback (blank the baked config) behaves exactly as before.
 
+### One-tap provisioning: the private link, not a baked password (2026-10-13)
+
+The owner wanted every device to reach the live shop with **nothing typed**, and to keep the
+data safe. Baking the account password into this public repo would do the first and destroy the
+second: anyone who opened the site would auto-sign-in and read the owner's books. Instead the
+account lives in a **private setup link** the owner keeps, and the repo stays free of secrets.
+
+`fbAdoptProvision()` in `cloud.js` reads `#cloud=<base64(email:password)>` from the URL
+*fragment*. A fragment is never sent to a server and never lands in a referrer, so GitHub Pages
+and Cloudflare only ever see a clean page load. Opening the link once stores the account in that
+device's own `localStorage` (`texpark_pro_firebase_prov`), scrubs the fragment from the address
+bar, and `fbSignInDefault()` signs in and starts the listener and the first full push. Every
+later open is silent. `fbProvisionLink()` rebuilds the link for *this* host, so the GitHub Pages
+link and the Cloudflare link differ only in origin and the app re-issues the right one.
+
+The link is issued in **Settings -> Cloud sync -> Advanced -> Get private setup link**, from the
+device that already carries the account (the owner device, bootstrapped once by the manual
+sign-in that is still in Advanced). `cloudSignOutNow()` calls `fbProvClear()`, so signing out
+also forgets the account and revokes the ability to re-issue the link.
+
+Verified live: the account signs in against `texpark-62700`, and the rules isolate it - own shop
+read `200`, another uid's shop `403`, no token `403`. The link is a **credential**: anyone who
+gets it can reach the shop, so it is shared only device-to-device. `test/cloud.test.js` (43
+checks) drives a fresh device adopting the link, signing in by itself into the same shop, and
+forgetting it on sign-out.
+
 
 ### Cloudflare Pages as an optional second host (2026-10-12)
 

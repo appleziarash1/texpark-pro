@@ -2785,6 +2785,7 @@ function renderSettings() {
   const fbEmailEl = document.getElementById('stFbEmail');
   if (fbEmailEl && !fbEmailEl.value && typeof fbEmail === 'function') fbEmailEl.value = fbEmail() || '';
   if (typeof cloudStatusRender === 'function') cloudStatusRender();
+  if (typeof cloudProvRender === 'function') cloudProvRender();
   const ap = document.getElementById('stAutoPull');
   if (ap) ap.checked = db.settings.autoPull !== false;
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
@@ -2914,9 +2915,12 @@ async function cloudSignIn() {
   cloudOut('Signing in...');
   try {
     await fbSignIn(email, pass);
+    if (typeof fbProvSave === 'function') fbProvSave(email, pass);   // this device can now re-issue the link
     if (!cloudMigrated()) await cloudMigrate(true);
     await cloudAutoSyncNew('signin');
-    cloudOut('<span style="color:var(--green)">Signed in as ' + email + '. Cloud sync is live.</span>');
+    cloudProvRender();
+    cloudOut('<span style="color:var(--green)">Signed in as ' + email + '. Cloud sync is live. ' +
+      'Get the private setup link above for your other devices.</span>');
   } catch (e) { cloudOut('<span class="red">' + e.message + '</span>'); }
 }
 
@@ -2928,15 +2932,44 @@ async function cloudCreateAccount() {
   cloudOut('Creating the account...');
   try {
     await fbSignUp(email, pass);
+    if (typeof fbProvSave === 'function') fbProvSave(email, pass);
     await cloudMigrate(true);
-    cloudOut('<span style="color:var(--green)">Account created. Cloud sync is live.</span>');
+    cloudProvRender();
+    cloudOut('<span style="color:var(--green)">Account created. Cloud sync is live. ' +
+      'Get the private setup link above for your other devices.</span>');
   } catch (e) { cloudOut('<span class="red">' + e.message + '</span>'); }
 }
 
 function cloudSignOutNow() {
   fbSignOut();
+  if (typeof fbProvClear === 'function') fbProvClear();
   cloudStatusRender();
+  cloudProvRender();
   cloudOut('Signed out of the cloud. The Google Sheet sync keeps working.');
+}
+
+/* The provisioning status shown in the cloud card: whether this device carries the
+   private account, and the one button that reveals the link to set up another. */
+function cloudProvRender() {
+  const el = document.getElementById('cloudProv');
+  if (!el) return;
+  const has = typeof fbProvLoad === 'function' && !!fbProvLoad();
+  if (has) {
+    el.innerHTML = '<div class="note" style="color:var(--green)">This device is set up — live sync starts by itself.</div>';
+  } else {
+    el.innerHTML = '<div class="note">Open your private setup link once to turn on live sync on this device.</div>';
+  }
+}
+
+function cloudShowLink() {
+  const link = (typeof fbProvisionLink === 'function') ? fbProvisionLink() : '';
+  if (!link) {
+    cloudOut('<span class="red">This device has no saved account yet — sign in once (Advanced) to create the link.</span>');
+    return;
+  }
+  cloudOut('<div style="word-break:break-all;font-size:12px">Private setup link (keep it secret):<br><b>' +
+    link + '</b><br><span class="muted">Open this once on each device. Anyone with it can reach the shop, ' +
+    'so do not share it.</span></div>');
 }
 
 async function testFirebase() {
