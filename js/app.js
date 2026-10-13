@@ -113,6 +113,25 @@ function liveNoteActivity_() { liveLastActivityAt = Date.now(); }
 function livePushHealthy_() {
   return typeof fbRealtimeLive === 'function' && fbRealtimeLive();
 }
+/* Flash the sync badge when a change from another device lands, so "real time" is
+   something the owner sees rather than has to trust. Pure UI; swallows everything. */
+var livePulseTimer = null;
+function livePulse_() {
+  try {
+    var el = document.getElementById('syncBadge');
+    if (!el) return;
+    el.classList.remove('sync-bump');
+    void el.offsetWidth;                 // restart the animation if it is already running
+    el.classList.add('sync-bump');
+    if (typeof syncStatusRender === 'function') syncStatusRender();
+    if (livePulseTimer) clearTimeout(livePulseTimer);
+    livePulseTimer = setTimeout(function () {
+      livePulseTimer = null;
+      try { el.classList.remove('sync-bump'); } catch (e) {}
+      if (typeof syncStatusRender === 'function') syncStatusRender();
+    }, 700);
+  } catch (e) {}
+}
 function liveDelay_() {
   if (!livePushHealthy_()) return LIVE_SYNC_ACTIVE_MS;
   const warm = (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS) ||

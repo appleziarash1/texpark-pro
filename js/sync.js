@@ -200,7 +200,13 @@ function syncStatusRender() {
   if (on && failed) { cls = 'sync-red'; txt = failed + ' failed' + (pending ? ' · ' + pending + ' pending' : ''); }
   else if (on && pending) { cls = 'sync-amber'; txt = pending + ' pending'; }
   else if (on) { cls = 'sync-green'; txt = '✓ All synced'; }
-  el.className = 'sync-badge ' + cls;
+  /* When the push stream is connected nothing is pending and it is genuinely live,
+     say so and pulse a dot - the owner wants to see "real time", not infer it. The
+     bump class is preserved so an arriving change's pulse is not cancelled here. */
+  const live = typeof fbRealtimeLive === 'function' && fbRealtimeLive();
+  if (live && !failed && !pending) { cls = 'sync-green sync-live'; txt = 'Live'; }
+  const bump = el.classList && el.classList.contains('sync-bump') ? ' sync-bump' : '';
+  el.className = 'sync-badge ' + cls + bump;
   el.textContent = txt;
 }
 

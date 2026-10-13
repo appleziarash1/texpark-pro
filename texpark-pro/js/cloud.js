@@ -718,10 +718,12 @@ async function fbRealtimeStart() {
         live = false;
         if (fbRealtimeUnsub === unsub) fbRealtimeUnsub = null;
         try { unsub(); } catch (e) {}
+        if (typeof syncStatusRender === 'function') { try { syncStatusRender(); } catch (e) {} }
         fbRealtimeArmRetry();
       });
     fbRealtimeUnsub = unsub;
     fbRealtimeRetryClear();                            // it started: cancel any pending retry
+    if (typeof syncStatusRender === 'function') { try { syncStatusRender(); } catch (e) {} }
   } catch (e) { fbRealtimeUnsub = null; fbRealtimeArmRetry(); }
   finally { fbRealtimeStarting = false; }
 }
@@ -746,6 +748,10 @@ async function cloudPullMerge() {
     await cloudPullCatchupSettings();
     cloudBackoffStep = 0;
     cloudStateSet('ONLINE_FIRESTORE', '', 0);
+    /* A change from another device is now in. Bump the badge so the owner can SEE it
+       land - the sub-second arrival is otherwise indistinguishable from "nothing
+       happened". Guarded: the pulse is pure UI and must never affect the merge. */
+    if (typeof livePulse_ === 'function') { try { livePulse_(); } catch (e) {} }
     return { merged: true };
   } catch (e) {
     const msg = String(e.message || e);

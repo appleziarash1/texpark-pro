@@ -26,6 +26,13 @@ a{color:var(--navy)}
 .sync-amber{background:#fff4dc;color:#a05b00}
 .sync-red{background:#ffe8ef;color:var(--red)}
 .sync-blue{background:#edf2f8;color:var(--muted)}
+/* The live stream is the thing the owner cares about, so the badge names it and a
+   dot pulses while push is actually connected. On every applied remote change the
+   badge gets a short bump, so an arriving update is something he can SEE, not guess. */
+.sync-live::before{content:"";display:inline-block;width:7px;height:7px;border-radius:99px;background:#0aa85c;margin-right:5px;vertical-align:middle;animation:syncPulse 1.6s ease-in-out infinite}
+@keyframes syncPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.65)}}
+.sync-bump{animation:syncBump .55s ease}
+@keyframes syncBump{0%{transform:scale(1)}35%{transform:scale(1.16)}100%{transform:scale(1)}}
 
 /* ---------- sync warning banner ---------- */
 /* Loud on purpose. The owner's phone showed an empty shop and nothing said the
