@@ -5667,6 +5667,27 @@ function renderSyncWarning() {
   if (!box) return;
   const on = !!syncUrl();
   const others = (db.memos || []).length + (db.products || []).filter(p => !String(p.id).startsWith('seed-')).length;
+  /* The Sheet can be on and still leave the device slow: instant sync needs the device
+     signed in to the cloud. Without that it only gets the poll, which is the "live is
+     not working" the owner hit with no explanation on screen. Say it out loud. */
+  const cloudOn = typeof cloudConfigured === 'function' && cloudConfigured();
+  const cloudIn = typeof fbSignedIn === 'function' && fbSignedIn();
+  if (on && cloudOn && !cloudIn) {
+    const hasLink = typeof fbProvisionLink === 'function' && !!fbProvisionLink();
+    box.style.display = '';
+    box.innerHTML =
+      '<div class="sw-head">⚠ Live (instant) sync is OFF on this device</div>' +
+      '<div class="sw-body">Writes here still reach the Sheet, but the other devices see them ' +
+      'only after a slow poll — <b>not instantly</b>. This device has not been set up for the ' +
+      'cloud yet.<br><br><b>Fix it once:</b> open your private setup link on this device — ' +
+      'Settings → Cloud sync → Advanced → <b>Get private setup link</b>' +
+      (hasLink ? '. Copy it and open it on the other device.' : '.') +
+      '</div>' +
+      '<div class="row">' +
+        '<button class="btn-pink btn-sm" onclick="nav(\'settings\');setTimeout(function(){var e=document.getElementById(\'cloudProv\');if(e)e.scrollIntoView();},150)">Open cloud settings</button>' +
+      '</div>';
+    return;
+  }
   if (on) { box.style.display = 'none'; box.innerHTML = ''; return; }
 
   box.style.display = '';
@@ -8298,9 +8319,21 @@ function cloudShowLink() {
     cloudOut('<span class="red">This device has no saved account yet — sign in once (Advanced) to create the link.</span>');
     return;
   }
-  cloudOut('<div style="word-break:break-all;font-size:12px">Private setup link (keep it secret):<br><b>' +
-    link + '</b><br><span class="muted">Open this once on each device. Anyone with it can reach the shop, ' +
-    'so do not share it.</span></div>');
+  cloudOut('<div style="word-break:break-all;font-size:12px">Private setup link (keep it secret):<br>' +
+    '<input readonly id="cloudProvLink" value="' + esc(link) + '" onclick="this.select()" ' +
+    'style="width:100%;margin:6px 0">' +
+    '<button class="btn-light btn-sm" onclick="copyCloudLink(this)">Copy link</button>' +
+    '<div class="muted" style="margin-top:6px">Send this to your own phone (WhatsApp/SMS) and open it there ' +
+    'once — that device turns live by itself. Anyone with the link can reach the shop, so never post it publicly.</div></div>');
+}
+
+/* Same copy gesture the Sheet pairing link uses, so the owner has one habit for both. */
+function copyCloudLink(btn) {
+  const inp = document.getElementById('cloudProvLink');
+  if (!inp) return;
+  inp.select();
+  try { document.execCommand('copy'); btn.textContent = 'Copied ✓'; }
+  catch (e) { btn.textContent = 'Select and copy manually'; }
 }
 
 async function testFirebase() {
