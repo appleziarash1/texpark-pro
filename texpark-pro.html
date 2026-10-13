@@ -3694,6 +3694,13 @@ async function cfPullDelta() {
   }));
   let newest = cursor;
   records.forEach(r => { if (String(r.at) > String(newest)) newest = r.at; });
+  /* Never let the cursor run ahead of this device's own clock. A record stamped in
+     the future - another device with a wrong clock - would otherwise push the cursor
+     past every change written after it, and this device would silently stop seeing
+     updates until real time caught up. Clamping also pulls a poisoned cursor back on
+     the next pull, so the device heals itself. */
+  const myNow = new Date().toISOString();
+  if (String(newest) > myNow) newest = myNow;
   return { records: records, newest: newest };
 }
 

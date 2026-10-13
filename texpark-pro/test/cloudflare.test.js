@@ -119,6 +119,16 @@ function makeSandbox(cfg) {
     eq(d.newest, '2026-01-01T00:00:01.000Z', 'and the newest `at` for the cursor');
   }
 
+  console.log('\n--- a future-stamped record cannot poison the cursor ---');
+  {
+    const { s, fetch } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
+    const future = new Date(Date.now() + 30 * 60 * 1000).toISOString();   // another device's clock, 30 min fast
+    fetch.reply(200, { records: [{ key: 'memos', id: 'm1', at: future, deleted: true, data: { id: 'm1', at: future } }], now: future });
+    const d = await s.fbPullDelta();
+    ok(String(d.newest) <= new Date().toISOString(), 'the cursor never runs past this device\'s own clock');
+    ok(String(d.newest) < future, 'a future `at` is not adopted as the cursor');
+  }
+
   console.log('\n--- a write goes up as one batch ---');
   {
     const { s, fetch } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
