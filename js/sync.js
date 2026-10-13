@@ -15,7 +15,7 @@ let syncFlushing = false;
 function syncLoad() {
   try { syncQueue = JSON.parse(localStorage.getItem(SYNC_KEY) || '[]'); }
   catch (e) { syncQueue = []; }
-  syncRequeueBackups();
+  syncRequeueFailed();
 }
 function syncSave() {
   try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncQueue.slice(-500))); } catch (e) {}
@@ -65,6 +65,21 @@ function syncRequeueBackups() {
       j.reTried = true;
       changed = true;
     }
+  });
+  if (changed) syncSave();
+}
+
+/* A record job that gave up after five tries used to stay `failed` forever - only a
+   manual "Sync now" revived it. On the Cloudflare backend that meant a memo written
+   while the socket/token was down never reached the shop: the device kept the memo
+   locally and the badge even read "Live", so the other device looked broken when it
+   simply never received the write. A failed job is not a bad job, only a stalled one,
+   so every load and every reconnect offers it another pass. */
+function syncRequeueFailed() {
+  syncRequeueBackups();
+  let changed = false;
+  syncQueue.forEach(j => {
+    if (j.state === 'failed') { j.state = 'pending'; j.tries = 0; j.error = ''; changed = true; }
   });
   if (changed) syncSave();
 }

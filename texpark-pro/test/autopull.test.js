@@ -248,8 +248,10 @@ addMemo(ph, 'TXP/SM/1-PH001', 'Phone Customer', 3, 250);
   eq(JSON.parse(backupJobs[0].data.json).n, 3, 'and it is the latest payload, not an older one');
   eq(q.syncQueue.filter(j => j.type === 'memo').length, 1, 'a real data job (a memo) is never coalesced away');
 
-  /* A failed-as-too-large backup is retried once the chunking fix is in. */
-  console.log('\n--- a backup parked as "too large" is requeued ---');
+  /* A failed-as-too-large backup is retried once the chunking fix is in, and a failed
+     record job is retried too - a memo stranded by a dropped socket used to sit
+     `failed` forever and never reach the shop. */
+  console.log('\n--- a failed job is requeued on the next load ---');
   const rq = makeDevice('PC', bigSheet);
   rq.syncQueue = [
     { id: 'b1', type: 'backup', data: { device: 'PC' }, state: 'failed', tries: 9, error: 'Backup too large for one sheet cell (52 KB)', reTried: false },
@@ -259,7 +261,8 @@ addMemo(ph, 'TXP/SM/1-PH001', 'Phone Customer', 3, 250);
   rq.syncLoad();
   eq(rq.syncQueue.find(j => j.id === 'b1').state, 'pending', 'the oversize backup is pending again');
   eq(rq.syncQueue.find(j => j.id === 'b1').tries, 0, 'with its retry count reset');
-  eq(rq.syncQueue.find(j => j.id === 'm1').state, 'failed', 'a memo that failed for another reason is left alone');
+  eq(rq.syncQueue.find(j => j.id === 'm1').state, 'pending', 'a failed memo is given another pass, not left stranded');
+  eq(rq.syncQueue.find(j => j.id === 'm1').tries, 0, 'and its retry count is reset too');
 
   /* ------------------ a landed backup retires that device's older jobs ------------------ */
   console.log('\n--- when a newer backup lands, older backups of that device are dropped ---');

@@ -1064,6 +1064,13 @@ How it is wired, and the rule that keeps it reversible:
   `hashchange` handler (`cloudAdoptFromHash_`) that adopts and brings the cloud up on the
   spot. `test/cloudflare.test.js` pins both (first-open and same-tab). The owner's
   "everything is 0" was this - the Worker never lost a record.
+- **A failed record job was stranded forever.** `syncFlush` parks a job as `failed`
+  after five tries, and nothing requeued it except a manual "Sync now" - the
+  "too large" backup was the only exception. On the Cloudflare backend that means a
+  memo written while the socket/token was down never reached the other device, while
+  the badge still read "Live" (the socket was up *now*). Fixed with `syncRequeueFailed()`,
+  called on load, on `cloudBoot`, and on the `online` event. The device keeps the write
+  locally either way, so the shop is not lost - it just never arrived.
 - **A device reading zero is usually reading a book it never pulled, not a deleted
   book.** Check the Worker before believing a wipe: the records are still there. `/records`
   (read-only, Bearer token) is the source of truth.

@@ -3154,7 +3154,7 @@ let syncFlushing = false;
 function syncLoad() {
   try { syncQueue = JSON.parse(localStorage.getItem(SYNC_KEY) || '[]'); }
   catch (e) { syncQueue = []; }
-  syncRequeueBackups();
+  syncRequeueFailed();
 }
 function syncSave() {
   try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncQueue.slice(-500))); } catch (e) {}
@@ -3204,6 +3204,21 @@ function syncRequeueBackups() {
       j.reTried = true;
       changed = true;
     }
+  });
+  if (changed) syncSave();
+}
+
+/* A record job that gave up after five tries used to stay `failed` forever - only a
+   manual "Sync now" revived it. On the Cloudflare backend that meant a memo written
+   while the socket/token was down never reached the shop: the device kept the memo
+   locally and the badge even read "Live", so the other device looked broken when it
+   simply never received the write. A failed job is not a bad job, only a stalled one,
+   so every load and every reconnect offers it another pass. */
+function syncRequeueFailed() {
+  syncRequeueBackups();
+  let changed = false;
+  syncQueue.forEach(j => {
+    if (j.state === 'failed') { j.state = 'pending'; j.tries = 0; j.error = ''; changed = true; }
   });
   if (changed) syncSave();
 }
@@ -4783,6 +4798,9 @@ function cloudBoot() {
   let adopted = false;
   try { adopted = fbAdoptProvision(); } catch (e) {}
   if (!cloudConfigured()) return;
+  /* A record job parked as `failed` gets another pass the moment the cloud is up, so
+     a write made while the shop was unreachable is not stranded on one device. */
+  if (typeof syncRequeueFailed === 'function') { try { syncRequeueFailed(); } catch (e) {} }
   /* Then sign in from the link if this device has no live session yet. That is the
      whole of the "nothing to type" setup. */
   /* On the Cloudflare backend the shop token is the auth, so a Firebase session is
@@ -9108,7 +9126,7 @@ window.addEventListener('DOMContentLoaded', function () {
   window.addEventListener('hashchange', function () {
     if (typeof cloudAdoptFromHash_ === 'function') { try { cloudAdoptFromHash_(); } catch (e) {} }
   });
-  window.addEventListener('online', () => { cloudAutoSync('online'); if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('online'); });
+  window.addEventListener('online', () => { if (typeof syncRequeueFailed === 'function') { try { syncRequeueFailed(); } catch (e) {} } cloudAutoSync('online'); if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('online'); });
   // Push a full cloud backup once a day when the app is opened, so at least one
   // recent restorable copy always exists off-device without anyone remembering.
   setTimeout(maybeDailyCloudBackup, 4000);

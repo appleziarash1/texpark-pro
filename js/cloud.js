@@ -938,6 +938,9 @@ function cloudBoot() {
   let adopted = false;
   try { adopted = fbAdoptProvision(); } catch (e) {}
   if (!cloudConfigured()) return;
+  /* A record job parked as `failed` gets another pass the moment the cloud is up, so
+     a write made while the shop was unreachable is not stranded on one device. */
+  if (typeof syncRequeueFailed === 'function') { try { syncRequeueFailed(); } catch (e) {} }
   /* Then sign in from the link if this device has no live session yet. That is the
      whole of the "nothing to type" setup. */
   /* On the Cloudflare backend the shop token is the auth, so a Firebase session is

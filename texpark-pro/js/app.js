@@ -3442,7 +3442,7 @@ window.addEventListener('DOMContentLoaded', function () {
   window.addEventListener('hashchange', function () {
     if (typeof cloudAdoptFromHash_ === 'function') { try { cloudAdoptFromHash_(); } catch (e) {} }
   });
-  window.addEventListener('online', () => { cloudAutoSync('online'); if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('online'); });
+  window.addEventListener('online', () => { if (typeof syncRequeueFailed === 'function') { try { syncRequeueFailed(); } catch (e) {} } cloudAutoSync('online'); if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('online'); });
   // Push a full cloud backup once a day when the app is opened, so at least one
   // recent restorable copy always exists off-device without anyone remembering.
   setTimeout(maybeDailyCloudBackup, 4000);
