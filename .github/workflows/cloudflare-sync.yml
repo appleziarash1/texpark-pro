@@ -6,11 +6,13 @@ name: Deploy sync backend (Cloudflare Worker)
 #
 #   CLOUDFLARE_API_TOKEN    - a token with the "Workers Scripts: Edit" permission
 #   CLOUDFLARE_ACCOUNT_ID   - the account id from the Cloudflare dashboard
-#   CLOUDFLARE_SYNC_TOKEN   - the shop token; the SAME value goes in
-#                             texpark-pro/js/cloudflare-config.js as `token`
+#   CLOUDFLARE_SYNC_TOKEN   - the shop token. It is pushed as a Worker SECRET and is
+#                             NEVER committed (this repo is public). Each device gets
+#                             it once through the private setup link - see
+#                             docs/CLOUDFLARE_SYNC_BANGLA.txt.
 #
 # The token is pushed as a Worker SECRET (never into the code), so it cannot be read
-# out of the deployed script. See docs/CLOUDFLARE_SYNC.md for the click-by-click steps.
+# out of the deployed script. See docs/CLOUDFLARE_SYNC_BANGLA.txt for the click-by-click steps.
 
 on:
   push:
