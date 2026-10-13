@@ -80,7 +80,7 @@ export default {
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
     if (path === '/' || path === '/health') {
-      return json({ ok: true, service: 'texpark-sync', v: 3 });
+      return json({ ok: true, service: 'texpark-sync' });
     }
 
     /* The browser's preflight. It carries no token (a preflight never does), so it is

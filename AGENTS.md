@@ -998,14 +998,20 @@ How it is wired, and the rule that keeps it reversible:
 - **One interface, two backends.** `js/cloud.js` still owns the merge, the cursor and the
   write queue; every Firebase function now first asks `cfOn_()` (in `js/cloudcf.js`) and, when
   the Cloudflare backend is on, calls its `cf*` twin instead. Nothing else in the app changed.
-- **`js/cloudflare-config.js`** carries the URL and the `backend` switch only. It ships
-  with `backend:'firebase'` and a blank URL, so **the deployed app is unchanged until the
-  owner sets it** - Firestore stays the fallback behind the same interface. The shop
+- **`js/cloudflare-config.js`** carries the URL and the `backend` switch only. It now ships
+  with `backend:'cloudflare'` and the deployed URL
+  (`https://texpark-sync.apple-ziarash1.workers.dev`), so the live app uses Cloudflare and
+  Firestore stays the fallback behind the same interface. The shop
   **token is never committed** (this repo is public; a committed token would expose the
   whole shop). It is delivered per device through the same private-link mechanism the
   Firebase account uses: `fbAdoptProvision()` also accepts a `cf|<token>` payload, stores
   it in `db.settings.cloudflare` (which `cfConfig()` already reads) and scrubs the address
   bar. The owner can also paste the link/token in Settings -> Cloud sync -> Connect.
+- **The secret must not gain a newline.** The deploy step sets `AUTH_TOKEN` with
+  `printf '%s' "$TOKEN" | wrangler secret put` (not `echo`, which appends `\n`), and
+  `tokenMatches` trims both sides. With a newline the stored secret was `<token>\n`, so every
+  correct token was rejected with 401 while the Worker looked perfectly healthy - that was the
+  second bug here, and `logic.test.mjs` now covers both the newline and the whitespace cases.
 - **CORS is required and easy to miss.** The app is served from a different origin than the
   Worker (Pages -> Workers), so the Worker answers `OPTIONS` and sends
   `access-control-allow-origin: *`. Without it every fetch fails with "Failed to fetch" while

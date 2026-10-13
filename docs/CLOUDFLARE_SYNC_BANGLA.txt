@@ -1,5 +1,13 @@
 # Texpark Pro — Cloudflare live sync (Firebase chara, nijer control-e)
 
+> **STATUS: LIVE (2026-10-13).** Worker deploy hoye geche:
+> `https://texpark-sync.apple-ziarash1.workers.dev` — `js/cloudflare-config.js`-e
+> `backend:'cloudflare'` ar URL bosa noa hoyeche, dutoi live site-e cholche. Shop token
+> repo-te **nai** — prottek device private `#cloud=` link diye ekbar niye ney.
+> Ekta bug chhilo: deploy step `echo` diye secret bosato, tai `AUTH_TOKEN`-er seshe
+> ekta newline juthe chhilo ar sothik token-o 401 dicchilo. Ekhon `printf` + trim
+> diye thik kora hoyeche.
+
 Ei guide ta diye live sync ta **Firebase theke Cloudflare-e** sora jabe. Data thakbe
 **tomar nijer Cloudflare account-e** — Google Sheet ba Firebase-er upor kono nirbhor
 thakbe na. Live update aro **druto** hobe: ek device-e likhle onno device-e **~0.1
