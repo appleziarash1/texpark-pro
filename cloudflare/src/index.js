@@ -46,8 +46,13 @@ function json(body, status, extra) {
   });
 }
 
-/* Constant-time-ish comparison so a wrong token cannot be found byte by byte. */
+/* Constant-time-ish comparison so a wrong token cannot be found byte by byte.
+   Both sides are trimmed first: the secret is set by `echo "$TOKEN" | wrangler
+   secret put`, which appends a newline, and a token that differs only by trailing
+   whitespace must still match. */
 function tokenMatches(given, expected) {
+  given = String(given == null ? '' : given).trim();
+  expected = String(expected == null ? '' : expected).trim();
   if (!expected || !given) return false;
   if (given.length !== expected.length) return false;
   let diff = 0;

@@ -17,6 +17,8 @@ console.log('\n--- token compare ---');
   eq(tokenMatches('ab', 'abc'), false, 'a shorter one does not');
   eq(tokenMatches('', 'abc'), false, 'an empty one does not');
   eq(tokenMatches('abc', ''), false, 'and nothing matches an unset secret');
+  eq(tokenMatches('abc', 'abc\n'), true, 'a secret set with echo (trailing newline) still matches');
+  eq(tokenMatches('  abc  ', 'abc'), true, 'and surrounding whitespace on the given side is ignored');
 }
 
 console.log('\n--- newer wins, stale loses ---');

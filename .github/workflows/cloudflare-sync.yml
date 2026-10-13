@@ -47,7 +47,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: echo "${{ secrets.CLOUDFLARE_SYNC_TOKEN }}" | npx --yes wrangler@4 secret put AUTH_TOKEN
+        run: printf '%s' "${{ secrets.CLOUDFLARE_SYNC_TOKEN }}" | npx --yes wrangler@4 secret put AUTH_TOKEN
 
       - name: Deploy the Worker + Durable Object
         if: steps.cf.outputs.ready == 'true'
