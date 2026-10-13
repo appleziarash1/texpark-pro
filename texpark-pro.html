@@ -5346,6 +5346,11 @@ window.addEventListener('load', function () {
   ['pointerdown', 'keydown', 'input', 'touchstart'].forEach(function (ev) {
     document.addEventListener(ev, liveNoteActivity_, { passive: true, capture: true });
   });
+  // Pull once immediately instead of waiting out the first interval. cloudBoot()
+  // usually starts the realtime stream first, so this is a no-op on a warm device;
+  // on a cold one it is the difference between the first change appearing in ~2 s
+  // and waiting a full poll tick. Bounded by the same guards, so it is always safe.
+  liveDeltaPull_();
   (function liveLoop() {
     var wait = liveDelay_();
     setTimeout(function () {
@@ -8481,6 +8486,10 @@ function syncNow() { syncRetryAll(); setTimeout(renderBackup, 1500); }
 
 /* ===================== boot ===================== */
 window.addEventListener('DOMContentLoaded', function () {
+  /* Warm the Firebase SDK before the owner can log in, so the realtime stream is
+     ready to start the instant sign-in completes instead of fetching three modules
+     first. It only fetches; it never touches the data path. */
+  if (typeof fbSdkLoad === 'function') { try { fbSdkLoad(); } catch (e) {} }
   boot();
   window.addEventListener('online', () => { cloudAutoSync('online'); if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('online'); });
   // Push a full cloud backup once a day when the app is opened, so at least one
