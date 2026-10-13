@@ -116,12 +116,18 @@ document.hidden = false;
   try { await liveDeltaPull_(); } catch (e) { threw = true; }
   ok(!threw, 'a failed live pull is swallowed, not thrown');
 
-  /* Adaptive cadence: fast while the owner is working, calm once idle. */
+  /* Adaptive cadence: fast while the owner is working and just after a cold open,
+     calm once truly idle. */
   console.log('\n--- adaptive cadence ---');
   liveNoteActivity_();
   eq(liveDelay_(), 2000, 'recent activity: pulls every 2 s');
+  /* No touches yet, but the page just loaded: the first pull must not wait out the
+     idle cadence, which is what made a cold open feel ~20 s behind. */
   liveLastActivityAt = Date.now() - 120000;
-  eq(liveDelay_(), 10000, 'idle for two minutes: backs off to 10 s');
+  liveBootAt = Date.now();
+  eq(liveDelay_(), 2000, 'just after a cold open: still fast, so the first pull lands quickly');
+  liveBootAt = Date.now() - 60000;      // boot window has passed
+  eq(liveDelay_(), 8000, 'idle well past boot: backs off to 8 s');
 
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);

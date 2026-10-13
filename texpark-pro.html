@@ -3809,7 +3809,12 @@ async function fbSignInDefault() {
   try {
     const a = await fbSignIn(p.email, p.password);
     if (!cloudMigrated()) cloudMigrate(true).catch(function () {});
+    // cloudBoot() signs in here and then returns early, so on a cold load whose
+    // sign-in finishes after boot no listener would ever start. Start the pipeline
+    // now: the first pull, the live stream, and (if we degraded) the retry timer.
     if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('provisioned').catch(function () {});
+    if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
+    if (cloudState() === 'DEGRADED_SHEET' && typeof cloudArmRetry === 'function') cloudArmRetry();
     return !!a;
   } catch (e) {
     cloudStateSet('DEGRADED_SHEET', String(e.message || e), 0);
@@ -5308,15 +5313,23 @@ window.addEventListener('load', function () {
    device's own upload). The 30 s cloudAutoSync keeps running underneath as the
    safety net; its own 8 s floor stops it double-pulling right after a live tick. */
 const LIVE_SYNC_ACTIVE_MS = 2000;
-const LIVE_SYNC_IDLE_MS   = 10000;
+const LIVE_SYNC_IDLE_MS   = 8000;
 const LIVE_ACTIVE_WINDOW_MS = 60000;   // recently touched the app = "active"
+/* A cold open is the one moment the owner is definitely watching, and it is also the
+   moment sign-in may still be in flight. Polling at the idle cadence until they
+   happen to touch the screen is what made the first load feel 20 s behind. Stay on
+   the fast cadence for a short window after load so the first pull lands as soon as
+   the session is ready, then fall back to the calm idle rate. */
+const LIVE_BOOT_WINDOW_MS = 20000;
 var liveSyncInFlight = false;
 var liveLastActivityAt = 0;
+var liveBootAt = Date.now();
 
 function liveNoteActivity_() { liveLastActivityAt = Date.now(); }
 function liveDelay_() {
-  return (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS)
-    ? LIVE_SYNC_ACTIVE_MS : LIVE_SYNC_IDLE_MS;
+  const warm = (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS) ||
+               (Date.now() - liveBootAt < LIVE_BOOT_WINDOW_MS);
+  return warm ? LIVE_SYNC_ACTIVE_MS : LIVE_SYNC_IDLE_MS;
 }
 async function liveDeltaPull_() {
   if (typeof cloudConfigured !== 'function' || !cloudConfigured()) return;
@@ -8487,17 +8500,10 @@ window.addEventListener('DOMContentLoaded', function () {
     if (typeof courierAutoSync === 'function') courierAutoSync();
   });
   window.addEventListener('pagehide', function () { if (cloudDirty) flushCloudPush(); });
-  /* The tab staying open is the normal way this app is used, and until now a change
-     made on the phone only appeared when the owner came back to the tab. Polling on
-     a timer closes that gap. It runs only while the tab is visible: a background tab
-     polling the sheet would spend the owner's data to update a screen nobody is
-     looking at. cloudAutoSync() itself keeps the once-per-8s floor. */
-  setInterval(function () { if (!document.hidden) cloudAutoSync('timer'); }, 30000);
-
-  /* Steadfast status, the same way: on open, when the tab comes back, and on a slow
-     timer. courierAutoSync() no-ops unless the owner set the keys, and it never
-     blocks the app; it is the only path that turns a delivered parcel into a memo
-     delivery without anyone typing it. */
+  /* The visible-tab poll lives in liveLoop below (2 s active / 8 s idle), so a timer
+     for the same pull here only duplicated it. Courier status keeps its own cadence:
+     it no-ops unless the owner set the keys, and it is the only path that turns a
+     delivered parcel into a memo delivery without anyone typing. */
   setTimeout(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 6000);
   setInterval(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 15 * 60 * 1000);
 });

@@ -257,7 +257,12 @@ async function fbSignInDefault() {
   try {
     const a = await fbSignIn(p.email, p.password);
     if (!cloudMigrated()) cloudMigrate(true).catch(function () {});
+    // cloudBoot() signs in here and then returns early, so on a cold load whose
+    // sign-in finishes after boot no listener would ever start. Start the pipeline
+    // now: the first pull, the live stream, and (if we degraded) the retry timer.
     if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('provisioned').catch(function () {});
+    if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
+    if (cloudState() === 'DEGRADED_SHEET' && typeof cloudArmRetry === 'function') cloudArmRetry();
     return !!a;
   } catch (e) {
     cloudStateSet('DEGRADED_SHEET', String(e.message || e), 0);

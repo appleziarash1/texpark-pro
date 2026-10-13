@@ -818,6 +818,30 @@ document write and one document read — not the whole book — and it arrives i
 - **No APK/signing change.** Android keeps using the Sheet; the web app mirrors to it. Do not
   rebuild or re-sign the APK for this.
 
+### Live latency, and why a version bump is blocked (2026-10-13)
+
+The owner reported that a phone opening the site took ~20 s to show another device's change, and
+that it only became ~10 s after a sign-out/sign-in. Root cause: the adaptive live poll
+(`liveLoop`/`liveDelay_` in `js/app.js`) stayed on the **idle** cadence (8 s, was 10 s) until the
+first user touch, because `liveLastActivityAt` starts at 0. A cold open is exactly when the owner
+is watching, so it must poll fast. Fix: a `LIVE_BOOT_WINDOW_MS` (20 s) window keeps the first
+pull at the 2 s active cadence; `cloudBoot()` after a late provisioning sign-in now also calls
+`fbRealtimeStart()` + `cloudArmRetry()`, because it previously returned early and never started
+the listener on that path. The duplicate 30 s `cloudAutoSync('timer')` and the 30 s
+`courierAutoSync` interval were removed (`liveLoop` already polls faster; `visibilitychange`
+covers the rest) — courier keeps its own 15-minute timer.
+
+- **The service worker only re-installs when its bytes change.** `js/sw.js` must be touched (a
+  version bump does it) for a new worker to install; otherwise a phone keeps the old worker. But
+  the fetch handler already serves `js/*` and `index.html` with `cache: 'no-cache'` (revalidate),
+  so **changed JS reaches a stale device on the next load even without a bump** — that is how the
+  earlier `runQuery` fix landed.
+- **`APP_VERSION` cannot be bumped here.** `ci/check-site.py` requires `version.txt`, `js/app.js`,
+  `js/sw.js`, `MainActivity.java` and the bundled `TexparkPro.apk` to all carry the same version.
+  The APK is signed with a key that is deliberately kept off GitHub (see the signing note in
+  `docs/`), so a new APK cannot be produced in CI or this sandbox. Bumping therefore fails the
+  `Verify` job. Leave `APP_VERSION` alone; the SW revalidation delivers JS-only fixes.
+
 ## Orders Command Center (2026-10-06)
 
 The owner asked for a dashboard section with a button that opens an order overview, styled as a
