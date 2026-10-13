@@ -116,18 +116,22 @@ document.hidden = false;
   try { await liveDeltaPull_(); } catch (e) { threw = true; }
   ok(!threw, 'a failed live pull is swallowed, not thrown');
 
-  /* Adaptive cadence: fast while the owner is working and just after a cold open,
-     calm once truly idle. */
+  /* Cadence follows the push stream: fast when the stream is down (poll is the only
+     path), calm when it is up (push delivers), fast for a moment after a cold open. */
   console.log('\n--- adaptive cadence ---');
+  delete global.fbRealtimeLive;
+  eq(liveDelay_(), 2000, 'no push stream: poll fast at 2 s, the poll is the only path');
+  global.fbRealtimeLive = () => true;      // stream healthy
   liveNoteActivity_();
-  eq(liveDelay_(), 2000, 'recent activity: pulls every 2 s');
-  /* No touches yet, but the page just loaded: the first pull must not wait out the
-     idle cadence, which is what made a cold open feel ~20 s behind. */
+  eq(liveDelay_(), 2000, 'recent activity with push up: still fast');
   liveLastActivityAt = Date.now() - 120000;
   liveBootAt = Date.now();
-  eq(liveDelay_(), 2000, 'just after a cold open: still fast, so the first pull lands quickly');
+  eq(liveDelay_(), 2000, 'just after a cold open: fast, so the first pull lands quickly');
   liveBootAt = Date.now() - 60000;      // boot window has passed
-  eq(liveDelay_(), 8000, 'idle well past boot: backs off to 8 s');
+  eq(liveDelay_(), 15000, 'push up and idle well past boot: calm 15 s net');
+  global.fbRealtimeLive = () => false;     // stream dropped
+  eq(liveDelay_(), 2000, 'stream dropped: poll fast again so we stay live');
+  delete global.fbRealtimeLive;
 
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);

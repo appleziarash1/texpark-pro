@@ -4204,12 +4204,39 @@ async function cloudSendJob(job) {
 var fbRealtimeUnsub = null;
 var fbRealtimeStarting = false;
 var fbRealtimeMergeQueued = false;
+/* A dropped stream must come back on its own. Left with an empty error handler the
+   tab silently fell from push (~0.3 s) to the idle poll for the rest of the session -
+   the exact "sometimes it is live, sometimes it is not" the owner kept hitting. Retry
+   with a short bounded backoff, capped so a long outage does not hammer the network. */
+var fbRealtimeRetryTimer = null;
+var fbRealtimeRetryMs = 1000;
+var FB_REALTIME_RETRY_MAX_MS = 30000;
 
 function fbRealtimeShouldRun() {
   return cloudConfigured() && fbSignedIn() && (typeof session !== 'undefined' && !!session);
 }
+/* True while the push stream is connected. app.js reads this to choose a poll
+   cadence: calm when push is doing the work, fast while the stream is down and the
+   poll is the only path left. That keeps "always live" without paying for a 2 s poll
+   on a healthy device all day. */
+function fbRealtimeLive() { return !!fbRealtimeUnsub; }
+function fbRealtimeRetryClear() {
+  if (fbRealtimeRetryTimer) { try { clearTimeout(fbRealtimeRetryTimer); } catch (e) {} fbRealtimeRetryTimer = null; }
+  fbRealtimeRetryMs = 1000;
+}
+function fbRealtimeArmRetry() {
+  if (fbRealtimeRetryTimer || fbRealtimeUnsub) return;
+  if (!fbRealtimeShouldRun()) return;
+  var wait = fbRealtimeRetryMs;
+  fbRealtimeRetryMs = Math.min(fbRealtimeRetryMs * 2, FB_REALTIME_RETRY_MAX_MS);
+  fbRealtimeRetryTimer = setTimeout(function () {
+    fbRealtimeRetryTimer = null;
+    return fbRealtimeStart().catch(function () {});
+  }, wait);
+}
 function fbRealtimeStop() {
   fbRealtimeStarting = false;
+  fbRealtimeRetryClear();
   if (fbRealtimeUnsub) { try { fbRealtimeUnsub(); } catch (e) {} fbRealtimeUnsub = null; }
 }
 function fbRealtimeOnChange() {
@@ -4223,14 +4250,31 @@ async function fbRealtimeStart() {
   if (!fbRealtimeShouldRun()) return;
   fbRealtimeStarting = true;
   try {
-    if (!(await fbSdkLoad()) || !fbSdkAuth || !fbSdkAuth.currentUser) return;
+    if (!(await fbSdkLoad()) || !fbSdkAuth || !fbSdkAuth.currentUser) { fbRealtimeArmRetry(); return; }
     if (!fbRealtimeShouldRun()) return;                // signed out while loading
     const uid = fbSdkAuth.currentUser.uid;
-    fbRealtimeUnsub = fbSdkFsApi.onSnapshot(
+    /* Captured locally: if fbRealtimeStop() runs, its callback must not clear or
+       re-arm a stream that has since been replaced. */
+    let live = true;
+    const unsub = fbSdkFsApi.onSnapshot(
       fbSdkFsApi.collection(fbSdkDb, 'shops', uid, 'records'),
-      function () { fbRealtimeOnChange(); },
-      function () { /* refused stream: the adaptive poll carries the load */ });
-  } catch (e) { fbRealtimeUnsub = null; }
+      function () {
+        if (!live) return;
+        fbRealtimeRetryMs = 1000;                      // a healthy callback resets the backoff
+        fbRealtimeOnChange();
+      },
+      function () {
+        // The stream itself failed (network change, idleServer timeout, refused
+        // listen). Forget this one and reconnect; the adaptive poll covers the gap.
+        if (!live) return;
+        live = false;
+        if (fbRealtimeUnsub === unsub) fbRealtimeUnsub = null;
+        try { unsub(); } catch (e) {}
+        fbRealtimeArmRetry();
+      });
+    fbRealtimeUnsub = unsub;
+    fbRealtimeRetryClear();                            // it started: cancel any pending retry
+  } catch (e) { fbRealtimeUnsub = null; fbRealtimeArmRetry(); }
   finally { fbRealtimeStarting = false; }
 }
 
@@ -5312,21 +5356,33 @@ window.addEventListener('load', function () {
    already in flight, and while this device has an unsent edit (so it cannot race the
    device's own upload). The 30 s cloudAutoSync keeps running underneath as the
    safety net; its own 8 s floor stops it double-pulling right after a live tick. */
-const LIVE_SYNC_ACTIVE_MS = 2000;
-const LIVE_SYNC_IDLE_MS   = 8000;
+const LIVE_SYNC_ACTIVE_MS = 2000;      // the stream is down: poll fast, it is the only path
+const LIVE_SYNC_IDLE_MS   = 15000;     // the stream is up: push does the work, poll is a safety net
 const LIVE_ACTIVE_WINDOW_MS = 60000;   // recently touched the app = "active"
 /* A cold open is the one moment the owner is definitely watching, and it is also the
    moment sign-in may still be in flight. Polling at the idle cadence until they
    happen to touch the screen is what made the first load feel 20 s behind. Stay on
    the fast cadence for a short window after load so the first pull lands as soon as
-   the session is ready, then fall back to the calm idle rate. */
+   the session is ready, then fall back. */
 const LIVE_BOOT_WINDOW_MS = 20000;
 var liveSyncInFlight = false;
 var liveLastActivityAt = 0;
 var liveBootAt = Date.now();
 
 function liveNoteActivity_() { liveLastActivityAt = Date.now(); }
+/* Cadence depends on whether the push stream is carrying the load:
+   - stream connected  -> calm poll (15 s) as a belt-and-braces net; the ~0.3 s push
+     is what actually delivers a change, so a fast poll here would only burn the free
+     read quota for no visible gain.
+   - stream down/absent -> fast poll (2 s): with no push, polling IS the path, and this
+     is what makes the app still feel live under the old Sheet-only setup (no Firebase).
+   - cold open / recent touch -> fast for a moment regardless, so the first change and
+     the one the owner is watching for never wait out a tick. */
+function livePushHealthy_() {
+  return typeof fbRealtimeLive === 'function' && fbRealtimeLive();
+}
 function liveDelay_() {
+  if (!livePushHealthy_()) return LIVE_SYNC_ACTIVE_MS;
   const warm = (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS) ||
                (Date.now() - liveBootAt < LIVE_BOOT_WINDOW_MS);
   return warm ? LIVE_SYNC_ACTIVE_MS : LIVE_SYNC_IDLE_MS;
@@ -8506,13 +8562,19 @@ window.addEventListener('DOMContentLoaded', function () {
       return;
     }
     cloudAutoSync('visible');
+    // A tab that was backgrounded may have had its stream torn down by the browser.
+    // Ask for it back so returning to the tab restores true push, not just a poll.
+    if (typeof fbRealtimeLive === 'function' && typeof fbRealtimeStart === 'function' && !fbRealtimeLive()) {
+      fbRealtimeStart().catch(function () {});
+    }
     if (typeof courierAutoSync === 'function') courierAutoSync();
   });
   window.addEventListener('pagehide', function () { if (cloudDirty) flushCloudPush(); });
-  /* The visible-tab poll lives in liveLoop below (2 s active / 8 s idle), so a timer
-     for the same pull here only duplicated it. Courier status keeps its own cadence:
-     it no-ops unless the owner set the keys, and it is the only path that turns a
-     delivered parcel into a memo delivery without anyone typing. */
+  /* The visible-tab poll lives in liveLoop below (2 s while the push stream is down,
+     15 s while it is up), so a timer for the same pull here only duplicated it.
+     Courier status keeps its own cadence: it no-ops unless the owner set the keys,
+     and it is the only path that turns a delivered parcel into a memo delivery
+     without anyone typing. */
   setTimeout(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 6000);
   setInterval(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 15 * 60 * 1000);
 });

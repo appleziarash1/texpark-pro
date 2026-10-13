@@ -652,12 +652,39 @@ async function cloudSendJob(job) {
 var fbRealtimeUnsub = null;
 var fbRealtimeStarting = false;
 var fbRealtimeMergeQueued = false;
+/* A dropped stream must come back on its own. Left with an empty error handler the
+   tab silently fell from push (~0.3 s) to the idle poll for the rest of the session -
+   the exact "sometimes it is live, sometimes it is not" the owner kept hitting. Retry
+   with a short bounded backoff, capped so a long outage does not hammer the network. */
+var fbRealtimeRetryTimer = null;
+var fbRealtimeRetryMs = 1000;
+var FB_REALTIME_RETRY_MAX_MS = 30000;
 
 function fbRealtimeShouldRun() {
   return cloudConfigured() && fbSignedIn() && (typeof session !== 'undefined' && !!session);
 }
+/* True while the push stream is connected. app.js reads this to choose a poll
+   cadence: calm when push is doing the work, fast while the stream is down and the
+   poll is the only path left. That keeps "always live" without paying for a 2 s poll
+   on a healthy device all day. */
+function fbRealtimeLive() { return !!fbRealtimeUnsub; }
+function fbRealtimeRetryClear() {
+  if (fbRealtimeRetryTimer) { try { clearTimeout(fbRealtimeRetryTimer); } catch (e) {} fbRealtimeRetryTimer = null; }
+  fbRealtimeRetryMs = 1000;
+}
+function fbRealtimeArmRetry() {
+  if (fbRealtimeRetryTimer || fbRealtimeUnsub) return;
+  if (!fbRealtimeShouldRun()) return;
+  var wait = fbRealtimeRetryMs;
+  fbRealtimeRetryMs = Math.min(fbRealtimeRetryMs * 2, FB_REALTIME_RETRY_MAX_MS);
+  fbRealtimeRetryTimer = setTimeout(function () {
+    fbRealtimeRetryTimer = null;
+    return fbRealtimeStart().catch(function () {});
+  }, wait);
+}
 function fbRealtimeStop() {
   fbRealtimeStarting = false;
+  fbRealtimeRetryClear();
   if (fbRealtimeUnsub) { try { fbRealtimeUnsub(); } catch (e) {} fbRealtimeUnsub = null; }
 }
 function fbRealtimeOnChange() {
@@ -671,14 +698,31 @@ async function fbRealtimeStart() {
   if (!fbRealtimeShouldRun()) return;
   fbRealtimeStarting = true;
   try {
-    if (!(await fbSdkLoad()) || !fbSdkAuth || !fbSdkAuth.currentUser) return;
+    if (!(await fbSdkLoad()) || !fbSdkAuth || !fbSdkAuth.currentUser) { fbRealtimeArmRetry(); return; }
     if (!fbRealtimeShouldRun()) return;                // signed out while loading
     const uid = fbSdkAuth.currentUser.uid;
-    fbRealtimeUnsub = fbSdkFsApi.onSnapshot(
+    /* Captured locally: if fbRealtimeStop() runs, its callback must not clear or
+       re-arm a stream that has since been replaced. */
+    let live = true;
+    const unsub = fbSdkFsApi.onSnapshot(
       fbSdkFsApi.collection(fbSdkDb, 'shops', uid, 'records'),
-      function () { fbRealtimeOnChange(); },
-      function () { /* refused stream: the adaptive poll carries the load */ });
-  } catch (e) { fbRealtimeUnsub = null; }
+      function () {
+        if (!live) return;
+        fbRealtimeRetryMs = 1000;                      // a healthy callback resets the backoff
+        fbRealtimeOnChange();
+      },
+      function () {
+        // The stream itself failed (network change, idleServer timeout, refused
+        // listen). Forget this one and reconnect; the adaptive poll covers the gap.
+        if (!live) return;
+        live = false;
+        if (fbRealtimeUnsub === unsub) fbRealtimeUnsub = null;
+        try { unsub(); } catch (e) {}
+        fbRealtimeArmRetry();
+      });
+    fbRealtimeUnsub = unsub;
+    fbRealtimeRetryClear();                            // it started: cancel any pending retry
+  } catch (e) { fbRealtimeUnsub = null; fbRealtimeArmRetry(); }
   finally { fbRealtimeStarting = false; }
 }
 

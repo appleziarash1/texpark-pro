@@ -88,21 +88,33 @@ window.addEventListener('load', function () {
    already in flight, and while this device has an unsent edit (so it cannot race the
    device's own upload). The 30 s cloudAutoSync keeps running underneath as the
    safety net; its own 8 s floor stops it double-pulling right after a live tick. */
-const LIVE_SYNC_ACTIVE_MS = 2000;
-const LIVE_SYNC_IDLE_MS   = 8000;
+const LIVE_SYNC_ACTIVE_MS = 2000;      // the stream is down: poll fast, it is the only path
+const LIVE_SYNC_IDLE_MS   = 15000;     // the stream is up: push does the work, poll is a safety net
 const LIVE_ACTIVE_WINDOW_MS = 60000;   // recently touched the app = "active"
 /* A cold open is the one moment the owner is definitely watching, and it is also the
    moment sign-in may still be in flight. Polling at the idle cadence until they
    happen to touch the screen is what made the first load feel 20 s behind. Stay on
    the fast cadence for a short window after load so the first pull lands as soon as
-   the session is ready, then fall back to the calm idle rate. */
+   the session is ready, then fall back. */
 const LIVE_BOOT_WINDOW_MS = 20000;
 var liveSyncInFlight = false;
 var liveLastActivityAt = 0;
 var liveBootAt = Date.now();
 
 function liveNoteActivity_() { liveLastActivityAt = Date.now(); }
+/* Cadence depends on whether the push stream is carrying the load:
+   - stream connected  -> calm poll (15 s) as a belt-and-braces net; the ~0.3 s push
+     is what actually delivers a change, so a fast poll here would only burn the free
+     read quota for no visible gain.
+   - stream down/absent -> fast poll (2 s): with no push, polling IS the path, and this
+     is what makes the app still feel live under the old Sheet-only setup (no Firebase).
+   - cold open / recent touch -> fast for a moment regardless, so the first change and
+     the one the owner is watching for never wait out a tick. */
+function livePushHealthy_() {
+  return typeof fbRealtimeLive === 'function' && fbRealtimeLive();
+}
 function liveDelay_() {
+  if (!livePushHealthy_()) return LIVE_SYNC_ACTIVE_MS;
   const warm = (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS) ||
                (Date.now() - liveBootAt < LIVE_BOOT_WINDOW_MS);
   return warm ? LIVE_SYNC_ACTIVE_MS : LIVE_SYNC_IDLE_MS;
@@ -3282,13 +3294,19 @@ window.addEventListener('DOMContentLoaded', function () {
       return;
     }
     cloudAutoSync('visible');
+    // A tab that was backgrounded may have had its stream torn down by the browser.
+    // Ask for it back so returning to the tab restores true push, not just a poll.
+    if (typeof fbRealtimeLive === 'function' && typeof fbRealtimeStart === 'function' && !fbRealtimeLive()) {
+      fbRealtimeStart().catch(function () {});
+    }
     if (typeof courierAutoSync === 'function') courierAutoSync();
   });
   window.addEventListener('pagehide', function () { if (cloudDirty) flushCloudPush(); });
-  /* The visible-tab poll lives in liveLoop below (2 s active / 8 s idle), so a timer
-     for the same pull here only duplicated it. Courier status keeps its own cadence:
-     it no-ops unless the owner set the keys, and it is the only path that turns a
-     delivered parcel into a memo delivery without anyone typing. */
+  /* The visible-tab poll lives in liveLoop below (2 s while the push stream is down,
+     15 s while it is up), so a timer for the same pull here only duplicated it.
+     Courier status keeps its own cadence: it no-ops unless the owner set the keys,
+     and it is the only path that turns a delivered parcel into a memo delivery
+     without anyone typing. */
   setTimeout(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 6000);
   setInterval(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 15 * 60 * 1000);
 });

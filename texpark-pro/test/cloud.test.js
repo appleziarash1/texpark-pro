@@ -392,7 +392,34 @@ async function flush(dev) {
   eq(plain.cloudConfigured(), true, 'a brand-new device is cloud-configured with no typing');
   eq(plain.fbConfig().projectId, 'texpark-62700', 'it picked up the baked project id');
 
-  /* A build that truly has no keys still falls back to the Sheet exactly as before.
+  /* ------------------- a dropped realtime stream reconnects itself ------------------- */
+  console.log('\n--- the push stream drops and comes back on its own ---');
+  const rt = makeDevice('RT', firestore, auth, sheet);
+  await rt.fbSignUp('rt+owner@example.com', 'shop-pass-1');
+  /* Hand the real fbRealtimeStart a controllable SDK so the test drives the stream's
+     success/failure callbacks directly, without a network round trip. */
+  let errCb = null, unsubs = 0, snapshots = 0;
+  rt.fbSdkLoad = async () => true;
+  rt.fbSdkAuth = { currentUser: { uid: 'uid-rt' } };
+  rt.fbSdkDb = {};
+  rt.fbSdkFsApi = {
+    collection: () => 'recordsRef',
+    onSnapshot: (ref, next, err) => { snapshots++; errCb = err; return function () { unsubs++; }; }
+  };
+  eq(rt.fbRealtimeLive(), false, 'no stream before start');
+  await rt.fbRealtimeStart();
+  eq(rt.fbRealtimeLive(), true, 'the stream reports live once connected');
+  const timersBefore = rt.__timers.length;
+  errCb(new Error('unavailable'));      // the stream itself fails
+  eq(rt.fbRealtimeLive(), false, 'a failed stream is dropped, never left as a false "live"');
+  eq(rt.__timers.length, timersBefore + 1, 'a reconnect is scheduled with backoff');
+  const retry = rt.__timers[rt.__timers.length - 1];
+  await retry.fn();                     // run the scheduled retry
+  eq(rt.fbRealtimeLive(), true, 'the reconnect restores true push');
+  eq(snapshots, 2, 'it really opened a second listen, not just flipped a flag');
+  ok(unsubs >= 1, 'the dead listen was torn down before reconnecting');
+
+/* A build that truly has no keys still falls back to the Sheet exactly as before.
      That case is now produced by removing the baked config, not by blanking the
      per-device setting (which no longer exists as a concept). */
   console.log('\n--- a build with no keys at all behaves exactly as before ---');

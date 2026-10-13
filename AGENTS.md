@@ -842,6 +842,30 @@ covers the rest) â€” courier keeps its own 15-minute timer.
   `docs/`), so a new APK cannot be produced in CI or this sandbox. Bumping therefore fails the
   `Verify` job. Leave `APP_VERSION` alone; the SW revalidation delivers JS-only fixes.
 
+#### The push stream must heal itself, and the poll cadence follows it (2026-10-13)
+
+Measured on the live site, the Firestore `onSnapshot` stream delivers a remote write in **~0.3 s**
+— that is the "instant" the owner wants. The mistake was resilience: `fbRealtimeStart`'s error
+callback was empty (`function () { /* poll carries it */ }`), so one dropped stream (network
+change, `idleServer` timeout, refused listen) silently demoted the tab from push to the idle poll
+for the rest of the session. That is exactly the "sometimes live, sometimes 20 s behind" report.
+
+- **Reconnect with bounded backoff.** A failed stream is torn down, `fbRealtimeUnsub` is cleared
+  (so `fbRealtimeLive()` never lies), and a retry is armed at 1 s doubling to 30 s. A healthy
+  snapshot resets the backoff. The error callback captures its own `unsub` in a local `live` flag,
+  so `fbRealtimeStop()` (sign-out) can never let a stale callback resurrect a stream.
+- **`fbRealtimeLive()` drives the poll.** `liveDelay_()` in `js/app.js` polls at **2 s while the
+  stream is down** (the poll is then the only path — this also makes a no-Firebase/Sheet-only
+  device still feel live) and at **15 s while the stream is up** (push does the work; a 2 s poll
+  would only burn the Spark read quota for no visible gain). Cold-open and recently-touched still
+  force the fast cadence.
+- **Returning to the tab re-arms the stream.** `visibilitychange` calls `fbRealtimeStart()` when
+  `fbRealtimeLive()` is false, because a backgrounded tab often has its stream torn down.
+- **There is no exact 0 s, and none is promised.** A write crosses a network; ~0.2–0.5 s is the
+  floor. The guarantee is "always sub-second while the stream is up, never worse than a 2 s poll
+  when it is not". Android is native (no Firestore) and polls the Sheet on its own cadence; making
+  it instant would be an APK change, and the APK cannot be rebuilt here (see the version note).
+
 ## Orders Command Center (2026-10-06)
 
 The owner asked for a dashboard section with a button that opens an order overview, styled as a
