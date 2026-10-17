@@ -307,7 +307,7 @@ tbody tr:hover td{background:#f7fafd}
    today/attention amber, ready green, in-progress violet, delivered muted), so the
    owner reads priority before he reads text. */
 .cardhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
-.order-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-top:13px}
+.order-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:13px;margin-top:13px}
 .ostile{position:relative;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fff;
   box-shadow:var(--shadow);overflow:hidden}
 .ostile::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--navy)}
@@ -321,6 +321,21 @@ tbody tr:hover td{background:#f7fafd}
 .ostile.green::before{background:var(--green)}
 .ostile.green .ovalue{color:var(--green)}
 .ostile.violet .ovalue{color:var(--violet)}
+.ostile.slate::before{background:#64748b}
+.ostile.slate .ovalue{color:#475569}
+.ostile[role="button"]{cursor:pointer;transition:.15s}
+.ostile[role="button"]:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(16,32,64,.12)}
+
+/* A finished order is not work any more. The board hides it, and this is the header
+   of the section that holds it when the owner asks to see it. */
+.ordshowdone{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12.5px;
+  color:var(--muted);cursor:pointer;user-select:none}
+.ordshowdone input{cursor:pointer}
+.ordsec{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-top:6px;padding-top:10px;
+  border-top:2px solid var(--line)}
+.ordsec-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.ordsec.flash{animation:ordsecflash 1.2s ease-out}
+@keyframes ordsecflash{0%,40%{background:#e5f7ee;border-radius:8px}100%{background:transparent}}
 
 /* Priority list — the reason the dashboard exists */
 .attn{border:1px solid var(--line);border-left:4px solid var(--line);border-radius:10px;padding:11px 13px;margin-top:9px;background:#fff}

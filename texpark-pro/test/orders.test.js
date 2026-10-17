@@ -169,12 +169,47 @@ console.log('\n=== orders: the board, calendar and priority list render the real
 db.orders = [overdue, dueToday, future, delivered];
 renderOrders();
 ok(el('ordBoard').innerHTML.indexOf('TP-0002') !== -1, 'the board shows the overdue order');
-ok(el('ordBoard').innerHTML.indexOf('TP-0005') !== -1, 'the board shows the delivered order too');
 ok(el('ordBoard').innerHTML.indexOf('badge overdue') !== -1, 'the overdue order carries the overdue badge');
 ok(el('ordAttention').innerHTML.indexOf('TP-0002') !== -1, 'the priority list surfaces the overdue order');
 ok(el('ordAttention').innerHTML.indexOf('OVERDUE') !== -1, 'the priority list says OVERDUE');
 ok(el('ordReminders').innerHTML.indexOf('Overdue') !== -1, 'the reminder center shows the overdue alert');
 ok(el('ordSummary').innerHTML.indexOf('Active Orders') !== -1, 'the summary tiles render on the Orders page');
+
+console.log('\n--- a delivered order is hidden until the owner asks for it ---');
+/* A finished order is not work any more, so the working board must not carry it -
+   otherwise a busy month buries today's orders under everything already shipped. */
+ok(el('ordBoard').innerHTML.indexOf('TP-0005') === -1,
+   'the delivered order is kept off the working board by default');
+ok(el('ordBoard').innerHTML.indexOf('ordDeliveredSection') === -1,
+   'and no Delivered section is drawn until it is asked for');
+ok(el('ordSummary').innerHTML.indexOf('Delivered') !== -1,
+   'the Delivered tile still reports the count, so the work is not invisible');
+eq(orderSummary().delivered, 1, 'the summary counts the delivered orders');
+
+/* The tile opens the section: it ticks the box, re-renders and lands on the block. */
+ordShowDelivered();
+ok(el('ordShowDelivered').checked, 'the Delivered tile turns the toggle on');
+ok(el('ordBoard').innerHTML.indexOf('ordDeliveredSection') !== -1,
+   'and the Delivered section appears');
+ok(el('ordBoard').innerHTML.indexOf('TP-0005') !== -1,
+   'holding the delivered order the board was hiding');
+ok(el('ordBoard').innerHTML.indexOf('TP-0002') !== -1,
+   'while the open orders stay on the board beside it');
+
+/* The toggle is the manual path, and it must put the board back when cleared. */
+el('ordShowDelivered').checked = false;
+renderOrderBoard();
+ok(el('ordBoard').innerHTML.indexOf('TP-0005') === -1, 'clearing the toggle hides the delivered order again');
+
+/* A status filter of "delivered" is an explicit request, so it shows them even with
+   the toggle off - otherwise the filter would look broken. */
+el('ordFilterStatus').value = 'delivered';
+renderOrderBoard();
+ok(el('ordBoard').innerHTML.indexOf('TP-0005') !== -1,
+   'filtering to Delivered shows them without needing the toggle');
+el('ordFilterStatus').value = '';
+el('ordShowDelivered').checked = false;
+renderOrderBoard();
 
 console.log('\n--- the calendar shows a month and a pick reveals that day ---');
 orderCalMonth = T.slice(0, 7);

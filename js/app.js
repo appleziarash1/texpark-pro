@@ -662,9 +662,13 @@ function orderSummaryTilesHTML() {
   return tile('All active', s.active, 'Active Orders', 'blue') +
     tile('Upcoming', s.upcoming7, 'Next 7 Days', 'violet') +
     tile('Attention', s.overdue, 'Overdue Orders', 'danger') +
-    tile('Ready', s.ready, 'Ready to Deliver', 'green');
-  function tile(label, v, sub, cls) {
-    return '<div class="ostile ' + cls + '"><div class="olabel">' + label + '</div>' +
+    tile('Ready', s.ready, 'Ready to Deliver', 'green') +
+    /* Delivered is the one tile that is not a count of work left: tapping it opens
+       the Delivered section on the board below. */
+    tile('Delivered', s.delivered, 'Completed Orders', 'slate', 'ordShowDelivered()');
+  function tile(label, v, sub, cls, onclick) {
+    return '<div class="ostile ' + cls + '"' + (onclick ? ' role="button" tabindex="0" onclick="' + onclick + '"' : '') + '>' +
+      '<div class="olabel">' + label + '</div>' +
       '<div class="ovalue">' + String(v).padStart(2, '0') + '</div>' +
       '<div class="osub">' + sub + '</div></div>';
   }
@@ -781,6 +785,9 @@ function renderOrderBoard() {
   const q = (document.getElementById('ordSearch')?.value || '').trim().toLowerCase();
   const fs = document.getElementById('ordFilterStatus')?.value || '';
   const ft = document.getElementById('ordFilterTime')?.value || '';
+  /* Picking the Delivered status is itself a request to see them, so it must not
+     need the toggle as well - a filter that appears to do nothing looks broken. */
+  const showDone = !!document.getElementById('ordShowDelivered')?.checked || fs === 'delivered';
   const weekEnd = addDays_(ref, 7);
   const monthEnd = ref.slice(0, 8) + '31';
   let list = ordersByUrgency(ref);
@@ -791,12 +798,48 @@ function renderOrderBoard() {
   if (ft === 'today') list = list.filter(o => String(o.deliveryDate || '').slice(0, 10) === ref);
   if (ft === 'week') list = list.filter(o => o.deliveryDate >= ref && o.deliveryDate <= weekEnd);
   if (ft === 'month') list = list.filter(o => o.deliveryDate >= ref.slice(0, 8) + '01' && o.deliveryDate <= monthEnd);
-  if (!list.length) {
+
+  /* A finished order is not work any more, so it is kept out of the working board
+     and shown only in the Delivered section - otherwise a busy month buries today's
+     orders under everything already shipped. "Show delivered orders" reveals that
+     section, and the Delivered tile opens it directly. */
+  const active = list.filter(o => o.status !== 'delivered');
+  const done = list.filter(o => o.status === 'delivered');
+
+  if (!active.length && !(showDone && done.length)) {
     box.innerHTML = '<div class="empty">No orders match. ' +
       ((db.orders || []).length ? 'Try clearing the search or filters.' : 'Tap “+ New Order” to add the first one.') + '</div>';
     return;
   }
-  box.innerHTML = list.map(o => orderCardHTML(o, ref)).join('');
+
+  let html = active.length
+    ? active.map(o => orderCardHTML(o, ref)).join('')
+    : '<div class="empty">No open orders match. ' + (done.length ? 'Completed ones are in Delivered below.' : '') + '</div>';
+
+  if (showDone) {
+    html += '<div class="ordsec" id="ordDeliveredSection">' +
+      '<span class="ordsec-title">Delivered</span>' +
+      '<span class="pill ok">' + done.length + '</span></div>';
+    html += done.length
+      ? done.map(o => orderCardHTML(o, ref)).join('')
+      : '<div class="empty">No delivered orders match.</div>';
+  }
+  box.innerHTML = html;
+}
+
+/* The Delivered tile is the way into that section: turn the toggle on, land on the
+   Orders page (the tile is also on the dashboard), then flash the block so the eye
+   finds it. */
+function ordShowDelivered() {
+  const cb = document.getElementById('ordShowDelivered');
+  if (cb) cb.checked = true;
+  if (typeof currentPage !== 'undefined' && currentPage !== 'orders' && typeof nav === 'function') nav('orders');
+  renderOrderBoard();
+  const sec = document.getElementById('ordDeliveredSection');
+  if (!sec) return;
+  if (typeof sec.scrollIntoView === 'function') sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  sec.classList.add('flash');
+  setTimeout(() => sec.classList.remove('flash'), 1200);
 }
 
 /* ---------- calendar ---------- */

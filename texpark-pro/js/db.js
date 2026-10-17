@@ -940,7 +940,10 @@ function orderSummary(ref) {
     active: active.length,
     upcoming7: active.filter(o => o.deliveryDate >= r && o.deliveryDate <= up).length,
     overdue: active.filter(o => isOrderOverdue(o, r)).length,
-    ready: (db.orders || []).filter(o => o.status === 'ready').length
+    ready: (db.orders || []).filter(o => o.status === 'ready').length,
+    /* Finished work. The board keeps these out of the working list, so this is the
+       only place their number is visible without opening the Delivered section. */
+    delivered: list.filter(o => o.status === 'delivered').length
   };
   return out;
 }

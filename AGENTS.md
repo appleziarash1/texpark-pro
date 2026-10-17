@@ -988,11 +988,22 @@ of the Dashboard.
   and the `syncPush('order', ...)` are never skipped. Code.gs gained an `Orders` tab and the
   `order` route (upsert keyed on Order No) as the Sheet fallback for the Android app; Firestore
   carries it through `MERGE_KEYS` with no extra work.
+- **A delivered order is hidden, not gone** (2026-10-17). The board is the *working* list, so
+  `renderOrderBoard` splits the filtered list into active and delivered and draws only the active
+  ones - otherwise a busy month buries today's orders under everything already shipped. The
+  delivered ones sit in a labelled `#ordDeliveredSection` that the "Show delivered orders" toggle
+  (`#ordShowDelivered`) reveals, and the Delivered tile on the summary row is a button that turns
+  that toggle on, navigates to the Orders page and flashes the section. The tile count comes from
+  `orderSummary().delivered`, so hiding the rows never hides the number. Picking `Delivered` in the
+  status filter counts as asking for them and shows the section without the toggle - a filter that
+  looked like it did nothing would read as broken. Delivered orders were already excluded from the
+  attention list, the reminders and the tiles; this only changes the board.
 - **Settings.** `orderPrefix` (default `TP-`) and `reminderDefaultLead` (default 1) live in
   `DEFAULT_SETTINGS` and are edited in Settings -> Company.
-- **Test.** `test/orders.test.js` (49 checks): overdue/urgency/reminders as pure rules, summary
+- **Test.** `test/orders.test.js` (78 checks): overdue/urgency/reminders as pure rules, summary
   counts, save/number/validate, a status move plus persistence, board/attention/reminder/calendar
-  rendering through the real `app.js`, the dashboard banner, and a two-device merge.
+  rendering through the real `app.js`, the delivered-hidden default and the three ways to reveal it
+  (tile, toggle, filter), the dashboard banner, and a two-device merge.
 
 ### Memo â†’ Order bridge, and SL numbering (2026-10-06, follow-up)
 
