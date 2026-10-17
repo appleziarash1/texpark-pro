@@ -6,7 +6,7 @@ APK. A walk swept all of it into the archive, and worse, the walk reached the
 zip being written and recursed into it, so the file grew without bound instead
 of finishing. Nothing outside this list ships.
 """
-import os, zipfile, time
+import os, zipfile, time, re
 
 # A zip stores a modification time per entry, so two builds of identical content
 # came out byte-different and left the committed .zip showing as modified after
@@ -42,6 +42,7 @@ APP_FILES = [
     'js/cloud.js',
     'js/voice.js',
     'js/memoexport.js',
+    'js/courier.js',
     'sw.js',
     'manifest.webmanifest',
     'icon-192.png',
@@ -111,5 +112,11 @@ assert 'texpark-pro-app/index.html' in names, 'the folder must hold the app'
 assert 'texpark-pro.html' in names, 'the single-file phone copy must ship'
 assert 'TexparkPro.apk' in names, 'the APK must ship so the download stands alone'
 assert 'catalog/index.html' in names, 'the offline catalog belongs in the zip'
+# Every script the app's index.html loads has to be in the archive. js/courier.js was
+# missing from APP_FILES, so the double-clickable PC copy installed broken.
+_loaded = re.findall(r'<script src="([^"]+)"></script>',
+                     open(os.path.join(root, 'texpark-pro', 'index.html'), encoding='utf-8').read())
+_missing = [s for s in _loaded if 'texpark-pro-app/' + s not in names]
+assert not _missing, 'index.html loads scripts the archive does not carry: ' + ', '.join(_missing)
 print('OK: no secrets, no build tooling')
 print('total', len(names), 'files,', round(os.path.getsize(out) / 1024), 'KB')

@@ -6,7 +6,7 @@ An explicit allowlist, not a walk of the repo. The repo root now holds the app
 signs the APK: publishing it would let anyone sign an APK that Android accepts
 as an update to the installed one. Nothing outside this list ships.
 """
-import zipfile, os, time
+import zipfile, os, time, re
 # Derived from this file's own location, not a fixed path: CI checks the repo out
 # under /home/runner/work, where a hardcoded /workspace/project makes the check
 # abort with FileNotFoundError and fail a green build.
@@ -39,6 +39,7 @@ SITE_FILES = [
     'js/cloud.js',
     'js/voice.js',
     'js/memoexport.js',
+    'js/courier.js',
     'css/app.css',
     'sw.js',
     'manifest.webmanifest',
@@ -78,6 +79,14 @@ assert 'TexparkPro.apk' in names, 'the APK must ship so the site can offer it'
 assert '_redirects' not in names, 'a catch-all redirect would hide missing files'
 assert not any(n.endswith('.jks') or n.startswith('.git/') for n in names), \
     'the signing key must never be published'
+# Every script index.html loads has to be in the archive, or the app installs broken.
+# js/courier.js was missing from this allowlist, so anyone who installed from the zip
+# got an app whose Orders page threw on the first click - a hole no test could see,
+# because the tests load the source tree, not the archive.
+_loaded = re.findall(r'<script src="([^"]+)"></script>',
+                     open(os.path.join(root, 'index.html'), encoding='utf-8').read())
+_missing = [s for s in _loaded if s not in names]
+assert not _missing, 'index.html loads scripts the archive does not carry: ' + ', '.join(_missing)
 print('OK: index.html is at the top level')
 print('total', len(names), 'files,', round(os.path.getsize(out) / 1024), 'KB')
 

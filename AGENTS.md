@@ -821,6 +821,12 @@ job. Native also brings the real keyboard, date picker, back button and voice re
   made a real change to the archive indistinguishable from a rebuild. After touching either
   builder, run it twice and compare `md5sum` â€” they must match.
 
+- **The allowlists are hand-kept, so both builders now assert that every `<script src>` in
+  `index.html` is in the archive.** `js/courier.js` was added to the page but not to
+  `SITE_FILES`/`APP_FILES`, so anyone who installed from a zip got an app whose Orders page threw
+  on the first click. No test could see it: the suites load the source tree, never the archive.
+  A missing script must fail the build (`make-hosting-zip.py`, `make-zip.py`), not ship.
+
 ## Live multi-device sync (Firestore) with the Sheet as fallback (2026-10-07)
 
 The Google Sheet sync (`js/sync.js`) pushes a whole JSON snapshot and the newest snapshot wins as
