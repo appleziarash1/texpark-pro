@@ -935,8 +935,11 @@ const screensSrc = fs.readFileSync(path.join(SRC, 'Screens.java'), 'utf8');
    is self-contained, and it is the definition the phone has to match. Copying its
    expected strings into the test instead would let the two drift silently. */
 const appJsSrc = fs.readFileSync(path.join(ROOT, 'texpark-pro', 'js', 'app.js'), 'utf8');
-const wordsFn = appJsSrc.slice(appJsSrc.indexOf('function numberWords(n) {'));
-const wordsBody = wordsFn.slice(0, wordsFn.indexOf('\n}\n') + 3);
+const wordsStart = appJsSrc.indexOf('function numberWords(n) {');
+assert.notStrictEqual(wordsStart, -1, 'the web app must define numberWords');
+const wordsEnd = appJsSrc.indexOf('\n}\n\n/* One product line.', wordsStart);
+assert.notStrictEqual(wordsEnd, -1, 'the web app numberWords function must be complete');
+const wordsBody = appJsSrc.slice(wordsStart, wordsEnd + 2);
 vm.runInThisContext('var numberWords = ' + wordsBody.replace('function numberWords(n) {', 'function (n) {')
   + ';', { filename: 'numberWords' });
 
