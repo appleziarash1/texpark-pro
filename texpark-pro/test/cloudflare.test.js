@@ -28,10 +28,11 @@ function makeWS() {
     this.sent = [];
     this.listeners = {};
     this.closed = false;
+    this.readyState = 0;
     sockets.push(this);
   }
   Fake.prototype.addEventListener = function (t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); };
-  Fake.prototype.emit = function (t, ev) { (this.listeners[t] || []).forEach(fn => fn(ev || {})); };
+  Fake.prototype.emit = function (t, ev) { if (t === 'open') this.readyState = 1; if (t === 'close') this.readyState = 3; (this.listeners[t] || []).forEach(fn => fn(ev || {})); };
   Fake.prototype.send = function (m) { this.sent.push(m); };
   Fake.prototype.close = function () { this.closed = true; this.emit('close', { code: 1000 }); };
   return { Fake, sockets };
@@ -70,6 +71,7 @@ function makeSandbox(cfg) {
       removeItem: k => { delete store[k]; }
     },
     setTimeout: () => 0, clearTimeout: () => {},
+    setInterval: () => 1, clearInterval: () => {},
     fetch: fetchFn,
     WebSocket: ws.Fake,
     atob: (s) => Buffer.from(String(s), 'base64').toString('binary'),

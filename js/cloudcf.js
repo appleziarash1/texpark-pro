@@ -125,6 +125,12 @@ async function cfErrorText_(res) {
 var cfRtSocket = null;
 var cfRtStarting = false;
 var cfRtMergeQueued = false;
+var cfRtChangePending = false;
+var cfRtDrainTimer = null;
+var cfRtHeartbeatTimer = null;
+var cfRtLastPong = 0;
+var CF_RT_HEARTBEAT_MS = 10000;
+var CF_RT_PONG_TIMEOUT_MS = 30000;
 var cfRtRetryTimer = null;
 var cfRtRetryMs = 1000;
 var CF_RT_RETRY_MAX_MS = 30000;
@@ -135,7 +141,7 @@ var cfRtFatal = false;
 function cfRealtimeShouldRun() {
   return cfBackendOn() && (typeof session !== 'undefined' && !!session);
 }
-function cfRealtimeLive() { return !!cfRtSocket; }
+function cfRealtimeLive() { return !!cfRtSocket && cfRtSocket.readyState === 1 && Date.now() - cfRtLastPong < CF_RT_PONG_TIMEOUT_MS; }
 function cfRealtimeRetryClear() {
   if (cfRtRetryTimer) { try { clearTimeout(cfRtRetryTimer); } catch (e) {} cfRtRetryTimer = null; }
   cfRtRetryMs = 1000;
@@ -154,13 +160,26 @@ function cfRealtimeArmRetry() {
 function cfRealtimeStop() {
   cfRtStarting = false;
   cfRealtimeRetryClear();
+  if (cfRtHeartbeatTimer) { clearInterval(cfRtHeartbeatTimer); cfRtHeartbeatTimer = null; }
+  if (cfRtDrainTimer) { clearTimeout(cfRtDrainTimer); cfRtDrainTimer = null; }
+  cfRtChangePending = false;
   if (cfRtSocket) { try { cfRtSocket.close(); } catch (e) {} cfRtSocket = null; }
 }
-function cfRealtimeOnChange() {
-  if (cfRtMergeQueued) return;
-  if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) return;
+function cfRealtimeDrainChanges_() {
+  if (!cfRtChangePending || cfRtMergeQueued) return;
+  if (!cfRealtimeShouldRun()) { cfRtChangePending = false; return; }
+  if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) {
+    if (!cfRtDrainTimer) cfRtDrainTimer = setTimeout(function () { cfRtDrainTimer = null; cfRealtimeDrainChanges_(); }, 150);
+    return;
+  }
+  cfRtChangePending = false;
   cfRtMergeQueued = true;
-  cloudPullMerge().catch(function () {}).then(function () { cfRtMergeQueued = false; });
+  Promise.resolve().then(function () { return cloudPullMerge(); }).catch(function () {})
+    .then(function () { cfRtMergeQueued = false; cfRealtimeDrainChanges_(); });
+}
+function cfRealtimeOnChange() {
+  cfRtChangePending = true;
+  cfRealtimeDrainChanges_();
 }
 function cfRealtimeStart() {
   if (cfRtSocket || cfRtStarting) return Promise.resolve();
@@ -182,18 +201,28 @@ function cfRealtimeStart() {
       cfRtStarting = false;
       cfRealtimeRetryClear();
       cfRtFatal = false;
+      cfRtLastPong = Date.now();
+      if (cfRtHeartbeatTimer) clearInterval(cfRtHeartbeatTimer);
+      cfRtHeartbeatTimer = setInterval(function () {
+        if (cfRtSocket !== ws || ws.readyState !== 1) return;
+        if (Date.now() - cfRtLastPong > CF_RT_PONG_TIMEOUT_MS) { try { ws.close(); } catch (e) {} return; }
+        try { ws.send('ping'); } catch (e) { try { ws.close(); } catch (ignore) {} }
+      }, CF_RT_HEARTBEAT_MS);
       if (typeof syncStatusRender === 'function') { try { syncStatusRender(); } catch (e) {} }
       resolve();
     });
     ws.addEventListener('message', function (ev) {
+      if (ev.data === 'pong') { cfRtLastPong = Date.now(); return; }
       let msg = null;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (!msg || msg.type !== 'change') return;
+      cfRtLastPong = Date.now();
       cfRtRetryMs = 1000;                       // a healthy message resets the backoff
       cfRealtimeOnChange();
     });
     ws.addEventListener('close', function (ev) {
       clearTimeout(openTimer);
+      if (cfRtHeartbeatTimer) { clearInterval(cfRtHeartbeatTimer); cfRtHeartbeatTimer = null; }
       if (cfRtSocket === ws) cfRtSocket = null;
       cfRtStarting = false;
       if (typeof syncStatusRender === 'function') { try { syncStatusRender(); } catch (e) {} }

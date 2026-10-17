@@ -89,7 +89,7 @@ window.addEventListener('load', function () {
    device's own upload). The 30 s cloudAutoSync keeps running underneath as the
    safety net; its own 8 s floor stops it double-pulling right after a live tick. */
 const LIVE_SYNC_ACTIVE_MS = 2000;      // the stream is down: poll fast, it is the only path
-const LIVE_SYNC_IDLE_MS   = 15000;     // the stream is up: push does the work, poll is a safety net
+const LIVE_SYNC_IDLE_MS   = 2000;     // the stream is up: push does the work, poll is a safety net
 const LIVE_ACTIVE_WINDOW_MS = 60000;   // recently touched the app = "active"
 /* A cold open is the one moment the owner is definitely watching, and it is also the
    moment sign-in may still be in flight. Polling at the idle cadence until they
@@ -3701,210 +3701,241 @@ function importOldData() {
     });
 
     (o.memos || []).forEach(m => {
-      const exists = db.memos.some(x => x.memoNo === m.memoNo);
-      if (exists) return;
-      const items = (m.items || []).map(i => ({
-        productId: mapP[i.productId] || '', productName: i.productName || '',
-        qty: num(i.qty), rate: num(i.rate), cost: 0, vat: 0, amount: round2(num(i.qty) * num(i.rate))
-      }));
-      const memo = {
-        id: id(), memoNo: m.memoNo, date: m.date, customerName: m.customerName,
-        customerPhone: m.customerPhone || '', customerAddress: m.customerAddress || '',
-        items, totalQty: num(m.totalQty),
-        subtotal: num(m.subtotal), discount: num(m.discount), deliveryCharge: num(m.deliveryCharge),
-        vat: 0, grandTotal: num(m.grandTotal), advance: num(m.advance), due: num(m.due),
-        cogs: 0, profit: 0, note: 'Imported from v1 (profit unknown - no cost)', savedAt: new Date().toISOString()
-      };
-      db.memos.push(memo);
-      items.forEach(it => {
-        if (!it.productId) return;
-        const s = stockOf(it.productId);
-        s.sold = num(s.sold) + num(it.qty);
-        s.available = stockAvailable(s);
-        logStock(it.productId, 'Sale', -num(it.qty), memo.memoNo, 'Imported from v1');
-      });
-      memo++;
-    });
+      const exists = db.memos.some(x => x.memoNo ==r“²Ð ¦gVæ7F–öâ&VæFW$ÆÂ‚’°¢–b‚6W76–öâ’&WGW&ã°¢6öç7BÒ7W'&VçEvS°¢G'’°¢–b‡ÓÓÒvF6†&ö&Br’&VæFW$F6†&ö&B‚“°¢–b‡ÓÓÒv÷&FW'2r’&VæFW$÷&FW'2‚“°¢–b‡ÓÓÒvÖVÖòr’²6Æ4ÖVÖò‚“²&VæFW$ÖVÖô÷&FW$&Æö6²‚“²Ð¢–b‡ÓÓÒv†—7F÷'’r’&VæFW$†—7F÷'’‚“°¢–b‡ÓÓÒvFVÆ—fW'’r’&VæFW$FVÆ—fW'’‚“°¢–b‡ÓÓÒv7W7FöÖW'2r’&VæFW$7W7FöÖW'2‚“°¢–b‡ÓÓÒvÆVFvW"r’&VæFW$7W7FöÖW$ÆVFvW"‚“°¢–b‡ÓÓÒwW&6†6Rr’²&VæFW%W&6†6U7WÆ–W'2‚“²&VæFW%W&6†6T†—7F÷'’‚“²6Æ5W&6†6R‚“²Ð¢–b‡ÓÓÒw7WÆ–W"r’&VæFW%7WÆ–W'2‚“°¢–b‡ÓÓÒw&öGV7G2r’&VæFW%&öGV7G2‚“°¢–b‡ÓÓÒw7Fö6²r’&VæFW%7Fö6²‚“°¢–b‡ÓÓÒw7Fö6¶Æörr’&VæFW%7Fö6´Æör‚“°¢–b‡ÓÓÒw&öf—Br’&VæFW%&öf—B‚“°¢–b‡ÓÓÒwÂr’&VæFW%Â‚“°¢–b‡ÓÓÒvW‡Vç6Rr’&VæFW$W‡Vç6W2‚“°¢–b‡ÓÓÒvÆVFvW'&W÷'Br’&VæFW$ÆVFvW%&W÷'B‚“°¢–b‡ÓÓÒwW6W'2r’&VæFW%W6W'2‚“°¢–b‡ÓÓÒw6WGF–æw2r’&VæFW%6WGF–æw2‚“°¢–b‡ÓÓÒv&6·Wr’&VæFW$&6·W‚“°¢Ò6F6‚†R’°¢6öç6öÆRæW'&÷"‚w&VæFW"W'&÷"öâr²ÂR“°¢Ð¢7–æ57FGW5&VæFW"‚“°§Ð ¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒF6†&ö&BÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ð¢ò¢v‡’F†—2FWf–6R6ææ÷B6VRF†R÷F†W"FWf–6Rw2v÷&²à¢F†R7–æ2U$Â—2W"ÖFWf–6R6WGF–ær„Äô4Åõ4UED”äuô´U•2’Â6ò6öæf–wW&–ær—Böà¢F†R2FöW2æ÷F†–ærf÷"F†R†öæRâF†R÷væW"6öæf–wW&VB—BöâF†R2Â÷VæVBF†P¢†öæRÂæB6râV×G’6†÷v—F‚æòW‡ÆæF–öââ6’—B÷WBÆ÷VBÂöâF†RvR†P¢7GVÆÇ’Æöö·2BÂæBv—fR†–ÒF†RöæRF†–ær†R6âFò&÷WB—Bâ¢ð¦gVæ7F–öâ&VæFW%7–æ5v&æ–ær‚’°¢6öç7B&÷‚ÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7–æ5v&âr“°¢–b‚&÷‚’&WGW&ã°¢6öç7BöâÒ7–æ5W&Â‚“°¢6öç7B÷F†W'2Ò†F"æÖVÖ÷2ÇÂµÒ’æÆVæwF‚²†F"ç&öGV7G2ÇÂµÒ’æf–ÇFW"‡Óâ7G&–ær‡æ–B’ç7F'G5v—F‚‚w6VVBÒr’’æÆVæwFƒ°¢ò¢F†R6†VWB6â&RöâæB7F–ÆÂÆVfRF†RFWf–6R6Æ÷s¢–ç7FçB7–æ2æVVG2F†RFWf–6P¢6–væVB–âFòF†R6Æ÷VBâv—F†÷WBF†B—BöæÇ’vWG2F†RöÆÂÂv†–6‚—2F†R&Æ—fR—0¢æ÷Bv÷&¶–ær"F†R÷væW"†—Bv—F‚æòW‡ÆæF–öâöâ67&VVââ6’—B÷WBÆ÷VBâ¢ð¢6öç7B6Æ÷VDöâÒG—Vöb6Æ÷VD6öæf–wW&VBÓÓÒvgVæ7F–öârbb6Æ÷VD6öæf–wW&VB‚“°¢6öç7B6döâÒG—Vöb6d&6¶VæDöâÓÓÒvgVæ7F–öârbb6d&6¶VæDöâ‚“°¢6öç7B6e6VÂÒG—Vöb6e6VÆV7FVEòÓÓÒvgVæ7F–öârbb6e6VÆV7FVEò‚“°¢ò¢öâF†R6Æ÷VFfÆ&R&6¶VæBF†R6†÷Fö¶Vâ—2F†R6WGWÂ6ò&6öæf–wW&VB"Ç&VG¢ÖVç2'F†—2FWf–6R6â&V6‚F†R6Æ÷VB#²öæÇ’F†Rf—&W7F÷&R&6¶VæB7F–ÆÂæVVG2¢W"ÖFWf–6R6–vâÖ–ââ¢ð¢6öç7B6Æ÷VD–âÒ6döâÇÂ‡G—Vöbf%6–væVD–âÓÓÒvgVæ7F–öârbbf%6–væVD–â‚’“°ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒå7WÆ–W#Â÷FƒãÇFƒä6öçF7CÂ÷FƒãÇFƒå†öæSÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#åW&6†6VCÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#äGVSÂ÷FƒãÇFƒãÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢'"æÖ‡2Óâ°¢6öç7B2ÒF"çW&6†6W2æf–ÇFW"‡Óâç7WÆ–W$–BÓÓÒ2æ–B“°¢&WGW&âsÇG#ãÇFCâr²W62‡2ææÖR’²sÂ÷FCãÇFCâr²W62‡2æ6öçF7BÇÂrr’²sÂ÷FCãÇFCâr²W62‡2ç†öæRÇÂrr’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡2ç&VGV6R‚†Â’Óâ²çVÒ‡ç7V'F÷FÂ’Â’’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ"6Æ73Ò'&VB#âr²ÖöæW’‡2ç&VGV6R‚†Â’Óâ²çVÒ‡æGVR’Â’’²sÂö#ãÂ÷FCâr°¢sÇFCãÆ'WGFöâ6Æ73Ò&'FâÖFævW"'Fâ×6Ò"öæ6Æ–6³Ò&FVÆWFU7WÆ–W"…Ârr²2æ–B²uÂr’#äFVÆWFSÂö'WGFöããÂ÷FCãÂ÷G#âs°¢Ò’æ¦ö–â‚rr’²sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câp¢¢sÆF—b6Æ73Ò&V×G’#äæò7WÆ–W'3ÂöF—câs°¢&VæFW%W&6†6U7WÆ–W'2‚“°§Ð ¦gVæ7F–öâFE7WÆ–W"‚’°¢6öç7BâÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w4æÖRr’çfÇVRçG&–Ò‚“°¢–b‚â’&WGW&âÆW'B‚tVçFW"7WÆ–W"æÖRâr“°¢F"ç7WÆ–W'2çW6‚‡°¢–C¢–B‚’ÂæÖS¢âÂ6öçF7C¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w46öçF7Br’çfÇVRçG&–Ò‚’À¢†öæS¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w5†öæRr’çfÇVRçG&–Ò‚’À¢FG&W73¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w4FG&W72r’çfÇVRçG&–Ò‚¢Ò“°¢²w4æÖRrÂw46öçF7BrÂw5†öæRrÂw4FG&W72uÒæf÷$V6‚†’ÓâFö7VÖVçBævWDVÆVÖVçD'”–B†’’çfÇVRÒrr“°¢6öÖÖ—B‚“°§Ð ¦gVæ7F–öâFVÆWFU7WÆ–W"‡6–B’°¢–b†F"çW&6†6W2ç6öÖR‡Óâç7WÆ–W$–BÓÓÒ6–B’’&WGW&âÆW'B‚uF†—27WÆ–W"†2W&6†6R†—7F÷'’Â6ò6ææ÷B&RFVÆWFVBâr“°¢–b‚6öæf—&Ò‚tFVÆWFR7WÆ–W#òr’’&WGW&ã°¢F"ç7WÆ–W'2ÒF"ç7WÆ–W'2æf–ÇFW"‡‚Óâ‚æ–BÓÒ6–B“°¢6öÖÖ—B‚“°§Ð ¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ&öGV7G2ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ð¦gVæ7F–öâ&VæFW%&öGV7G2‚’°¢6öç7BÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6V&6‚r’çfÇVRÇÂrr’çFôÆ÷vW$66R‚“°¢6öç7B'"ÒF"ç&öGV7G2æf–ÇFW"‡Óâ‡ææÖR²rr²‡ç6·RÇÂrr’²rr²‡æ6FVv÷'’ÇÂrr’’çFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡’“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w&öGV7EF&ÆRr’æ–ææW$…DÔÂÐ¢sÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒå&öGV7CÂ÷FƒãÇFƒå4µSÂ÷FƒãÇFƒä6FVv÷'“Â÷FƒãÇFƒåVæ—CÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#ä6÷7CÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#å&FSÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#äÖ&v–ãÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#å&V÷&FW#Â÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#äf–Æ&ÆSÂ÷FƒãÇFƒãÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢†'"æÖ‡Óâ°¢6öç7B2ÒF"ç7Fö6²æf–æB‡‚Óâ‚ç&öGV7D–BÓÓÒæ–B“°¢6öç7BbÒçVÒ‡3òæf–Æ&ÆR“°¢6öç7BÖ&v–âÒçVÒ‡ç&FR’Ò7Fö6´6÷7B‡æ–B“°¢&WGW&âsÇG#ãÇFCâr²W62‡ææÖR’²sÂ÷FCãÇFCâr²W62‡ç6·RÇÂrr’²sÂ÷FCãÇFCâr²W62‡æ6FVv÷'’ÇÂrr’²sÂ÷FCâr°¢sÇFCâr²W62‡çVæ—BÇÂrr’²sÂ÷FCãÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡æ6÷7B’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡ç&FR’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ"6Æ73Ò"r²†Ö&v–âãÒòvw&VVâr¢w&VBr’²r#âr²ÖöæW’†Ö&v–â’²sÂö#ãÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²çVÒ‡ç&V÷&FW$ÆWfVÂ’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÇ7â6Æ73Ò'–ÆÂr²†bÃÒòvFævW"r¢bÃÒçVÒ‡ç&V÷&FW$ÆWfVÂ’òwv&âr¢vö²r’²r#âr²b²sÂ÷7ããÂ÷FCâr°¢sÇFCãÆ'WGFöâ6Æ73Ò&'FâÖÆ–v‡B'Fâ×6Ò"öæ6Æ–6³Ò&VF—E&öGV7B…Ârr²æ–B²uÂr’#äVF—CÂö'WGFöãâr°¢sÆ'WGFöâ6Æ73Ò&'FâÖFævW"'Fâ×6Ò"öæ6Æ–6³Ò&FVÆWFU&öGV7B…Ârr²æ–B²uÂr’#äFVÆWFSÂö'WGFöããÂ÷FCãÂ÷G#âs°¢Ò’æ¦ö–â‚rr’ÇÂsÇG#ãÇFB6öÇ7ãÒ#"6Æ73Ò&V×G’#äæò&öGV7G3Â÷FCãÂ÷G#âr’²sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câs°§Ð ¢ò¢6†&VB'’F†R&öGV7G2vRæBF†R7Fö6²vRÒF†R7Fö6²vRÇ6òæVVG2F†—0¢Æ—7Bf–ÆÆVBÂ÷F†W'v—6R÷Væ–ær—BF—&V7FÇ’ÆVfW2F†R–6¶W"V×G’â¢ð¦gVæ7F–öâf–ÆÅ7Fö6µ&öGV7E6VÆV7B‚’°¢6öç7B7ÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6µ&öGV7Br“°¢–b‚7’&WGW&ã°¢6öç7B¶VWÒ7çfÇVS°¢7æ–ææW$…DÔÂÒsÆ÷F–öâfÇVSÒ"#âÒ6VÆV7B&öGV7BÓÂö÷F–öãâr°¢F"ç&öGV7G2æÖ‡ÓâsÆ÷F–öâfÇVSÒ"r²æ–B²r#âr²W62‡ææÖR’²sÂö÷F–öãâr’æ¦ö–â‚rr“°¢–b†¶VWbbF"ç&öGV7G2ç6öÖR‡Óâæ–BÓÓÒ¶VW’’7çfÇVRÒ¶VW°§Ð ¦gVæ7F–öâFE&öGV7B‚’°¢6öç7BâÒFö7VÖVçBævWDVÆVÖVçD'”–B‚wæÖRr’çfÇVRçG&–Ò‚“°¢–b‚â’&WGW&âÆW'B‚tVçFW"&öGV7BæÖRâr“°¢F"ç&öGV7G2çW6‚‡°¢–C¢–B‚’ÂæÖS¢âÂ6·S¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6·Rr’çfÇVRçG&–Ò‚’À¢6FVv÷'“¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6FVv÷'’r’çfÇVRçG&–Ò‚’ÇÂtvVæW&ÂrÀ¢Væ—C¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚wVæ—Br’çfÇVRçG&–Ò‚’ÇÂw72rÀ¢6÷7C¢çVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6÷7Br’çfÇVR’À¢&FS¢çVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w&FRr’çfÇVR’À¢fC¢çVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚wfBr’çfÇVR’À¢&V÷&FW$ÆWfVÃ¢çVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w&V÷&FW"r’çfÇVR¢Ò“°¢²wæÖRrÂw6·RrÂw6FVv÷'’rÂw6÷7BrÂw&FRrÂwfBrÂw&V÷&FW"uÒæf÷$V6‚†’Óâ°¢6öç7BRÒFö7VÖVçBævWDVÆVÖVçD'”–B†’“²–b†R’RçfÇVRÒrs°¢Ò“°¢6öÖÖ—B‚“°§Ð ¦ÆWBVF—F–æu&öGV7D–BÒçVÆÃ°¦gVæ7F–öâVF—E&öGV7B‡–B’°¢6öç7BÒ&öGV7D'”–B‡–B“°¢–b‚’&WGW&ã°¢VF—F–æu&öGV7D–BÒ–C°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vWæÖRr’çfÇVRÒææÖS°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW6·Rr’çfÇVRÒç6·RÇÂrs°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW6FVv÷'’r’çfÇVRÒæ6FVv÷'’ÇÂrs°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vWVæ—Br’çfÇVRÒçVæ—BÇÂw72s°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW6÷7Br’çfÇVRÒæ6÷7C°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW&FRr’çfÇVRÒç&FS°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vWfBr’çfÇVRÒçfBÇÂ°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW&V÷&FW"r’çfÇVRÒç&V÷&FW$ÆWfVÂÇÂ°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w&öGV7DÖöFÂr’æ6Æ74Æ—7BæFB‚w6†÷rr“°§Ð¦gVæ7F–öâ6Æ÷6U&öGV7B‚’²VF—F–æu&öGV7D–BÒçVÆÃ²Fö7VÖVçBævWDVÆVÖVçD'”–B‚w&öGV7DÖöFÂr’æ6Æ74Æ—7Bç&VÖ÷fR‚w6†÷rr“²Ð ¦gVæ7F–öâ6fU&öGV7DVF—B‚’°¢6öç7BÒ&öGV7D'”–B†VF—F–æu&öGV7D–B“°¢–b‚’&WGW&ã°¢ææÖRÒFö7VÖVçBævWDVÆVÖVçD'”–B‚vWæÖRr’çfÇVRçG&–Ò‚’ÇÂææÖS°¢ç6·RÒFö7VÖVçBævWDVÆVÖVçD'”–B‚vW6·Rr’çfÇVRçG&–Ò‚“°¢æ6FVv÷'’ÒFö7VÖVçBævWDVÆVÖVçD'”–B‚vW6FVv÷'’r’çfÇVRçG&–Ò‚’ÇÂtvVæW&Âs°¢çVæ—BÒFö7VÖVçBævWDVÆVÖVçD'”–B‚vWVæ—Br’çfÇVRçG&–Ò‚’ÇÂw72s°¢æ6÷7BÒçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW6÷7Br’çfÇVR“°¢ç&FRÒçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW&FRr’çfÇVR“°¢çfBÒçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚vWfBr’çfÇVR“°¢ç&V÷&FW$ÆWfVÂÒçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW&V÷&FW"r’çfÇVR“°¢ò¢F†R'W––ær&–6RÆ—fW2–âGvòÆ6W2ÒF†R&öGV7BæBF†R7Fö6²6&BÒæ@¢7Fö6´6÷7B‚’&VG2F†R6&Bf—'7Bâv—F†÷WBF†—2F†R&–6RF†R÷væW"§W7BG—V@¢öâF†R&öGV7G2vRv26–ÆVçFÇ’–væ÷&VB'’WfW'’ÆFW"ÖVÖòÂ6ò&öf—B¶W@¢W6–ærF†RöÆB6÷7C¢&öGV7B&÷Vv‡BB#7F–ÆÂ&W÷'FVBF†RÖ&v–âöbâ¢ð¢6öç7B2ÒF"ç7Fö6²æf–æB‡‚Óâ‚ç&öGV7D–BÓÓÒæ–B“°¢–b‡2bbçVÒ‡æ6÷7B’â’2æ6÷7BÒçVÒ‡æ6÷7B“°¢6öÖÖ—B‚“°¢6Æ÷6U&öGV7B‚“°§Ð ¦gVæ7F–öâFVÆWFU&öGV7B‡–B’°¢6öç7BW6VBÒF"æÖVÖ÷2ç6öÖR†ÒÓâÒæ—FV×2ç6öÖR†’Óâ’ç&öGV7D–BÓÓÒ–B’“°¢6öç7B2ÒF"ç7Fö6²æf–æB‡‚Óâ‚ç&öGV7D–BÓÓÒ–B“°¢–b‡W6VBÇÂçVÒ‡3òç6öÆB’â’&WGW&âÆW'B‚uF†—2&öGV7B†26ÆW2†—7F÷'’Â6ò6ææ÷B&RFVÆWFVBâVF—B—B–ç7FVBâr“°¢–b†F"çW&6†6W2ç6öÖR‡Óâæ—FV×2ç6öÖR†’Óâ’ç&öGV7D–BÓÓÒ–B’’’&WGW&âÆW'B‚uF†—2&öGV7B†2W&6†6R†—7F÷'’Â6ò6ææ÷B&RFVÆWFVBâr“°¢–b‚6öæf—&Ò‚tFVÆWFRF†—2&öGV7Còr’’&WGW&ã°¢F"ç&öGV7G2ÒF"ç&öGV7G2æf–ÇFW"‡‚Óâ‚æ–BÓÒ–B“°¢F"ç7Fö6²ÒF"ç7Fö6²æf–ÇFW"‡‚Óâ‚ç&öGV7D–BÓÒ–B“°¢6öÖÖ—B‚“°§Ð ¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ7Fö6²ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ð¦gVæ7F–öâ&VæFW%7Fö6²‚’°¢6öç7BÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6µ6V&6‚r’çfÇVRÇÂrr’çFôÆ÷vW$66R‚“°¢f–ÆÅ7Fö6µ&öGV7E6VÆV7B‚“°¢6öç7B'"ÒF"ç&öGV7G2æf–ÇFW"‡ÓâææÖRçFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡’“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6µF&ÆRr’æ–ææW$…DÔÂÒ'"æÆVæwF€¢òsÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒå&öGV7CÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#ä÷Væ–æsÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#åW&6†6VCÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#å6öÆCÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#äf–Æ&ÆSÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#å6†÷'CÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#åVæ—B6÷7CÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#å7Fö6²fÇVSÂ÷FƒãÇFƒå7FGW3Â÷FƒãÇFƒãÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢'"æÖ‡Óâ°¢6öç7B2ÒF"ç7Fö6²æf–æB‡‚Óâ‚ç&öGV7D–BÓÓÒæ–B’ÇÂ·Ó°¢6öç7BbÒçVÒ‡2æf–Æ&ÆR“°¢6öç7B6†÷'BÒ7Fö6µ6†÷'B‡2“°¢6öç7B7BÒbÃÒòvFævW"r¢bÃÒçVÒ‡ç&V÷&FW$ÆWfVÂ’òwv&âr¢vö²s°¢&WGW&âsÇG#ãÇFCâr²W62‡ææÖR’²sÂ÷FCãÇFB6Æ73Ò'&–v‡B#âr²çVÒ‡2æ÷Væ–ær’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²çVÒ‡2çW&6†6VB’²sÂ÷FCãÇFB6Æ73Ò'&–v‡B#âr²çVÒ‡2ç6öÆB’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ#âr²b²sÂö#ãÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²‡6†÷'BâòsÆ"6Æ73Ò'&VB#âr²6†÷'B²sÂö#âr¢rÒr’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡7Fö6´6÷7B‡æ–B’’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’†b¢7Fö6´6÷7B‡æ–B’’²sÂ÷FCâr°¢sÇFCãÇ7â6Æ73Ò'–ÆÂr²7B²r#âr²†bÃÒòtõUBr¢bÃÒçVÒ‡ç&V÷&FW$ÆWfVÂ’òtÄõrr¢tô²r’²sÂ÷7ããÂ÷FCâr°¢sÇFCãÆ'WGFöâ6Æ73Ò&'FâÖÆ–v‡B'Fâ×6Ò"öæ6Æ–6³Ò&÷Vå7Fö6´VF—B…Ârr²æ–B²uÂr’#äVF—CÂö'WGFöãâr°¢sÆ'WGFöâ6Æ73Ò&'FâÖ÷&ævR'Fâ×6Ò"öæ6Æ–6³Ò&÷VäF§W7B…Ârr²æ–B²uÂr’#äF§W7CÂö'WGFöããÂ÷FCãÂ÷G#âs°¢Ò’æ¦ö–â‚rr’²sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câp¢¢sÆF—b6Æ73Ò&V×G’#äæò&öGV7G3ÂöF—câs°§Ð ¦gVæ7F–öâFE7Fö6µW&6†6R‚’°¢f–ÆÅ7Fö6µ&öGV7E6VÆV7B‚“°¢6öç7B–BÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6µ&öGV7Br’çfÇVS°¢6öç7BÒçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6´FEG’r’çfÇVR“°¢6öç7B2ÒçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6´6÷7Br’çfÇVR“°¢–b‚–B’&WGW&âÆW'B‚u6VÆV7B&öGV7Bâr“°¢–b‡ÃÒ’&WGW&âÆW'B‚tVçFW"VçF—G’†w&VFW"F†â’âr“°¢6öç7BÒ&öGV7D'”–B‡–B“°¢6öç7B2Ò7Fö6´öb‡–B“°¢2æ÷Væ–ærÒçVÒ‡2æ÷Væ–ær’²°¢–b†2â’2æ6÷7BÒ3°¢2æf–Æ&ÆRÒ7Fö6´f–Æ&ÆR‡2“°¢Æöu7Fö6²‡–BÂt÷Væ–ærrÂÂtÖçVÂrÂt÷Væ–ær7Fö6²FFVBr“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6´FEG’r’çfÇVRÒrs°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6´6÷7Br’çfÇVRÒrs°¢–b‚6öÖÖ—B‚’’&WGW&ã°¢ÆW'B‚u7Fö6²FFVBåÆâr²‡òææÖR¢u&öGV7Br’²rÒf–Æ&ÆRæ÷s¢r²2æf–Æ&ÆR“°§Ð ¦ÆWBF§W7E&öGV7D–BÒçVÆÃ°¦gVæ7F–öâ÷VäF§W7B‡–B’°¢F§W7E&öGV7D–BÒ–C°¢6öç7BÒ&öGV7D'”–B‡–B“°¢6öç7B2ÒF"ç7Fö6²æf–æB‡‚Óâ‚ç&öGV7D–BÓÓÒ–B’ÇÂ·Ó°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vE&öGV7Br’çFW‡D6öçFVçBÒææÖR²rÒf–Æ&ÆS¢r²çVÒ‡2æf–Æ&ÆR“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vEG’r’çfÇVRÒrs°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vE&V6öâr’çfÇVRÒrs°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vF§W7DÖöFÂr’æ6Æ74Æ—7BæFB‚w6†÷rr“°§Ð¦gVæ7F–öâ6Æ÷6TF§W7B‚’²F§W7E&öGV7D–BÒçVÆÃ²Fö7VÖVçBævWDVÆVÖVçD'”–B‚vF§W7DÖöFÂr’æ6Æ74Æ—7Bç&VÖ÷fR‚w6†÷rr“²Ð ¦gVæ7F–öâ6fTF§W7B‚’°¢6öç7B–BÒF§W7E&öGV7D–C°¢6öç7BFVÇFÒçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚vEG’r’çfÇVR“°¢6öç7B&V6öâÒFö7VÖVçBævWDVÆVÖVçD'”–B‚vE&V6öâr’çfÇVRçG&–Ò‚“°¢–b†FVÇFÓÓÒ’&WGW&âÆW'B‚tVçFW"âF§W7FÖVçBG’‡÷6—F—fRFòFBÂæVvF—fRFò&VGV6R’âr“°¢6öç7B2Ò7Fö6´öb‡–B“°¢ò¢6†V6¶VBv–ç7BF†R&rf–wW&RÂæ÷BF†R6Æ×VBöæS¢6&Bv†÷6R6ÆW0¢Ç&VG’&â†VBöb—G2&V6V—G26—G2Bf–Æ&ÆRv—F‚6†÷'FfÆÂÂæ@¢—B×W7B7F–ÆÂ66WBF÷vçv&BF§W7FÖVçBâ¢ð¢–b‡7Fö6µ&r‡2’²FVÇFÂ’°¢&WGW&âÆW'B‚uF†—2F§W7FÖVçBv÷VÆBW6‚7Fö6²&VÆ÷rv†Bv2&V6V—fVBâf–Æ&ÆS¢r²çVÒ‡2æf–Æ&ÆR’“°¢Ð¢–b†FVÇFâ’2æ÷Væ–ærÒçVÒ‡2æ÷Væ–ær’²FVÇF°¢VÇ6R2ç6öÆBÒçVÒ‡2ç6öÆB’²ÖF‚æ'2†FVÇF“°¢2æf–Æ&ÆRÒ7Fö6´f–Æ&ÆR‡2“°¢Æöu7Fö6²‡–BÂtF§W7FÖVçBrÂFVÇFÂtÖçVÂrÂ&V6öâÇÂu7Fö6²F§W7FÖVçBr“°¢6öÖÖ—B‚“°¢6Æ÷6TF§W7B‚“°¢ÆW'B‚u7Fö6²F§W7FVBâr“°§Ð ¦ÆWBVF—F–æu7Fö6µ&öGV7D–BÒçVÆÃ°¦gVæ7F–öâ÷Vå7Fö6´VF—B‡–B’°¢6öç7BÒ&öGV7D'”–B‡–B“°¢–b‚’&WGW&ã°¢6öç7B2ÒF"ç7Fö6²æf–æB‡‚Óâ‚ç&öGV7D–BÓÓÒ–B’ÇÂ·Ó°¢VF—F–æu7Fö6µ&öGV7D–BÒ–C°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6U&öGV7Br’çFW‡D6öçFVçBÒææÖS°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6T÷Væ–ærr’çfÇVRÒçVÒ‡2æ÷Væ–ær“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6UW&6†6VBr’çfÇVRÒçVÒ‡2çW&6†6VB“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6U6öÆBr’çfÇVRÒçVÒ‡2ç6öÆB“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6T6÷7Br’çfÇVRÒçVÒ‡2æ6÷7B’ÇÂçVÒ‡æ6÷7B“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6´VF—DÖöFÂr’æ6Æ74Æ—7BæFB‚w6†÷rr“°§Ð¦gVæ7F–öâ6Æ÷6U7Fö6´VF—B‚’²VF—F–æu7Fö6µ&öGV7D–BÒçVÆÃ²Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6´VF—DÖöFÂr’æ6Æ74Æ—7Bç&VÖ÷fR‚w6†÷rr“²Ð ¦gVæ7F–öâ6fU7Fö6´VF—B‚’°¢6öç7B–BÒVF—F–æu7Fö6µ&öGV7D–C°¢6öç7BÒ&öGV7D'”–B‡–B“°¢–b‚’&WGW&ã°¢6öç7B÷Væ–ærÒÖF‚æÖ‚ƒÂçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6T÷Væ–ærr’çfÇVR’“°¢6öç7BW&6†6VBÒÖF‚æÖ‚ƒÂçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6UW&6†6VBr’çfÇVR’“°¢6öç7B6öÆBÒÖF‚æÖ‚ƒÂçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6U6öÆBr’çfÇVR’“°¢6öç7B6÷7BÒÖF‚æÖ‚ƒÂçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6T6÷7Br’çfÇVR’“° ¢ò¢7Fö6²VF—B6âæòÆöævW"6–ÆVçFÇ’W&6R&VÂÖVÖò6ÆW2â¢ð¢6öç7BÖVÖõ6öÆBÒF"æÖVÖ÷2ç&VGV6R‚†ÂÒ’Óà¢²Òæ—FV×2æf–ÇFW"†’Óâ’ç&öGV7D–BÓÓÒ–B’ç&VGV6R‚†"Â’’Óâ"²çVÒ†’çG’’Â’Â“°¢–b‡6öÆBÂÖVÖõ6öÆB’°¢&WGW&âÆW'B‚u6öÆBG’6ææ÷Bvò&VÆ÷rv†BF†RÖVÖ÷27GVÆÇ’6öÆB‚r²ÖVÖõ6öÆB²r’âr“°¢Ð¢6öç7Bf–Æ&ÆRÒ7Fö6µ&r‡²÷Væ–ærÂW&6†6VBÂ6öÆBÒ“°¢ò¢6&Bv†÷6R6ÆW2&â†VBöb—G2&V6V—G2—2æ÷&ÖÂ7FFRÒF†RÖVÖð¢WFòÖFB7&VFW2W†7FÇ’F†Bâ—B—2¶WB26†÷'FfÆÂFòVçFW"Âæ÷@¢&VgW6VB†W&RÂ6òF†R÷væW"6âÇv—2&R×6fRF†R6&B†R§W7BÆöö¶VBBâ¢ð ¢6öç7B2Ò7Fö6´öb‡–B“°¢6öç7B&Vf÷&RÒçVÒ‡2æf–Æ&ÆR“°¢2æ÷Væ–ærÒ÷Væ–æs²2çW&6†6VBÒW&6†6VC²2ç6öÆBÒ6öÆC°¢–b†6÷7Bâ’2æ6÷7BÒ6÷7C°¢2æf–Æ&ÆRÒ7Fö6´f–Æ&ÆR‡2“°¢Æöu7Fö6²‡–BÂtF§W7FÖVçBrÂ2æf–Æ&ÆRÒ&Vf÷&RÂtÖçVÂrÂu7Fö6²6&BVF—FVBr“°¢6öÖÖ—B‚“°¢6Æ÷6U7Fö6´VF—B‚“°¢ÆW'B†f–Æ&ÆRÂ ¢òu7Fö6²WFFVBåÆå&V6V—fVB—2ÆW72F†â6öÆBÒF†W6Rr²ÖF‚æ'2†f–Æ&ÆR’²rv–ÆÂ6†÷r–â%6†÷'B"âp¢¢u7Fö6²WFFVBâr“°§Ð ¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ7Fö6²ÆVFvW"†VF—BG&–Â’ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ð¦gVæ7F–öâ&VæFW%7Fö6´Æör‚’°¢6öç7BÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚w6Å6V&6‚r’çfÇVRÇÂrr’çFôÆ÷vW$66R‚“°¢6öç7B'"ÒF"æÆVFvW"ç6Æ–6R‚’ç&WfW'6R‚’æf–ÇFW"†ÂÓâ°¢6öç7BÒ&öGV7D'”–B†Âç&öGV7D–B“°¢&WGW&â‚‡òææÖRÇÂrr’²rr²ÂçG—R²rr²†Âç&VbÇÂrr’’çFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡“°¢Ò’ç6Æ–6RƒÂC“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7Fö6´ÆöuF&ÆRr’æ–ææW$…DÔÂÒ'"æÆVæwF€¢òsÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒäFFSÂ÷FƒãÇFƒå&öGV7CÂ÷FƒãÇFƒåG—SÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#ä–ãÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#ä÷WCÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#ä&Ææ6SÂ÷FƒãÇFƒå&VfW&Væ6SÂ÷FƒãÇFƒäæ÷FSÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢'"æÖ†ÂÓâ°¢6öç7BÒ&öGV7D'”–B†Âç&öGV7D–B“°¢&WGW&âsÇG#ãÇFCâr²W62†ÂæFFR’²sÂ÷FCãÇFCâr²W62‡òææÖR¢r†FVÆWFVB’r’²sÂ÷FCâr°¢sÇFCãÇ7â6Æ73Ò'–ÆÂr²‚õ6ÆRBòçFW7B†ÂçG—R’òv–æfòr¢ÂçG—RÓÓÒuW&6†6Rròvö²r¢wv&âr’²r#âr²W62†ÂçG—R’²sÂ÷7ããÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²†çVÒ†ÂçG’’âòçVÒ†ÂçG’’¢rÒr’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²†çVÒ†ÂçG’’ÂòÖF‚æ'2†çVÒ†ÂçG’’’¢rÒr’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ#âr²çVÒ†Âæ&Ææ6R’²sÂö#ãÂ÷FCâr°¢sÇFCâr²W62†Âç&VbÇÂrr’²sÂ÷FCãÇFCâr²W62†Âææ÷FRÇÂrr’²sÂ÷FCãÂ÷G#âs°¢Ò’æ¦ö–â‚rr’²sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câp¢¢sÆF—b6Æ73Ò&V×G’#äæò7Fö6²Ö÷fVÖVçB–WCÂöF—câs°§Ð ¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ&öf—B&W÷'G2ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ð¦gVæ7F–öâ&öf—E&÷w2†g&öÒÂFò’°¢6öç7BÖÒ·Ó°¢F"æÖVÖ÷2æf÷$V6‚†ÒÓâ°¢–b‚FFT–å&ævR†ÒæFFRÂg&öÒÂFò’’&WGW&ã°¢ò¢&WGW&æVB–V6W2&Ræ÷B6ÆW2Â6òF†V—"G’ÂfÇVRæB6÷7BÆVfRF†R—FVÐ¢&W÷'BâW"×&öGV7B6òF†R&–v‡BÆ–æRG&÷2Âæ÷BF†Rv†öÆRÖVÖòw2â¢ð¢6öç7B6öÆEfÇVRÒ†Òæ—FV×2ÇÂµÒ’ç&VGV6R‚†Â—B’Óâ²çVÒ†—BçG’’¢çVÒ†—Bç&FR’Â“°¢6öç7B&F–òÒ6öÆEfÇVRâòÖF‚æÖ–âƒÂ&WGW&æVEfÇVTöäÖVÖõò†Ò’ò6öÆEfÇVR’¢°¢Òæ—FV×2æf÷$V6‚†—BÓâ°¢6öç7B²Ò—Bç&öGV7D–BÇÂ—Bç&öGV7DæÖS°¢Ö¶µÒÒÖ¶µÒÇÂ²æÖS¢—Bç&öGV7DæÖRÂG“¢Â6ÆW3¢Â6÷7C¢Â&öf—C¢Ó°¢6öç7BÒçVÒ†—BçG’’¢ƒÒ&F–ò“°¢6öç7B6ÆW2Ò&÷VæC"†çVÒ†—BæÖ÷VçB’¢ƒÒ&F–ò’“°¢6öç7B6÷7BÒ&÷VæC"†çVÒ†—BçG’’¢çVÒ†—Bæ6÷7B’¢ƒÒ&F–ò’“°¢Ö¶µÒçG’³Ò°¢Ö¶µÒç6ÆW2³Ò6ÆW3°¢Ö¶µÒæ6÷7B³Ò6÷7C°¢Ö¶µÒç&öf—B³Ò&÷VæC"‡6ÆW2Ò6÷7B“°¢Ò“°¢Ò“°¢&WGW&âö&¦V7BçfÇVW2†Ö’ç6÷'B‚†Â"’Óâ"ç&öf—BÒç&öf—B“°§Ð ¦gVæ7F–öâ&VæFW%&öf—B‚’°¢6öç7Bg&öÒÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w$g&öÒr’çfÇVS°¢6öç7BFòÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w%Fòr’çfÇVS°¢6öç7B&÷w2Ò&öf—E&÷w2†g&öÒÂFò“°¢6öç7BF÷BÒ&÷w2ç&VGV6R‚†Â"’Óâ‡°¢G“¢çG’²"çG’Â6ÆW3¢&÷VæC"†ç6ÆW2²"ç6ÆW2’À¢6÷7C¢&÷VæC"†æ6÷7B²"æ6÷7B’Â&öf—C¢&÷VæC"†ç&öf—B²"ç&öf—B¢Ò’Â²G“¢Â6ÆW3¢Â6÷7C¢Â&öf—C¢Ò“°¢6öç7BÖ&v–å7BÒF÷Bç6ÆW2ò&÷VæC"‚‡F÷Bç&öf—BòF÷Bç6ÆW2’¢’¢° ¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w&öf—E7FG2r’æ–ææW$…DÔÂÐ¢7FD&÷‚‚u6ÆW2rÂÖöæW’‡F÷Bç6ÆW2’ÂF÷BçG’²r726öÆBr’°¢7FD&÷‚‚t6÷7BöbvööG2rÂÖöæW’‡F÷Bæ6÷7B’Ât4ôu2r’°¢7FD&÷‚‚tw&÷72&öf—BrÂÖöæW’‡F÷Bç&öf—B’ÂÖ&v–å7B²rRÖ&v–âr’°¢7FD&÷‚‚tfrò–V6RrÂÖöæW’‡F÷BçG’òF÷Bç&öf—BòF÷BçG’¢’Âw&öf—BW"–V6Rr“° ¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w&öf—EF&ÆRr’æ–ææW$…DÔÂÒ&÷w2æÆVæwF€¢òsÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒå&öGV7CÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#åG“Â÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#å6ÆW3Â÷FƒãÇF‚6Æ73Ò'&–v‡B#ä6÷7CÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#å&öf—CÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#äÖ&v–âSÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢&÷w2æÖ‡"ÓâsÇG#ãÇFCâr²W62‡"ææÖR’²sÂ÷FCãÇFB6Æ73Ò'&–v‡B#âr²"çG’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡"ç6ÆW2’²sÂ÷FCãÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡"æ6÷7B’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ"6Æ73Ò"r²‡"ç&öf—BãÒòvw&VVâr¢w&VBr’²r#âr²ÖöæW’‡"ç&öf—B’²sÂö#ãÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²‡"ç6ÆW2ò&÷VæC"‚‡"ç&öf—Bò"ç6ÆW2’¢’¢’²rSÂ÷FCãÂ÷G#âr’æ¦ö–â‚rr’°¢sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câp¢¢sÆF—b6Æ73Ò&V×G’#äæò6ÆW2–âF†—2W&–öCÂöF—câs° ¢&VæFW$6÷7Ev&â‚“°§Ð ¦gVæ7F–öâ&VæFW%Â‚’°¢6öç7Bg&öÒÒFö7VÖVçBævWDVÆVÖVçD'”–B‚wÄg&öÒr’çfÇVS°¢6öç7BFòÒFö7VÖVçBævWDVÆVÖVçD'”–B‚wÅFòr’çfÇVS°¢6öç7B2ÒÅ7VÖÖ'’†g&öÒÂFò“°¢6öç7BÒÒÅ7VÖÖ'’†g&öÒç6Æ–6RƒÂ‚’²srÂFò“° ¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚wÅ7FG2r’æ–ææW$…DÔÂÐ¢7FD&÷‚‚u6ÆW2‡7V'F÷FÂ’rÂÖöæW’‡2ç6ÆW2’Ârr’°¢7FD&÷‚‚t6÷7BöbvööG2„4ôu2’rÂÖöæW’‡2æ6öw2’Ârr’°¢7FD&÷‚‚tw&÷72&öf—BrÂÖöæW’‡2æw&÷75&öf—B’Ârr’°¢7FD&÷‚‚tW‡Vç6W2rÂÖöæW’‡2æW‡Vç6R’Ârr’°¢7FD&÷‚‚tæWB&öf—BrÂÖöæW’‡2ææWE&öf—B’Â2ç6ÆW2ò&÷VæC"‚‡2ææWE&öf—Bò2ç6ÆW2’¢’²rRöb6ÆW2r¢rr“° ¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚wÅ7FFVÖVçBr’æ–ææW$…DÔÂÐ¢sÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF&öG“âr°¢sÇG#ãÇFCå6ÆW2‡7V'F÷FÂ“Â÷FCãÇFB6Æ73Ò'&–v‡B#ãÆ#âr²ÖöæW’‡2ç6ÆW2’²sÂö#ãÂ÷FCãÂ÷G#âr°¢sÇG#ãÇFCäÆW73¢F—66÷VçBv—fVãÂ÷FCãÇFB6Æ73Ò'&–v‡B#âÒr²ÖöæW’‡2æF—66÷VçB’²sÂ÷FCãÂ÷G#âr°¢sÇG#ãÇFCäÆW73¢6÷7BöbvööG26öÆCÂ÷FCãÇFB6Æ73Ò'&–v‡B#âÒr²ÖöæW’‡2æ6öw2’²sÂ÷FCãÂ÷G#âr°¢sÇG"7G–ÆSÒ&&6¶w&÷VæC¢6c&f&cb#ãÇFCãÆ#äw&÷72&öf—CÂö#ãÂ÷FCãÇFB6Æ73Ò'&–v‡B#ãÆ"6Æ73Ò&w&VVâ#âr²ÖöæW’‡2æw&÷75&öf—B’²sÂö#ãÂ÷FCãÂ÷G#âr°¢sÇG#ãÇFCäFC¢FVÆ—fW'’6†&vR–æ6öÖSÂ÷FCãÇFB6Æ73Ò'&–v‡B#â²r²ÖöæW’‡2æFVÆ—fW'”–æ6öÖR’²sÂ÷FCãÂ÷G#âr°¢sÇG#ãÇFCäÆW73¢÷W&F–ærW‡Vç6W3Â÷FCãÇFB6Æ73Ò'&–v‡B#âÒr²ÖöæW’‡2æW‡Vç6R’²sÂ÷FCãÂ÷G#âr°¢sÇG"7G–ÆSÒ&&6¶w&÷VæC¢6ffc&cb#ãÇFCãÆ#äæWB&öf—CÂö#ãÂ÷FCãÇFB6Æ73Ò'&–v‡B#ãÆ"6Æ73Ò'–æ²#âr²ÖöæW’‡2ææWE&öf—B’²sÂö#ãÂ÷FCãÂ÷G#âr°¢sÇG#ãÇFB6Æ73Ò&×WFVB#ådB6öÆÆV7FVB‡–&ÆR“Â÷FCãÇFB6Æ73Ò'&–v‡B×WFVB#âr²ÖöæW’‡2çfD6öÆÆV7FVB’²sÂ÷FCãÂ÷G#âr°¢sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câs° ¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚wÄÖöçF†Ç’r’æ–ææW$…DÔÂÒÖöçF†Ç•Ä…DÔÂ‚“°§Ð ¦gVæ7F–öâÖöçF†Ç•Ä…DÔÂ‚’°¢6öç7BÖöçF‡2Ò·Ó°¢F"æÖVÖ÷2æf÷$V6‚†ÒÓâ°¢6öç7B²Ò†ÒæFFRÇÂrr’ç6Æ–6RƒÂr“°¢–b‚²’&WGW&ã°¢ÖöçF‡5¶µÒÒÖöçF‡5¶µÒÇÂ²6ÆW3¢Â6öw3¢Â&öf—C¢ÂW‡¢Ó°¢ò¢æWBöb&WGW&æVBvööG26ò&WGW&æVB&6VÂFöW2æ÷B6†÷r2ÖöçF‚6ÆW2â¢ð¢6öç7B6öÆEfÇVRÒ†Òæ—FV×2ÇÂµÒ’ç&VGV6R‚†Â—B’Óâ²çVÒ†—BçG’’¢çVÒ†—Bç&FR’Â“°¢6öç7B&F–òÒ6öÆEfÇVRâòÖF‚æÖ–âƒÂ&WGW&æVEfÇVTöäÖVÖõò†Ò’ò6öÆEfÇVR’¢°¢6öç7B6ÆW2Ò&÷VæC"†çVÒ†Òç7V'F÷FÂ’¢ƒÒ&F–ò’“°¢6öç7B6öw2Ò&÷VæC"†çVÒ†Òæ6öw2’¢ƒÒ&F–ò’“°¢ÖöçF‡5¶µÒç6ÆW2Ò&÷VæC"†ÖöçF‡5¶µÒç6ÆW2²6ÆW2“°¢ÖöçF‡5¶µÒæ6öw2Ò&÷VæC"†ÖöçF‡5¶µÒæ6öw2²6öw2“°¢ÖöçF‡5¶µÒç&öf—BÒ&÷VæC"†ÖöçF‡5¶µÒç&öf—B²&÷VæC"‡6ÆW2Ò6öw2’“°¢Ò“°¢F"æW‡Vç6W2æf÷$V6‚†RÓâ°¢6öç7B²Ò†RæFFRÇÂrr’ç6Æ–6RƒÂr“°¢–b‚ÖöçF‡5¶µÒ’ÖöçF‡5¶µÒÒ²6ÆW3¢Â6öw3¢Â&öf—C¢ÂW‡¢Ó°¢ÖöçF‡5¶µÒæW‡Ò&÷VæC"†ÖöçF‡5¶µÒæW‡²çVÒ†RæÖ÷VçB’“°¢Ò“°¢6öç7B¶W—2Òö&¦V7Bæ¶W—2†ÖöçF‡2’ç6÷'B‚’ç6Æ–6R‚Ó"“°¢–b‚¶W—2æÆVæwF‚’&WGW&âsÆF—b6Æ73Ò&V×G’#äæòFF–WCÂöF—câs°¢&WGW&âsÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒäÖöçFƒÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#å6ÆW3Â÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#ä4ôu3Â÷FƒãÇF‚6Æ73Ò'&–v‡B#äw&÷72&öf—CÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#äW‡Vç6SÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#äæWB&öf—CÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢¶W—2æÖ†²ÓâsÇG#ãÇFCâr²²²sÂ÷FCãÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’†ÖöçF‡5¶µÒç6ÆW2’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’†ÖöçF‡5¶µÒæ6öw2’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’†ÖöçF‡5¶µÒç&öf—B’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’†ÖöçF‡5¶µÒæW‡’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ"6Æ73Ò"r²†ÖöçF‡5¶µÒç&öf—BÒÖöçF‡5¶µÒæW‡ãÒòvw&VVâr¢w&VBr’²r#âr°¢ÖöæW’†ÖöçF‡5¶µÒç&öf—BÒÖöçF‡5¶µÒæW‡’²sÂö#ãÂ÷FCãÂ÷G#âr’æ¦ö–â‚rr’°¢sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câs°§Ð ¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒW‡Vç6W2ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ð¦gVæ7F–öâFDW‡Vç6R‚’°¢6öç7B×BÒçVÒ†Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW„Ö÷VçBr’çfÇVR“°¢–b†×BÃÒ’&WGW&âÆW'B‚tVçFW"âÖ÷VçBâr“°¢F"æW‡Vç6W2çW6‚‡°¢–C¢–B‚’À¢FFS¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW„FFRr’çfÇVRÇÂFöF’‚’À¢†VC¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW„†VBr’çfÇVRÀ¢Ö÷VçC¢×BÀ¢æ÷FS¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW„æ÷FRr’çfÇVRçG&–Ò‚¢Ò“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW„Ö÷VçBr’çfÇVRÒrs°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW„æ÷FRr’çfÇVRÒrs°¢–b‚6öÖÖ—B‚’’&WGW&ã°¢7–æ5W6‚‚vW‡Vç6RrÂ²FFS¢FöF’‚’Â†VC¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW„†VBr’çfÇVRÂÖ÷VçC¢×BÒÂtW‡Vç6Rr“°§Ð ¦gVæ7F–öâ&VæFW$W‡Vç6W2‚’°¢6öç7B'"ÒF"æW‡Vç6W2ç6Æ–6R‚’ç&WfW'6R‚“°¢6öç7BF÷FÂÒ'"ç&VGV6R‚†ÂR’Óâ&÷VæC"†²çVÒ†RæÖ÷VçB’’Â“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW‡Vç6UF÷FÂr’çFW‡D6öçFVçBÒÖöæW’‡F÷FÂ“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vW‡Vç6UF&ÆRr’æ–ææW$…DÔÂÒ'"æÆVæwF€¢òsÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒäFFSÂ÷FƒãÇFƒä†VCÂ÷FƒãÇFƒäæ÷FSÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#äÖ÷VçCÂ÷FƒãÇFƒãÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢'"æÖ†RÓâsÇG#ãÇFCâr²W62†RæFFR’²sÂ÷FCãÇFCâr²W62†Ræ†VB’²sÂ÷FCãÇFCâr²W62†Rææ÷FRÇÂrr’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ#âr²ÖöæW’†RæÖ÷VçB’²sÂö#ãÂ÷FCâr°¢sÇFCãÆ'WGFöâ6Æ73Ò&'FâÖFævW"'Fâ×6Ò"öæ6Æ–6³Ò&FVÆWFTW‡Vç6R…Ârr²Ræ–B²uÂr’#äFVÆWFSÂö'WGFöããÂ÷FCãÂ÷G#âr’æ¦ö–â‚rr’°¢sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câp¢¢sÆF—b6Æ73Ò&V×G’#äæòW‡Vç6W3ÂöF—câs°§Ð ¦gVæ7F–öâFVÆWFTW‡Vç6R†V–B’°¢–b‚6öæf—&Ò‚tFVÆWFRF†—2W‡Vç6Sòr’’&WGW&ã°¢F"æW‡Vç6W2ÒF"æW‡Vç6W2æf–ÇFW"‡‚Óâ‚æ–BÓÒV–B“°¢6öÖÖ—B‚“°§Ð ¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒÆVFvW"òvV–ær&W÷'BÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ð¦gVæ7F–öâ&VæFW$ÆVFvW%&W÷'B‚’°¢6öç7B&÷w2ÒµÓ°¢F"æ7W7FöÖW'2æf÷$V6‚†2Óâ°¢6öç7BBÒ7W7FöÖW$GVR†2“°¢–b†BæGVRÃÒbbBæÖVÖ÷2æÆVæwF‚’&WGW&ã°¢6öç7B"ÒvV–æt'V6¶WG2†BæÖVÖ÷2ÂFöF’‚’“°¢&÷w2çW6‚‡²æÖS¢2ææÖRÂGVS¢BæGVRÂ"Ò“°¢Ò“°¢6öç7BBÒ&÷w2ç&VGV6R‚†Â"’Óâ‡°¢7W'&VçC¢æ7W'&VçB²"æ"æ7W'&VçBÂC3¢æC3²"æ"æC3À¢Cc¢æCc²"æ"æCcÂC“¢æC“²"æ"æC“Â÷fW#“¢æ÷fW#“²"æ"æ÷fW#“ÂGVS¢æGVR²"æGVP¢Ò’Â²7W'&VçC¢ÂC3¢ÂCc¢ÂC“¢Â÷fW#“¢ÂGVS¢Ò“° ¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vÇ%7FG2r’æ–ææW$…DÔÂÐ¢7FD&÷‚‚uF÷FÂ&V6V—f&ÆRrÂÖöæW’‡BæGVR’Ârr’°¢7FD&÷‚‚sÓ3F—2rÂÖöæW’‡Bæ7W'&VçB’Ârr’°¢7FD&÷‚‚s3ÓcF—2rÂÖöæW’‡BæC3’Ârr’°¢7FD&÷‚‚sc²F—2rÂÖöæW’‡BæCc²BæC“²Bæ÷fW#“’Âv÷fW&GVRr“° ¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚vvV–æuF&ÆRr’æ–ææW$…DÔÂÒ&÷w2æÆVæwF€¢òsÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒä7W7FöÖW#Â÷FƒãÇF‚6Æ73Ò'&–v‡B#äGVSÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#ãÓ3Â÷FƒãÇF‚6Æ73Ò'&–v‡B#ã3ÓcÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#ãcÓ“Â÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#ã“Ó#Â÷FƒãÇF‚6Æ73Ò'&–v‡B#ã#³Â÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢&÷w2ç6÷'B‚†Â"’Óâ"æGVRÒæGVR’æÖ‡"ÓâsÇG#ãÇFCâr²W62‡"ææÖR’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ#âr²ÖöæW’‡"æGVR’²sÂö#ãÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡"æ"æ7W'&VçB’²sÂ÷FCãÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡"æ"æC3’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡"æ"æCc’²sÂ÷FCãÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡"æ"æC“’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ"6Æ73Ò'&VB#âr²ÖöæW’‡"æ"æ÷fW#“’²sÂö#ãÂ÷FCãÂ÷G#âr’æ¦ö–â‚rr’°¢sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câp¢¢sÆF—b6Æ73Ò&V×G’#äæò÷WG7FæF–ærGVSÂöF—câs° ¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w–&ÆUF&ÆRr’æ–ææW$…DÔÂÒF"ç7WÆ–W'2æÆVæwF€¢òsÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒå7WÆ–W#Â÷FƒãÇF‚6Æ73Ò'&–v‡B#åF÷FÂW&6†6SÂ÷Fƒâr°¢sÇF‚6Æ73Ò'&–v‡B#å–CÂ÷FƒãÇF‚6Æ73Ò'&–v‡B#å–&ÆSÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢F"ç7WÆ–W'2æÖ‡2Óâ°¢6öç7B2ÒF"çW&6†6W2æf–ÇFW"‡Óâç7WÆ–W$–BÓÓÒ2æ–B“°¢&WGW&âsÇG#ãÇFCâr²W62‡2ææÖR’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡2ç&VGV6R‚†Â’Óâ²çVÒ‡ç7V'F÷FÂ’Â’’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#âr²ÖöæW’‡2ç&VGV6R‚†Â’Óâ²çVÒ‡ç–B’Â’’²sÂ÷FCâr°¢sÇFB6Æ73Ò'&–v‡B#ãÆ"6Æ73Ò'&VB#âr²ÖöæW’‡2ç&VGV6R‚†Â’Óâ²çVÒ‡æGVR’Â’’²sÂö#ãÂ÷FCãÂ÷G#âs°¢Ò’æ¦ö–â‚rr’²sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câp¢¢sÆF—b6Æ73Ò&V×G’#äæò7WÆ–W'3ÂöF—câs°§Ð ¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒW6W'2ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ð¦gVæ7F–öâ&VæFW%W6W'2‚’°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚wW6W%F&ÆRr’æ–ææW$…DÔÂÐ¢sÆF—b6Æ73Ò'F&ÆWw&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒåW6W&æÖSÂ÷FƒãÇFƒäæÖSÂ÷FƒãÇFƒå&öÆSÂ÷FƒãÇFƒå7FGW3Â÷FƒãÇFƒãÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âr°¢F"çW6W'2æÖ‡RÓâsÇG#ãÇFCâr²W62‡RçW6W&æÖR’²sÂ÷FCãÇFCâr²W62‡RææÖR’²sÂ÷FCâr°¢sÇFCãÇ7â6Æ73Ò'–ÆÂ–æfò#âr²W62‡Rç&öÆR’²sÂ÷7ããÂ÷FCâr°¢sÇFCãÇ7â6Æ73Ò'–ÆÂr²‡Ræ7F—fRÓÒfÇ6Ròvö²r¢vFævW"r’²r#âr²‡Ræ7F—fRÓÒfÇ6Ròt7F—fRr¢tF—6&ÆVBr’²sÂ÷7ããÂ÷FCâr°¢sÇFCãÆ'WGFöâ6Æ73Ò&'FâÖÆ–v‡B'Fâ×6Ò"öæ6Æ–6³Ò'FövvÆUW6W"…Ârr²Ræ–B²uÂr’#âr²‡Ræ7F—fRÓÒfÇ6RòtF—6&ÆRr¢tVæ&ÆRr’²sÂö'WGFöãâr°¢sÆ'WGFöâ6Æ73Ò&'FâÖÆ–v‡B'Fâ×6Ò"öæ6Æ–6³Ò'&W6WE72…Ârr²Ræ–B²uÂr’#å&W6WB73Âö'WGFöãâr°¢‡RçW6W&æÖRÓÓÒvFÖ–âròrr¢sÆ'WGFöâ6Æ73Ò&'FâÖFævW"'Fâ×6Ò"öæ6Æ–6³Ò&FVÅW6W"…Ârr²Ræ–B²uÂr’#äFVÆWFSÂö'WGFöãâr’°¢sÂ÷FCãÂ÷G#âr’æ¦ö–â‚rr’²sÂ÷F&öG“ãÂ÷F&ÆSãÂöF—câs°§Ð ¦gVæ7F–öâFEW6W"‚’°¢6öç7BVâÒFö7VÖVçBævWDVÆVÖVçD'”–B‚wUW6W&æÖRr’çfÇVRçG&–Ò‚’çFôÆ÷vW$66R‚“°¢6öç7BæÒÒFö7VÖVçBævWDVÆVÖVçD'”–B‚wTæÖRr’çfÇVRçG&–Ò‚“°¢6öç7BrÒFö7VÖVçBævWDVÆVÖVçD'”–B‚wU72r’çfÇVS°¢6öç7B&ÂÒFö7VÖVçBævWDVÆVÖVçD'”–B‚wU&öÆRr’çfÇVS°¢–b‚VâÇÂæÒÇÂr’&WGW&âÆW'B‚tVçFW"W6W&æÖRÂæÖRæB77v÷&Bâr“°¢–b†F"çW6W'2ç6öÖR‡RÓâRçW6W&æÖRÓÓÒVâ’’&WGW&âÆW'B‚uF†BW6W&æÖRÇ&VG’W†—7G2âr“°¢–b‡ræÆVæwF‚ÂB’&WGW&âÆW'B‚u77v÷&B×W7B&RBÆV7BB6†&7FW'2âr“°¢F"çW6W'2çW6‚‡²–C¢–B‚’ÂW6W&æÖS¢VâÂæÖS¢æÒÂ73¢†6‚‡r’Â&öÆS¢&ÂÂ7F—fS¢G'VRÂ7&VFVDC¢æWrFFR‚’çFô•4õ7G&–ær‚’Ò“°¢²wUW6W&æÖRrÂwTæÖRrÂwU72uÒæf÷$V6‚†’ÓâFö7VÖVçBævWDVÆVÖVçD'”–B†’’çfÇVRÒrr“°¢6öÖÖ—B‚“°§Ð ¦gVæ7F–öâFövvÆUW6W"‡V–B’°¢6öç7BRÒF"çW6W'2æf–æB‡‚Óâ‚æ–BÓÓÒV–B“°¢–b‚R’&WGW&ã°¢–b‡RçW6W&æÖRÓÓÒvFÖ–ârbbRæ7F—fRÓÒfÇ6R’&WGW&âÆW'B‚uF†RFÖ–â66÷VçB6ææ÷B&RF—6&ÆVBâr“°¢Ræ7F—fRÒRæ7F—fRÓÓÒfÇ6S°¢6öÖÖ—B‚“°§Ð ¦gVæ7F–öâ&W6WE72‡V–B’°¢6öç7BRÒF"çW6W'2æf–æB‡‚Óâ‚æ–BÓÓÒV–B“°¢–b‚R’&WGW&ã°¢6öç7BbÒ&ö×B‚tæWr77v÷&Bf÷"r²RçW6W&æÖR²s¢rÂrr“°¢–b‚b’&WGW&ã°¢–b‡bæÆVæwF‚ÂB’&WGW&âÆW'B‚tVçFW"BÆV7BB6†&7FW'2âr“°¢Rç72Ò†6‚‡b“°¢6öÖÖ—B‚“°¢ÆW'B‚u77v÷&B&W6WBâr“°§Ð ¦gVæ7F–öâFVÅW6W"‡V–B’°¢6öç7BRÒF"çW6W'2æf–æB‡‚Óâ‚æ–BÓÓÒV–B“°¢–b‚R’&WGW&ã°¢–b‡Ræ–BÓÓÒ6W76–öâçW6W$–B’&WGW&âÆW'B‚u–÷R6ææ÷BFVÆWFR–÷W"÷vâ66÷VçBâr“°¢–b‚6öæf—&Ò‚tFVÆWFRW6W"r²RçW6W&æÖR²sòr’’&WGW&ã°¢F"çW6W'2ÒF"çW6W'2æf–ÇFW"‡‚Óâ‚æ–BÓÒV–B“°¢6öÖÖ—B‚“°§Ð ¦gVæ7F–öâ6†ævT×•72‚’°¢6öç7BÒFö7VÖVçBævWDVÆVÖVçD'”–B‚v×”öÆE72r’çfÇVS°¢6öç7B"ÒFö7VÖVçBævWDVÆVÖVçD'”–B‚v×”æWu72r’çfÇVS°¢6öç7BÖRÒF"çW6W'2æf–æB‡‚Óâ‚æ–BÓÓÒ6W76–öâçW6W$–B“°¢–b‚ÖR’&WGW&ã°¢–b†ÖRç72ÓÒ†6‚†’’&WGW&âÆW'B‚t7W'&VçB77v÷&B—2w&öærâr“°¢–b†"æÆVæwF‚ÂB’&WGW&âÆW'B‚tæWr77v÷&B×W7B&RBÆV7BB6†&7FW'2âr“°¢ÖRç72Ò†6‚†"“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚v×”öÆE72r’çfÇVRÒrs°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚v×”æWu72r’çfÇVRÒrs°¢6öÖÖ—B‚“°¢òòF†R7F÷&VB6W76–öâ6'&–W2F†R77v÷&B†6‚2—G2fW'6–öâ7F×Â6ò—B†0¢òòFò&R&Ww&—GFVâ†W&Râ÷F†W'v—6RF†RfW'’æW‡B&VÆöBv÷VÆB6VRF†RöÆB†6‚À¢òòFV6–FRF†R6W76–öâ—27FÆRÂæB6–vâF†R÷væW"÷WBà¢6fU6W76–öâ†ÖR“°¢ÆW'B‚u77v÷&B6†ævVBâr“°§Ð ¢ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ6WGF–æw2ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢ð¦gVæ7F–öâ&VæFW%6WGF–æw2‚’°¢6öç7B2ÒF"ç6WGF–æw2æ6ö×ç’ÇÂ·Ó°¢²væÖRrÂwFvÆ–æRrÂvÖBrÂw†öæRrÂvVÖ–ÂrÂvFG&W72rÂv&–ârÂwfE&VruÒæf÷$V6‚†²Óâ°¢6öç7BRÒFö7VÖVçBævWDVÆVÖVçD'”–B‚v6õòr²²“°¢–b†R’RçfÇVRÒ5¶µÒÇÂrs°¢Ò“°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7E7–æ5W&Âr’çfÇVRÒF"ç6WGF–æw2ç7–æ5W&ÂÇÂrs°¢6öç7Bf$VÖ–ÄVÂÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7Df$VÖ–Âr“°¢–b†f$VÖ–ÄVÂbbf$VÖ–ÄVÂçfÇVRbbG—Vöbf$VÖ–ÂÓÓÒvgVæ7F–öâr’f$VÖ–ÄVÂçfÇVRÒf$VÖ–Â‚’ÇÂrs°¢–b‡G—Vöb6Æ÷VE7FGW5&VæFW"ÓÓÒvgVæ7F–öâr’6Æ÷VE7FGW5&VæFW"‚“°¢–b‡G—Vöb6Æ÷VE&÷e&VæFW"ÓÓÒvgVæ7F–öâr’6Æ÷VE&÷e&VæFW"‚“°¢6öç7BÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7DWFõVÆÂr“°¢–b†’æ6†V6¶VBÒF"ç6WGF–æw2æWFõVÆÂÓÒfÇ6S°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7DÖVÖõ&Vf—‚r’çfÇVRÒF"ç6WGF–æw2æÖVÖõ&Vf—‚ÇÂuE…õ4Òòs°¢6öç7BGBÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7DFWf–6UFrr“°¢–b†GB’GBçfÇVRÒF"ç6WGF–æw2æFWf–6UFrÇÂrs°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7DÆ÷u7Fö6²r’çfÇVRÒF"ç6WGF–æw2æÆ÷u7Fö6´ÆWfVÂÇÂ°¢6öç7B÷ÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7D÷&FW%&Vf—‚r“°¢–b†÷’÷çfÇVRÒF"ç6WGF–æw2æ÷&FW%&Vf—‚ÇÂuEÒs°¢6öç7B&ÂÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7E&VÖ–æFW$ÆVBr“°¢–b‡&Â’&ÂçfÇVRÒF"ç6WGF–æw2ç&VÖ–æFW$FVfVÇDÆVBÓÓÒVæFVf–æVBò¢F"ç6WGF–æw2ç&VÖ–æFW$FVfVÇDÆVC°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7E6†÷'Ev&âr’æ6†V6¶VBÒF"ç6WGF–æw2çv&äöå6†÷'E7Fö6²ÓÒfÇ6S°¢Fö7VÖVçBævWDVÆVÖVçD'”–B‚w7DWFô&6·Wr’æ6†V6¶VBÒF"ç6WGF–æw2æWFô&6·WÓÒfÇ6S°¢6öç7B6²ÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7D6÷W&–W$¶W’r“°¢–b†6²bbG—Vöb6÷W&–W$¶W’ÓÓÒvgVæ7F–öâr’6²çfÇVRÒ6÷W&–W$¶W’‚“°¢6öç7B76V2ÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7D6÷W&–W%6V7&WBr“°¢–b†76V2bbG—Vöb6÷W&–W%6V7&WBÓÓÒvgVæ7F–öâr’76V2çfÇVRÒ6÷W&–W%6V7&WB‚“°¢6öç7B6VâÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7D6÷W&–W$Væ&ÆVBr“°¢–b†6Vâ’6Vâæ6†V6¶VBÒF"ç6WGF–æw2æ6÷W&–W$Væ&ÆVBÓÒfÇ6S°¢6öç7B66öBÒFö7VÖVçBævWDVÆVÖVçD'”–B‚w7D6÷W&–W$WFô6öBr“°¢–b†66öB’66öBæ6†V6¶VBÒF"ç6WGF–æw2æ6÷W&–W$WFô   (WebSocket /live)
+ *
+ * Records keep the exact shape cloud.js already speaks - {key, id, at, deleted,
+ * device, data} - so the merge and "newer wins" rules are untouched and there is no
+ * second copy of that logic to drift.
+ *
+ * Auth is one shop token, sent as `Authorization: Bearer` on requests and as a query
+ * parameter on the WebSocket (a browser cannot set a header on one). The token is a
+ * build value, like the old Firebase apiKey: it names the shop, it does not grant
+ * access to anything else. */
 
-    commit();
-    alert('Import sesh:\n' + prod + ' product\n' + cust + ' customer\n' + memo + ' memo\n' + stock + ' stock row');
-  } catch (e) {
-    alert('Import fail: ' + e.message);
-  }
-}
+const CF_STATE_KEY = 'texpark_pro_cloudflare_state';   // {state, reason, retryAt}
 
-function syncNow() { syncRetryAll(); setTimeout(renderBackup, 1500); }
-
-/* ===================== boot ===================== */
-window.addEventListener('DOMContentLoaded', function () {
-  /* Warm the Firebase SDK before the owner can log in, so the realtime stream is
-     ready to start the instant sign-in completes instead of fetching three modules
-     first. It only fetches; it never touches the data path. */
-  if (typeof fbSdkLoad === 'function') { try { fbSdkLoad(); } catch (e) {} }
-  boot();
-  /* A private #cloud= link pasted into the SAME tab only changes the fragment, so
-     the browser does a same-document navigation and boot() never runs again - the
-     device sat blank until a manual reload. Adopt the link the moment the fragment
-     changes, then bring the cloud up, so pasting/opening the link "just works". */
-  window.addEventListener('hashchange', function () {
-    if (typeof cloudAdoptFromHash_ === 'function') { try { cloudAdoptFromHash_(); } catch (e) {} }
-  });
-  window.addEventListener('online', () => { if (typeof syncRequeueFailed === 'function') { try { syncRequeueFailed(); } catch (e) {} } cloudAutoSync('online'); if (typeof cloudAutoSyncNew === 'function') cloudAutoSyncNew('online'); });
-  // Push a full cloud backup once a day when the app is opened, so at least one
-  // recent restorable copy always exists off-device without anyone remembering.
-  setTimeout(maybeDailyCloudBackup, 4000);
-  // Coming back to the tab is when stale numbers are most likely to be believed,
-  // so re-check the cloud then too - not only on a cold open.
-  document.addEventListener('visibilitychange', function () {
-    if (document.hidden) {
-      // Leaving the page is the last moment an unsent edit can go up. Hiding runs
-      // while the tab still gets to finish a request, unlike beforeunload, whose
-      // upload the browser cancels halfway.
-      if (cloudDirty) flushCloudPush();
-      return;
-    }
-    cloudAutoSync('visible');
-    // A tab that was backgrounded may have had its stream torn down by the browser.
-    // Ask for it back so returning to the tab restores true push, not just a poll.
-    if (typeof fbRealtimeLive === 'function' && typeof fbRealtimeStart === 'function' && !fbRealtimeLive()) {
-      fbRealtimeStart().catch(function () {});
-    }
-    if (typeof courierAutoSync === 'function') courierAutoSync();
-  });
-  window.addEventListener('pagehide', function () { if (cloudDirty) flushCloudPush(); });
-  /* The visible-tab poll lives in liveLoop below (2 s while the push stream is down,
-     15 s while it is up), so a timer for the same pull here only duplicated it.
-     Courier status keeps its own cadence: it no-ops unless the owner set the keys,
-     and it is the only path that turns a delivered parcel into a memo delivery
-     without anyone typing. */
-  setTimeout(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 6000);
-  setInterval(function () { if (typeof courierAutoSync === 'function') courierAutoSync(); }, 15 * 60 * 1000);
-});
-
-const CLOUD_DAY_KEY = 'texpark_pro_cloud_backup_day';
-var cloudDirty = false;
-
-function maybeDailyCloudBackup() {
-  if (!syncUrl() || db.settings.autoBackup === false) return;
-  let last = '';
-  try { last = localStorage.getItem(CLOUD_DAY_KEY) || ''; } catch (e) {}
-  if (last === today()) return;
-  try { localStorage.setItem(CLOUD_DAY_KEY, today()); } catch (e) {}
-  cloudBackupNow(true);
-}
-
-/* ===================== date range shortcuts ===================== */
-function setRange(fromId, toId, mode) {
-  const now = new Date();
-  const iso = d => ymd_(d);
-  if (mode === 'today') {
-    document.getElementById(fromId).value = iso(now);
-    document.getElementById(toId).value = iso(now);
-  } else if (mode === 'month') {
-    document.getElementById(fromId).value = iso(new Date(now.getFullYear(), now.getMonth(), 1));
-    document.getElementById(toId).value = iso(now);
-  } else if (mode === 'year') {
-    document.getElementById(fromId).value = iso(new Date(now.getFullYear(), 0, 1));
-    document.getElementById(toId).value = iso(now);
-  } else {
-    document.getElementById(fromId).value = '';
-    document.getElementById(toId).value = '';
-  }
-  renderAll();
-}
-
-/* ===================== print preview ===================== */
-/* The memo on the form, as a sheet. Print and the two downloads all start from this
-   one object, so a memo cannot be saved as a picture showing different figures from
-   the copy that gets printed. Returns null when the form has no lines yet. */
-function memoPreviewDraft() {
-  const valid = memoDraft.items.filter(x => x.productId && num(x.qty) > 0);
-  if (!valid.length) return null;
-  const fin = memoMath(valid, memoCharges());
+function cfConfig() {
+  const c = (typeof window !== 'undefined' && window.CLOUDFLARE_SYNC) || {};
+  const saved = (db && db.settings && db.settings.cloudflare) || {};
   return {
-    memoNo: document.getElementById('memoNo').value,
-    date: document.getElementById('memoDate').value || today(),
-    customerName: document.getElementById('customerName').value.trim() || '-',
-    customerPhone: document.getElementById('customerPhone').value.trim(),
-    customerAddress: document.getElementById('customerAddress').value.trim(),
-    items: valid.map(x => ({
-      productName: (productById(x.productId) || {}).name || '',
-      qty: num(x.qty), rate: num(x.rate), amount: round2(num(x.qty) * num(x.rate))
-    })),
-    totalQty: valid.reduce((a, x) => a + num(x.qty), 0),
-    subtotal: fin.subtotal, discount: fin.discount, deliveryCharge: fin.deliveryCharge,
-    vat: fin.vat, grandTotal: fin.grandTotal, advance: fin.advance, due: fin.due,
-    note: document.getElementById('memoNote').value.trim()
+    url: String(saved.url || c.url || '').trim().replace(/\/+$/, ''),
+    token: String(saved.token || c.token || '').trim()
   };
 }
 
-function printPreviewCurrent() {
-  const preview = memoPreviewDraft();
-  if (!preview) return alert('Add a product first, then print.');
-  printMemoSheet(preview);
+/* Which transport this device uses. Defaults to Firestore so an existing install is
+   not switched by surprise; the build turns it on by setting backend:'cloudflare'. */
+function cfSelected_() {
+  const c = (typeof window !== 'undefined' && window.CLOUDFLARE_SYNC) || {};
+  return String(c.backend || 'firebase') === 'cloudflare';
 }
 
-/* Preview the memo being written, in the same modal the history uses, so the export
-   buttons sit next to it. Nothing is saved to the book by looking. */
-function previewCurrentMemo() {
-  const preview = memoPreviewDraft();
-  if (!preview) return alert('Add a product first, then preview.');
-  document.getElementById('viewBody').innerHTML = memoSheet(preview);
-  const no = document.getElementById('viewMemoNo');
-  if (no) no.textContent = (preview.memoNo || '(unsaved)') + '  |  ' + preview.customerName;
-  document.getElementById('viewModal').classList.add('show');
+function cfBackendOn() { const c = cfConfig(); return cfSelected_() && !!(c.url && c.token); }
+
+/* Records live under one shop, like the old shops/{uid}. With one token there is one
+   shop, so the name is a constant - the object is created on first use. */
+const CF_SHOP = 'shop';
+const CF_CURSOR_KEY = 'texpark_pro_cloudflare_cursor';
+
+function cfCursor() { try { return localStorage.getItem(CF_CURSOR_KEY) || ''; } catch (e) { return ''; } }
+function cfCursorSet(at) { try { localStorage.setItem(CF_CURSOR_KEY, String(at || '')); } catch (e) {} }
+
+function cfHeaders_() {
+  const c = cfConfig();
+  return { 'Authorization': 'Bearer ' + c.token, 'Content-Type': 'application/json' };
 }
 
-function savePreviewMemo(kind) {
-  const preview = memoPreviewDraft();
-  if (!preview) return alert('Add a product first, then save.');
-  kind === 'pdf' ? saveMemoPDF(preview) : saveMemoPNG(preview);
+/* The records array out of a response body, tolerant of a transient proxy page. */
+function cfRecords_(body) { return (body && Array.isArray(body.records)) ? body.records : []; }
+
+/* Every record whose `at` is newer than the cursor. Same delta contract as before, so
+   the free plan stays free and the merge is unchanged. */
+async function cfPullDelta() {
+  const c = cfConfig();
+  const cursor = cfCursor();
+  const res = await fetch(c.url + '/records?since=' + encodeURIComponent(cursor),
+    { headers: cfHeaders_() });
+  if (!res.ok) throw new Error(await cfErrorText_(res));
+  const body = await res.json();
+  const records = cfRecords_(body).map(r => ({
+    key: r.key,
+    rec: r.data,
+    at: r.at,
+    deleted: !!r.deleted
+  }));
+  let newest = cursor;
+  records.forEach(r => { if (String(r.at) > String(newest)) newest = r.at; });
+  /* Never let the cursor run ahead of this device's own clock. A record stamped in
+     the future - another device with a wrong clock - would otherwise push the cursor
+     past every change written after it, and this device would silently stop seeing
+     updates until real time caught up. Clamping also pulls a poisoned cursor back on
+     the next pull, so the device heals itself. */
+  const myNow = new Date().toISOString();
+  if (String(newest) > myNow) newest = myNow;
+  return { records: records, newest: newest };
 }
 
-/* ===================== CSV export ===================== */
-function download(name, rows) {
-  const csv = rows.map(r => r.map(v => '"' + String(v ?? '').replaceAll('"', '""') + '"').join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = name;
-  a.click();
+/* Many records in one request - used by the first migration and by settings pushes. */
+async function cfWriteBatch(pairs) {
+  const c = cfConfig();
+  const records = (pairs || []).map(p => ({
+    key: p.key,
+    id: (p.rec && p.rec.id) != null ? p.rec.id : '',
+    at: (p.rec && p.rec.at) || new Date().toISOString(),
+    deleted: !!p.deleted,
+    device: (typeof deviceTag === 'function' ? deviceTag() : ''),
+    data: p.rec || { id: p.rec && p.rec.id }
+  }));
+  if (!records.length) return true;
+  const res = await fetch(c.url + '/records',
+    { method: 'POST', headers: cfHeaders_(), body: JSON.stringify({ records: records }) });
+  if (!res.ok) throw new Error(await cfErrorText_(res));
+  return true;
 }
 
-function exportMemosCSV() {
-  const rows = [['Memo No', 'Date', 'Customer', 'Phone', 'Address', 'Total Qty', 'Subtotal', 'Discount',
-    'Delivery Charge', 'VAT', 'Grand Total', 'Advance', 'Due', 'COGS', 'Profit']];
-  db.memos.forEach(m => rows.push([m.memoNo, m.date, m.customerName, m.customerPhone, m.customerAddress,
-    m.totalQty, m.subtotal, m.discount, m.deliveryCharge, m.vat, m.grandTotal, m.advance, m.due, m.cogs, m.profit]));
-  download('texpark_memos.csv', rows);
+/* One record. cloudSendJob() calls this with {key, record, at, deleted}; the batch
+   form is the same write, so both paths share one implementation. */
+async function cfWriteRecord(key, rec, opts) {
+  const o = opts || {};
+  const at = o.at || (rec && rec.at) || new Date().toISOString();
+  return cfWriteBatch([{ key: key, rec: Object.assign({}, rec, { at: at }), deleted: !!o.deleted }]);
 }
 
-function exportStockLogCSV() {
-  const rows = [['Date', 'Product', 'Type', 'In', 'Out', 'Balance', 'Reference', 'Note']];
-  db.ledger.forEach(l => {
-    const p = productById(l.productId);
-    rows.push([l.date, p ? p.name : '(deleted)', l.type,
-      num(l.qty) > 0 ? num(l.qty) : '', num(l.qty) < 0 ? Math.abs(num(l.qty)) : '',
-      num(l.balance), l.ref, l.note]);
+async function cfErrorText_(res) {
+  let t = '';
+  try { t = (await res.text()).slice(0, 200); } catch (e) {}
+  if (res.status === 401) return 'cloudflare unauthorized (token mismatch)';
+  if (res.status === 503) return 'cloudflare not configured (AUTH_TOKEN not set)';
+  return 'cloudflare HTTP ' + res.status + (t ? ': ' + t : '');
+}
+
+/* ===================== the live stream =====================
+   A WebSocket from the Worker: the Durable Object pushes {type:'change',records:[...]}
+   the instant a write lands, so there is no polling at all on a healthy device. On any
+   change it calls the SAME cloudPullMerge() the rest of the app uses, so there is one
+   definition of "newer wins". The stream reconnects with bounded backoff, and the
+   adaptive poll stays the floor if the socket cannot be held. */
+var cfRtSocket = null;
+var cfRtStarting = false;
+var cfRtMergeQueued = false;
+var cfRtChangePending = false;
+var cfRtDrainTimer = null;
+var cfRtHeartbeatTimer = null;
+var cfRtLastPong = 0;
+var CF_RT_HEARTBEAT_MS = 10000;
+var CF_RT_PONG_TIMEOUT_MS = 30000;
+var cfRtRetryTimer = null;
+var cfRtRetryMs = 1000;
+var CF_RT_RETRY_MAX_MS = 30000;
+/* A token that is not accepted will not be accepted on retry; stop instead of
+   hammering the endpoint. Cleared by a manual reconnect or a page reload. */
+var cfRtFatal = false;
+
+function cfRealtimeShouldRun() {
+  return cfBackendOn() && (typeof session !== 'undefined' && !!session);
+}
+function cfRealtimeLive() { return !!cfRtSocket && cfRtSocket.readyState === 1 && Date.now() - cfRtLastPong < CF_RT_PONG_TIMEOUT_MS; }
+function cfRealtimeRetryClear() {
+  if (cfRtRetryTimer) { try { clearTimeout(cfRtRetryTimer); } catch (e) {} cfRtRetryTimer = null; }
+  cfRtRetryMs = 1000;
+}
+function cfRealtimeArmRetry() {
+  if (cfRtFatal) return;
+  if (cfRtRetryTimer || cfRtSocket) return;
+  if (!cfRealtimeShouldRun()) return;
+  var wait = cfRtRetryMs;
+  cfRtRetryMs = Math.min(cfRtRetryMs * 2, CF_RT_RETRY_MAX_MS);
+  cfRtRetryTimer = setTimeout(function () {
+    cfRtRetryTimer = null;
+    return cfRealtimeStart().catch(function () {});
+  }, wait);
+}
+function cfRealtimeStop() {
+  cfRtStarting = false;
+  cfRealtimeRetryClear();
+  if (cfRtHeartbeatTimer) { clearInterval(cfRtHeartbeatTimer); cfRtHeartbeatTimer = null; }
+  if (cfRtDrainTimer) { clearTimeout(cfRtDrainTimer); cfRtDrainTimer = null; }
+  cfRtChangePending = false;
+  if (cfRtSocket) { try { cfRtSocket.close(); } catch (e) {} cfRtSocket = null; }
+}
+function cfRealtimeDrainChanges_() {
+  if (!cfRtChangePending || cfRtMergeQueued) return;
+  if (!cfRealtimeShouldRun()) { cfRtChangePending = false; return; }
+  if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) {
+    if (!cfRtDrainTimer) cfRtDrainTimer = setTimeout(function () { cfRtDrainTimer = null; cfRealtimeDrainChanges_(); }, 150);
+    return;
+  }
+  cfRtChangePending = false;
+  cfRtMergeQueued = true;
+  Promise.resolve().then(function () { return cloudPullMerge(); }).catch(function () {})
+    .then(function () { cfRtMergeQueued = false; cfRealtimeDrainChanges_(); });
+}
+function cfRealtimeOnChange() {
+  cfRtChangePending = true;
+  cfRealtimeDrainChanges_();
+}
+function cfRealtimeStart() {
+  if (cfRtSocket || cfRtStarting) return Promise.resolve();
+  if (!cfRealtimeShouldRun()) return Promise.resolve();
+  cfRtStarting = true;
+  return new Promise(function (resolve) {
+    const c = cfConfig();
+    let ws;
+    try {
+      ws = new WebSocket(c.url.replace(/^http/, 'ws') + '/live?token=' + encodeURIComponent(c.token));
+    } catch (e) { cfRtStarting = false; cfRealtimeArmRetry(); resolve(); return; }
+    /* A stream that never opens would hang the promise forever; give it 8 s. */
+    const openTimer = setTimeout(function () {
+      if (cfRtSocket !== ws) { try { ws.close(); } catch (e) {} }
+    }, 8000);
+    ws.addEventListener('open', function () {
+      clearTimeout(openTimer);
+      cfRtSocket = ws;
+      cfRtStarting = false;
+      cfRealtimeRetryClear();
+      cfRtFatal = false;
+      cfRtLastPong = Date.now();
+      if (cfRtHeartbeatTimer) clearInterval(cfRtHeartbeatTimer);
+      cfRtHeartbeatTimer = setInterval(function () {
+        if (cfRtSocket !== ws || ws.readyState !== 1) return;
+        if (Date.now() - cfRtLastPong > CF_RT_PONG_TIMEOUT_MS) { try { ws.close(); } catch (e) {} return; }
+        try { ws.send('ping'); } catch (e) { try { ws.close(); } catch (ignore) {} }
+      }, CF_RT_HEARTBEAT_MS);
+      if (typeof syncStatusRender === 'function') { try { syncStatusRender(); } catch (e) {} }
+      resolve();
+    });
+    ws.addEventListener('message', function (ev) {
+      if (ev.data === 'pong') { cfRtLastPong = Date.now(); return; }
+      let msg = null;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || msg.type !== 'change') return;
+      cfRtLastPong = Date.now();
+      cfRtRetryMs = 1000;                       // a healthy message resets the backoff
+      cfRealtimeOnChange();
+    });
+    ws.addEventListener('close', function (ev) {
+      clearTimeout(openTimer);
+      if (cfRtHeartbeatTimer) { clearInterval(cfRtHeartbeatTimer); cfRtHeartbeatTimer = null; }
+      if (cfRtSocket === ws) cfRtSocket = null;
+      cfRtStarting = false;
+      if (typeof syncStatusRender === 'function') { try { syncStatusRender(); } catch (e) {} }
+      /* 1008 policy violation / 1002 protocol error are the server refusing the
+         token; retrying cannot help until the token changes. */
+      if (ev && (ev.code === 1008 || ev.code === 1002)) cfRtFatal = true;
+      cfRealtimeArmRetry();
+      resolve();
+    });
+    ws.addEventListener('error', function () {
+      /* 'close' always follows and does the bookkeeping; nothing to do here. */
+    });
   });
-  download('texpark_stock_ledger.csv', rows);
 }
 
-function exportAllCSV() {
-  const rows = [['Type', 'Date', 'Reference', 'Party', 'Item', 'Qty', 'Rate', 'Amount', 'Status']];
-  db.memos.forEach(m => m.items.forEach(i => rows.push(['Sale', m.date, m.memoNo, m.customerName,
-    i.productName, i.qty, i.rate, i.amount, m.due > 0 ? 'Due ' + m.due : 'Paid'])));
-  db.purchases.forEach(p => p.items.forEach(i => rows.push(['Purchase', p.date, p.purchaseNo,
-    p.supplierName, i.productName, i.qty, i.cost, i.amount, p.status])));
-  db.expenses.forEach(e => rows.push(['Expense', e.date, e.head, '', e.note, '', '', e.amount, '']));
-  db.payments.forEach(p => {
-    const c = db.customers.find(x => x.id === p.customerId);
-    rows.push(['Payment In', p.date, p.method, c ? c.name : '', '', '', '', p.amount, '']);
-  });
-  download('texpark_all_data.csv', rows);
+/* The endpoint is reachable and the token works. Used by the cloud card's test. */
+async function cfPing() {
+  const c = cfConfig();
+  const res = await fetch(c.url + '/records?since=', { headers: cfHeaders_() });
+  if (!res.ok) throw new Error(await cfErrorText_(res));
+  return await res.json();
 }
-
-
-
-
-
 

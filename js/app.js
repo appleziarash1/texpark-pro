@@ -89,7 +89,7 @@ window.addEventListener('load', function () {
    device's own upload). The 30 s cloudAutoSync keeps running underneath as the
    safety net; its own 8 s floor stops it double-pulling right after a live tick. */
 const LIVE_SYNC_ACTIVE_MS = 2000;      // the stream is down: poll fast, it is the only path
-const LIVE_SYNC_IDLE_MS   = 15000;     // the stream is up: push does the work, poll is a safety net
+const LIVE_SYNC_IDLE_MS   = 2000;     // the stream is up: push does the work, poll is a safety net
 const LIVE_ACTIVE_WINDOW_MS = 60000;   // recently touched the app = "active"
 /* A cold open is the one moment the owner is definitely watching, and it is also the
    moment sign-in may still be in flight. Polling at the idle cadence until they

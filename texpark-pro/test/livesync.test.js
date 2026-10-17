@@ -128,7 +128,7 @@ document.hidden = false;
   liveBootAt = Date.now();
   eq(liveDelay_(), 2000, 'just after a cold open: fast, so the first pull lands quickly');
   liveBootAt = Date.now() - 60000;      // boot window has passed
-  eq(liveDelay_(), 15000, 'push up and idle well past boot: calm 15 s net');
+  eq(liveDelay_(), 2000, 'push up and idle well past boot: 2 s safety pull');
   global.fbRealtimeLive = () => false;     // stream dropped
   eq(liveDelay_(), 2000, 'stream dropped: poll fast again so we stay live');
   delete global.fbRealtimeLive;
