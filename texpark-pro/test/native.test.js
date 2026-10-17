@@ -937,9 +937,22 @@ const screensSrc = fs.readFileSync(path.join(SRC, 'Screens.java'), 'utf8');
 const appJsSrc = fs.readFileSync(path.join(ROOT, 'texpark-pro', 'js', 'app.js'), 'utf8');
 const wordsStart = appJsSrc.indexOf('function numberWords(n) {');
 assert.notStrictEqual(wordsStart, -1, 'the web app must define numberWords');
-const wordsEnd = appJsSrc.indexOf('\n}\n\n/* One product line.', wordsStart);
+let wordsEnd = -1, braceDepth = 0, quote = '', escaped = false;
+for (let i = appJsSrc.indexOf('{', wordsStart); i < appJsSrc.length; i++) {
+  const ch = appJsSrc[i], next = appJsSrc[i + 1];
+  if (quote) {
+    if (escaped) escaped = false;
+    else if (ch === '\\') escaped = true;
+    else if (ch === quote) quote = '';
+  } else if (ch === '"' || ch === "'") quote = ch;
+  else if (ch === '/' && (next === '/' || next === '*')) {
+    const end = next === '/' ? appJsSrc.indexOf('\n', i) : appJsSrc.indexOf('*/', i + 2);
+    i = end < 0 ? appJsSrc.length : end + (next === '/' ? 0 : 1);
+  } else if (ch === '{') braceDepth++;
+  else if (ch === '}' && --braceDepth === 0) { wordsEnd = i + 1; break; }
+}
 assert.notStrictEqual(wordsEnd, -1, 'the web app numberWords function must be complete');
-const wordsBody = appJsSrc.slice(wordsStart, wordsEnd + 2);
+const wordsBody = appJsSrc.slice(wordsStart, wordsEnd);
 vm.runInThisContext('var numberWords = ' + wordsBody.replace('function numberWords(n) {', 'function (n) {')
   + ';', { filename: 'numberWords' });
 
