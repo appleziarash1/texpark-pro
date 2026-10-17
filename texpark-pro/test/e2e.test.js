@@ -768,7 +768,8 @@ ok(/iOS zooms the whole page in/.test(fs.readFileSync(path.join(root, 'css/app.c
 console.log('\n--- data survives a reload ---');
 eq(db.memos.length, 1, 'memos persisted');
 eq(db.products.length, 5, 'products persisted - incl. the voice-created one');
-ok(!!fakeStore['texpark_pro_v2'], 'data stored under the v2 key');
+ok(!!storeGet('texpark_pro_v2'), 'data stored in the database abstraction under the v2 key');
+ok(!fakeStore['texpark_pro_v2'], 'the database is not stored in localStorage');
 ok(!fakeStore['texpark_biz_v1'], 'old v1 key not mixed in');
 eq(loadDB().memos.length, 1, 'reload reads the same memos back');
 

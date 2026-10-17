@@ -208,17 +208,28 @@ function statBox(label, value, sub) {
 }
 
 /* ===================== boot ===================== */
-/* Booting is asynchronous because the database now lives in IndexedDB: the store has
-   to be opened, the one-time move out of localStorage verified, and the mirror filled
-   before loadDB() reads it. Where IndexedDB is unavailable (Node, old WebViews) the
-   whole boot runs synchronously, exactly as it did when localStorage was the store. */
+/* Booting waits until IndexedDB has opened, any old data has been copied and verified,
+   and the in-memory mirror is ready. Browser builds refuse to run without IndexedDB:
+   volatile storage would make a successful-looking save disappear on reload. Node
+   tests use a memory-only store. */
 function boot() {
   // The memo sheet's stylesheet, so the preview is not unstyled HTML. First, before
   // anything can render a memo.
   memoCssTag();
+  const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
+  if (!idbAvailable && !isNode) {
+    alert('IndexedDB is not available. Texpark Pro needs IndexedDB to store data safely. Your saved data has not been changed.');
+    return Promise.resolve(false);
+  }
   if (typeof storageInit === 'function' && idbAvailable) {
-    return storageInit(STORAGE_KEYS).then(function () { bootFromStore(); return true; },
-      function () { bootFromStore(); return true; });
+    return storageInit(STORAGE_KEYS).then(function (ready) {
+      if (!ready) throw new Error('IndexedDB could not be initialized or verified.');
+      bootFromStore();
+      return true;
+    }).catch(function (error) {
+      alert('Texpark Pro could not open its IndexedDB database. Your existing data was left unchanged. ' + (error && error.message || ''));
+      return false;
+    });
   }
   bootFromStore();
   return Promise.resolve(true);

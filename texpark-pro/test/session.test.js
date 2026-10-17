@@ -104,7 +104,7 @@ doLogin();
 ok(!!fakeStore.texpark_pro_session, 'signed in again');
 /* Change the stored password hash, as Change-my-password would, then reload. */
 db.users[0].pass = hash('a-new-password');
-localStorage.setItem(KEY, JSON.stringify(db));   // as Change-my-password persists it
+storeSet(KEY, db);   // as Change-my-password persists it
 session = null;
 vm.runInThisContext('boot();', { filename: 'boot' });
 eq(session, null, 'the stale session is refused after a password change');
@@ -117,7 +117,7 @@ el('loginPass').value = 'a-new-password';
 doLogin();
 ok(!!session, 'signed in with the new password');
 db.users[0].active = false;
-localStorage.setItem(KEY, JSON.stringify(db));
+storeSet(KEY, db);
 session = null;
 vm.runInThisContext('boot();', { filename: 'boot' });
 eq(session, null, 'a deactivated user is not restored');
@@ -127,7 +127,7 @@ console.log('\n--- changing your own password keeps you signed in ---');
    has to rewrite it. Otherwise the owner would be signed out by the very next
    reload, which is the bug this suite exists for, one step removed. */
 db.users[0].active = true;                 // the previous block deactivated it
-localStorage.setItem(KEY, JSON.stringify(db));
+storeSet(KEY, db);
 el('loginUser').value = 'admin';
 el('loginPass').value = 'a-new-password';  // the password set by the earlier block
 doLogin();

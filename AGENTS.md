@@ -1215,28 +1215,29 @@ live in IndexedDB (database `texpark_pro_db`, object store `kv`).
   `loadDB`, `commit`, `snapshot`/`listSnapshots`/`restoreSnapshot`, `syncLoad`/`syncSave`
   all go through them. `KEY`, `SYNC_KEY` and `SNAP_KEY` are unchanged - only where the
   bytes live moved.
-- **It must keep working where IndexedDB does not exist.** Node has no `indexedDB`
-  (`typeof indexedDB === 'undefined'`), and the whole headless suite runs the real
-  `db.js`/`sync.js` in it. When it is absent, `storeAsync` stays false and
-  `storeGet`/`storeSet` are the same synchronous localStorage calls as before, so the
-  668 existing tests exercise the identical old path. Do not "clean up" the fallback:
-  it is what makes the tests meaningful and what keeps an old WebView working.
+- **localStorage is migration input only for business data.** The one-time verified
+  migration may read and remove `texpark_pro_v2`, `texpark_pro_syncq`, and
+  `texpark_pro_snapshots`; no normal database reads, writes, or deletes use localStorage.
+  Node tests use a memory-only fallback. Browser startup refuses to continue when
+  IndexedDB is missing or the migration cannot be verified, so the app cannot appear to
+  save data that would disappear on reload.
 - **`commit()` returns the pending write on IndexedDB and `true` on the fallback.**
   A synchronous caller that only checks truthiness (`if (!commit()) return;`) still
   works, because the mirror is updated synchronously - every reader right after the
-  save sees the new book. Callers that reload or that must be durable `await` it:
+  save sees the new book. The no-IndexedDB test fallback is memory-only. Callers that
+  reload or that must be durable `await` it:
   `restoreFromJSONText`, `cloudPullMerge`, `restoreJSON`, `restoreSnapshot`. A reload
   cancels an in-flight IndexedDB transaction, so an unawaited save there restores
   nothing. **Any new `location.reload()` after a write must `await commit()`.**
 - **`boot()` is async and `bootFromStore()` holds the rest.** The async and synchronous
   paths run the identical `bootFromStore()` so they cannot drift. `boot()` returns a
-  promise, but the tests call it without awaiting and it runs synchronously under them
-  (no IndexedDB), which is why 17 `vm.runInThisContext('boot();')` call sites still work.
+  promise. Tests call it without awaiting under Node's memory-only adapter; browser boot
+  waits for IndexedDB and will not load the UI after a storage initialization failure.
 - **The migration is one-time, verified, and never destructive.** `storageInit()` opens
   IndexedDB, copies each key out of localStorage (structured clone, no stringify),
   reads it back and compares `JSON.stringify` before removing the original. A copy that
-  will not verify, an unparseable value, or a blocked/absent IndexedDB all leave the
-  device on localStorage rather than coming up blank. An existing IndexedDB copy always
+  will not verify or a blocked IndexedDB leaves the old localStorage copy untouched and
+  stops browser startup rather than coming up blank. An existing IndexedDB copy always
   wins over a stale localStorage one, so a device that booted twice does not clobber
   its newer book.
 - **`test/idb.test.js` (34 checks) is the only suite that exercises the real IndexedDB

@@ -12,10 +12,8 @@ const OLD_KEY = 'texpark_biz_v1';
    IndexedDB is asynchronous, stores structured objects (no stringify) and has no such
    small cap, so the database, the sync queue and the snapshots live there now.
 
-   It must also work where IndexedDB does not exist: Node (the headless test suite runs
-   the real db.js/sync.js with no DOM) and old WebViews. There storeAsync stays false
-   and storeGet/storeSet are plain synchronous localStorage calls, so behaviour is
-   exactly what it was before.
+   Where IndexedDB does not exist (such as in the headless Node test suite), the
+   in-memory fallback keeps business logic testable but is intentionally not durable.
 
    This lives in db.js rather than its own file so every test that already loads db.js
    gets the storage layer without changing its loader, and so the service worker's
@@ -36,10 +34,9 @@ var idbAvailable = (typeof indexedDB !== 'undefined' && indexedDB) ? true : fals
 var storeAsync = false;
 var storeReady = false;
 
-/* Key -> value. In IndexedDB mode the values are live objects (structured clone); in
-   localStorage mode they are the raw strings localStorage holds. Keeping the mirror
-   means every existing synchronous reader (renderBackup, listSnapshots, syncLoad)
-   keeps working without turning the whole app async. */
+/* Key -> value. In IndexedDB mode the values are structured-cloned objects. Keeping
+   the mirror means synchronous readers (renderBackup, listSnapshots, syncLoad) keep
+   working without turning the whole app async. */
 var storeMirror = {};
 
 var idbDbPromise = null;
@@ -72,8 +69,10 @@ function idbRequest_(key, mode, run) {
         store = tx.objectStore(IDB_STORE);
         req = run(store);
       } catch (e) { reject(e); return; }
-      req.onsuccess = function () { resolve(req.result === undefined ? null : req.result); };
+      var result = null;
+      req.onsuccess = function () { result = req.result === undefined ? null : req.result; };
       req.onerror = function () { reject(req.error || new Error('IndexedDB request failed')); };
+      tx.oncomplete = function () { resolve(result); };
       tx.onabort = function () { reject(tx.error || new Error('IndexedDB transaction aborted')); };
     });
   });
@@ -85,11 +84,11 @@ function idbDel_(key) { return idbRequest_(key, 'readwrite', function (s) { retu
 
 function storeGet(key) {
   if (storeAsync) return Object.prototype.hasOwnProperty.call(storeMirror, key) ? storeMirror[key] : null;
-  try { return localStorage.getItem(key); } catch (e) { return null; }
+  return Object.prototype.hasOwnProperty.call(storeMirror, key) ? storeMirror[key] : null;
 }
 
 /* Writes to the mirror synchronously, so a reader that runs before the disk write
-   lands still sees the new value - exactly what the synchronous localStorage call
+   lands still sees the new value - exactly what the old synchronous store call
    used to guarantee. Returns a promise in IndexedDB mode (await it for durability)
    and true in the fallback, so `if (!commit()) return;` keeps its old meaning on the
    fallback path and async callers can await the real write. */
@@ -98,9 +97,7 @@ function storeSet(key, value) {
     storeMirror[key] = value;
     return idbSet_(key, value);
   }
-  const s = (typeof value === 'string') ? value : JSON.stringify(value);
-  storeMirror[key] = s;
-  localStorage.setItem(key, s);
+  storeMirror[key] = value;
   return true;
 }
 
@@ -109,7 +106,6 @@ function storeDel(key) {
     delete storeMirror[key];
     return idbDel_(key);
   }
-  try { localStorage.removeItem(key); } catch (e) {}
   delete storeMirror[key];
   return true;
 }
@@ -117,7 +113,7 @@ function storeDel(key) {
 /* Move one key out of localStorage and into IndexedDB, once. Returns:
      the value  - it is in IndexedDB (already there, or just copied and verified)
      null       - there was nothing to move
-     false      - the copy could not be verified; the caller must stay on localStorage
+     false      - the copy could not be verified; the caller must not use partial data
    The verification is the point: a copy that silently landed half-written would be
    the owner's whole book, so the value is read back and compared before the original
    is removed. A corrupt localStorage value is left where it is, not moved. */
@@ -127,11 +123,11 @@ async function idbMigrateKey_(key) {
   if (already !== null && already !== undefined) return already;
 
   let raw = null;
-  try { raw = localStorage.getItem(key); } catch (e) { raw = null; }
+  try { raw = localStorage.getItem(key); } catch (e) { return false; }
   if (raw === null || raw === undefined) return null;
 
   let parsed;
-  try { parsed = JSON.parse(raw); } catch (e) { return null; }
+  try { parsed = JSON.parse(raw); } catch (e) { return false; }
 
   try { await idbSet_(key, parsed); } catch (e) { return false; }
   let back = null;
@@ -144,8 +140,8 @@ async function idbMigrateKey_(key) {
 
 /* Called once from boot(), before loadDB(). Opens IndexedDB, migrates the keys this
    app keeps there, and hydrates the mirror. If anything about IndexedDB is unusable -
-   absent, blocked, or a migration that will not verify - it stays on localStorage so a
-   device can never come up blank. */
+   absent, blocked, or a migration that will not verify - the app must not start on an
+   empty in-memory database. */
 async function storageInit(keys) {
   storeReady = false;
   storeMirror = {};
@@ -620,8 +616,8 @@ function commit() {
     snapshot();
     /* The database is handed to the store as a structured object; IndexedDB clones it
        off the main thread, so there is no JSON.stringify of the whole book on every
-       save and no 5 MB ceiling to hit. On the localStorage fallback this is the same
-       synchronous string write it always was. */
+       save and no 5 MB ceiling to hit. The non-durable in-memory fallback is used only
+       when browser IndexedDB is unavailable (for example in headless tests). */
     write = storeSet(KEY, db);
     lastCommitted = frozenIndex_(db);
   } catch (e) {

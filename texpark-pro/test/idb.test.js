@@ -1,7 +1,7 @@
 /* IndexedDB storage. Run: node test/idb.test.js
 
-   Node has no indexedDB, so every other suite exercises only the localStorage
-   fallback in db.js. That means the path the owner's browser actually takes - open
+   Node has no indexedDB, so every other suite exercises only the memory-only fallback
+   in db.js. That means the path the owner's browser actually takes - open
    IndexedDB, move the old localStorage copy in, verify it, then keep the book there -
    would otherwise ship untested.
 
@@ -27,22 +27,25 @@ function makeIndexedDB() {
   const dbs = {};                          // name -> { version, stores: { name -> Map } }
   const stats = { opens: 0, puts: 0, gets: 0 };
 
-  function req(result, err) {
+  function req(result, err, tx) {
     const r = { result: result, error: err || null, onsuccess: null, onerror: null };
     // genuinely asynchronous, like the real API, so a synchronous reader that ran
     // before the write landed would be caught here
     Promise.resolve().then(() => {
       if (r.error) { if (r.onerror) r.onerror(); }
-      else if (r.onsuccess) r.onsuccess();
+      else {
+        if (r.onsuccess) r.onsuccess();
+        if (tx && tx.oncomplete) tx.oncomplete();
+      }
     });
     return r;
   }
 
-  function store(name, map) {
+  function store(name, map, tx) {
     return {
-      get(key) { stats.gets++; return req(map.has(key) ? clone(map.get(key)) : undefined); },
-      put(value, key) { stats.puts++; map.set(key, clone(value)); return req(key); },
-      delete(key) { map.delete(key); return req(undefined); }
+      get(key) { stats.gets++; return req(map.has(key) ? clone(map.get(key)) : undefined, null, tx); },
+      put(value, key) { stats.puts++; map.set(key, clone(value)); return req(key, null, tx); },
+      delete(key) { map.delete(key); return req(undefined, null, tx); }
     };
   }
 
@@ -60,7 +63,7 @@ function makeIndexedDB() {
         createObjectStore(n) { if (!db.stores[n]) db.stores[n] = new Map(); return store(n, db.stores[n]); },
         transaction(n, mode) {
           if (!db.stores[n]) throw new Error('no such store ' + n);
-          const tx = { objectStore: () => store(n, db.stores[n]), onabort: null, error: null };
+          const tx = { objectStore: () => store(n, db.stores[n], tx), onabort: null, oncomplete: null, error: null };
           return tx;
         }
       };
@@ -125,7 +128,7 @@ function makeDevice(idb) {
 
   const p = dev.storageInit(dev.STORAGE_KEYS);
   ok(p && typeof p.then === 'function', 'storageInit returns a promise, so boot can await it');
-  eq(dev.storeAsync, false, 'the device is still on localStorage until the migration finishes');
+  eq(dev.storeAsync, false, 'the device does not use a legacy store before migration finishes');
   const migrated = await p;
   eq(migrated, true, 'the migration reported success');
   eq(dev.storeAsync, true, 'the device switched to IndexedDB');
@@ -194,22 +197,24 @@ function makeDevice(idb) {
   const idb3 = makeIndexedDB();
   const dev3 = makeDevice(idb3);
   dev3.localStorage.setItem('texpark_pro_v2', '{not valid json');
-  await dev3.storageInit(dev3.STORAGE_KEYS);
-  eq(dev3.storeAsync, true, 'the device still comes up on IndexedDB');
+  const corruptReady = await dev3.storageInit(dev3.STORAGE_KEYS);
+  eq(corruptReady, false, 'startup refuses to load an unparseable legacy database');
+  eq(dev3.storeAsync, false, 'the app does not switch to the incomplete migration');
   eq(idb3.peek('texpark_pro_db', 'kv', 'texpark_pro_v2'), undefined, 'nothing half-written was put in the store');
   eq(dev3.localStorage.getItem('texpark_pro_v2'), '{not valid json', 'the bad value is left where it was');
-  eq(dev3.loadDB().memos.length, 0, 'the app starts from a blank book, not a crash');
+  eq(dev3.loadDB().memos.length, 0, 'the test memory store remains blank while legacy data is preserved');
 
-  console.log('\n--- with no IndexedDB the app is exactly as it was ---');
+  console.log('\n--- with no IndexedDB the fallback is memory-only ---');
   const dev4 = makeDevice(undefined);
   eq(dev4.idbAvailable, false, 'IndexedDB is detected as absent');
   const migrated4 = await dev4.storageInit(dev4.STORAGE_KEYS);
-  eq(migrated4, false, 'storageInit reports the fallback');
-  eq(dev4.storeAsync, false, 'reads and writes stay on localStorage');
+  eq(migrated4, false, 'storageInit reports IndexedDB is unavailable');
+  eq(dev4.storeAsync, false, 'the memory-only fallback is not IndexedDB');
   dev4.db = dev4.blankDB();
   dev4.lastCommitted = dev4.frozenIndex_(dev4.db);
   eq(dev4.commit(), true, 'commit is synchronous and true, as the old code returned');
-  ok(!!dev4.localStorage.getItem('texpark_pro_v2'), 'and the book was written to localStorage');
+  eq(dev4.storeGet('texpark_pro_v2').memos.length, 0, 'the book is available in memory');
+  eq(dev4.localStorage.getItem('texpark_pro_v2'), null, 'the database was not written to localStorage');
 
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);

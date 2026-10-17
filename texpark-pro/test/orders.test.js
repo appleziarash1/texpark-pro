@@ -161,7 +161,7 @@ const saved = db.orders[0];
 setOrderStatus(saved.id, 'ready');
 eq(saved.status, 'ready', 'status moved to ready');
 ok(saved.history.some(h => /ready/i.test(h.text)), 'the move is written to history');
-const reloaded = JSON.parse(fakeStore['texpark_pro_v2']);
+const reloaded = storeGet('texpark_pro_v2');
 const reloadedOrder = reloaded.orders.find(o => o.id === saved.id);
 ok(!!reloadedOrder && reloadedOrder.status === 'ready', 'the order persisted with its new status');
 
