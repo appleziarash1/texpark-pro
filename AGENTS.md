@@ -644,30 +644,54 @@ card with the grand total and the due highlighted, two signature lines, terms an
   now feeds both implementations the same amounts and compares the strings rather than
   hard-coding an expectation, so the next drift fails the build instead of the shop's paperwork.
 
-## The memo product box is typed, not a dropdown (2026-10-17)
-The memo's product cell used to be a `<select>` over the whole catalogue. The owner asked for a
-free-text box with suggestions, "like the customer-name field", because a long catalogue makes a
-dropdown unusable on a phone. The cell is now an `<input list="memoProductNames">` plus a
-`<datalist>`, filled by `renderMemoProductOptions()` from `db.products` - the same pattern the
-customer box (`customerName` + `customerNames`) and the order form already use.
-- **`memoProductTyped(i, value)` is the handler, and it never rewrites the box.** It matches what
-  was typed through `nameKey_` (the customer-name normaliser, so case and a stray `Md.` do not
-  split one product into two). On a match it fills `rate`/`cost`/`vat` from the product and then
-  patches only the other cells (`memoPatchLine`), so the caret stays in the product box while
-  typing - the same reason `memoSet` patches instead of re-rendering. On no match the line keeps
-  its old `productId` only while the box still shows that product's name; any other text means
-  the owner changed his mind, and the line goes unmatched.
+## The memo product box searches by keyword, not just by name (2026-10-17)
+The memo's product cell is a free-text box with suggestions, "like the customer-name field",
+because a long catalogue makes a dropdown unusable on a phone. It began as an
+`<input list="memoProductNames">` + `<datalist>`, but the owner then asked for real search:
+typing **girls** must list every girls item, adding **3pcs** must narrow that list, and a
+**SKU/code** must find its product. A `<datalist>` can do none of that - it matches a single
+substring on the name alone - so the box is now drawn by hand (`#memoSuggest` + `.suggest*` in
+`css/app.css`) and the datalist is gone.
+- **`memoProductSearch_(q)` is the search.** Every whitespace-separated word must appear in the
+  product's name, SKU, category or barcode, so words narrow each other like a search box. A name
+  match outranks a code match and a name that *starts* with the first word outranks one that
+  merely contains it, so "girl" lists the Girls items before a product that only mentions girls
+  in its code. Capped at 12 rows.
+- **The searchable blob is cached outside the product record.** `productSearchBlob_` memoises
+  `nameKey_` per product (it runs two regexes, once per product per keystroke) into
+  `productSearchCache`, keyed by product id and invalidated by a signature of the fields. It is
+  deliberately *not* a field on the product: a stray field would be written into the book and
+  synced to every other device.
+- **The box lives outside `.tablewrap`** (which scrolls and would clip it), so it is `position:
+  fixed` and `positionMemoSuggest_` places it against the input's `getBoundingClientRect()` each
+  time it opens. Suggestions carry `onmousedown="return false"` so the click cannot land after a
+  blur.
+- **`memoProductTyped(i, value)` still never rewrites the box.** It drives the suggestions
+  (`renderMemoSuggest_`) and matches through `memoProductMatch_`, which first tries the exact
+  normalised name (`nameKey_`, the customer-name normaliser) and then falls back to a keyword
+  search **only when it narrows to exactly one product** - that is what makes typing `girls 3pcs`
+  or a bare SKU resolve to the right product while anything ambiguous stays free text. On a match
+  it fills `rate`/`cost`/`vat` and patches only the other cells (`memoPatchLine`), so the caret
+  stays in the product box.
+- **Keyboard:** `memoProductKey_` handles ArrowDown/ArrowUp (wrapping) and Escape, and Enter
+  picks the highlighted row. Nothing is highlighted while several rows match, so a plain Enter
+  keeps committing the free text; when the words narrow to a single row it is auto-highlighted,
+  so "girls" then "3pcs" then Enter takes it with no arrow key. Picking rebuilds the row, shows
+  the full name, and moves focus to the rate box.
 - **A name that matches nothing becomes a real product at save time, not while typing.** Typing
   creates nothing (a half-typed word must not litter the catalogue); `saveMemo()` calls
   `memoEnsureTypedProduct_` for each unmatched line, then `ensureStockCard`, so the memo, its
   stock card and every report point at a product id rather than at a loose string. This mirrors
   the voice entry, which already creates a product on the spot - a memo is never blocked by a
   missing product entry.
-- **`productName` is now carried on the draft line** (`addMemoLine`, `editMemo`) so an edited or
+- **`productName` is carried on the draft line** (`addMemoLine`, `editMemo`) so an edited or
   unmatched line still shows its name in the box and on the printed sheet.
-- `test/e2e.test.js` pins: the box is wired to the datalist, the datalist carries the catalogue,
-  a typed saved name resolves and pulls its price, an unknown name creates nothing while typing,
-  and saving turns it into exactly one product with a stock card.
+- `test/e2e.test.js` pins: one keyword lists every item carrying it (name, category or code), a
+  second keyword narrows the first, a SKU and a barcode each find their product, a word matching
+  nothing returns nothing and closes the box, a unique hit resolves on the line, narrowing to one
+  row lets Enter take it, arrows move and wrap, Escape closes without picking, a plain Enter keeps
+  the free-text path, and saving turns an unmatched name into exactly one product with a stock
+  card.
 
 ## The memo carries the Steadfast parcel (2026-10-17)
 A memo for an order booked with Steadfast now prints the parcel's identity the way Steadfast's

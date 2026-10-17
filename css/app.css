@@ -140,6 +140,20 @@ tbody tr:hover td{background:#f7fafd}
 .pill.info{background:#e8eefb;color:var(--navy)}
 .empty{padding:22px;text-align:center;color:var(--muted);font-size:13px}
 
+/* ---------- product suggestions under the memo's product box ---------- */
+/* Drawn by hand rather than a <datalist>: the owner searches by keyword ("girls
+   then 3pcs") and by SKU/code, which a datalist cannot do. Fixed so the scrolling
+   table wrapper cannot clip it; JS places it against the input each time. */
+.suggest{position:fixed;z-index:70;background:#fff;border:1px solid var(--line);
+  border-radius:10px;box-shadow:0 14px 34px rgba(10,25,50,.20);max-height:264px;
+  overflow:auto;padding:4px}
+.suggest[hidden]{display:none}
+.suggest-row{display:flex;gap:10px;align-items:baseline;width:100%;text-align:left;
+  background:none;border:0;border-radius:7px;padding:7px 9px;cursor:pointer;font:inherit}
+.suggest-row:hover,.suggest-row.on{background:#eef4fd}
+.suggest-name{font-size:13px;font-weight:700;color:var(--navy);flex:1;min-width:0}
+.suggest-meta{font-size:11px;color:var(--muted);white-space:nowrap}
+
 /* ---------- alerts ---------- */
 .note{background:#eef4fd;border:1px solid #cddffa;border-left:4px solid var(--navy);
   border-radius:9px;padding:12px 14px;font-size:13px;margin:10px 0}

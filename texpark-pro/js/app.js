@@ -1019,23 +1019,131 @@ function addMemoLine(data) {
   renderMemoLines();
 }
 
-function memoProductNames_() {
-  const seen = {}, out = [];
-  (db.products || []).forEach(p => {
-    const n = String(p.name || '').trim();
-    const k = n.toLowerCase();
-    if (n && !seen[k]) { seen[k] = 1; out.push(n); }
-  });
-  return out.sort((a, b) => a.localeCompare(b));
+/* ---------- product suggestions for the memo's typed product cell ---------- */
+
+/* The owner asked for keyword search, not a prefix match: "girls" has to list every
+   girls item, then "3pcs" has to narrow that list, and a SKU or code has to find its
+   product too. A <datalist> can do none of that - it matches one substring, on the
+   name alone - so this box is drawn by hand.
+
+   Every whitespace-separated word must appear somewhere in the product's name, SKU,
+   category or barcode, so the words narrow each other the way a search box does.
+   The searchable blob is cached because nameKey_ runs two regexes per product per
+   keystroke. The cache is keyed by product id and kept *outside* the product record:
+   a stray field on the record would be written into the book and synced to every
+   other device. */
+var productSearchCache = {};
+
+function productSearchBlob_(p) {
+  const sig = [p.name, p.sku, p.category, p.barcode, p.code].join('\u0001');
+  const hit = productSearchCache[p.id];
+  if (hit && hit.sig === sig) return hit.blob;
+  const blob = nameKey_(sig.replace(/\u0001/g, ' '));
+  productSearchCache[p.id] = { sig: sig, blob: blob };
+  return blob;
 }
 
-/* Fill the product suggestion list under the memo table. A memo line is a typed
-   box now, so this is what makes the existing catalogue appear as the owner types -
-   the same way the customer box suggests saved names. */
-function renderMemoProductOptions() {
-  const dl = document.getElementById('memoProductNames');
-  if (!dl) return;
-  dl.innerHTML = memoProductNames_().map(n => '<option value="' + esc(n) + '"></option>').join('');
+function memoProductSearch_(q) {
+  const words = nameKey_(q).split(' ').filter(Boolean);
+  if (!words.length) return [];
+  const out = [];
+  (db.products || []).forEach(p => {
+    const blob = productSearchBlob_(p);
+    if (!words.every(w => blob.indexOf(w) !== -1)) return;
+    /* A name match outranks a code match, and a name that *starts* with what was
+       typed outranks one that merely contains it, so "girl" lists the Girls items
+       before a product that only mentions girls in its code. */
+    const name = nameKey_(p.name);
+    let score = 2;
+    if (words.every(w => name.indexOf(w) !== -1)) score = 1;
+    if (words[0] && name.indexOf(words[0]) === 0) score = 0;
+    out.push({ p: p, score: score });
+  });
+  out.sort((a, b) => a.score - b.score || String(a.p.name).localeCompare(String(b.p.name)));
+  return out.slice(0, 12).map(x => x.p);
+}
+
+/* Which memo row the open suggestion box belongs to. -1 means closed. */
+var memoSuggestFor = -1;
+/* The row the owner moved onto with the arrow keys. Left at -1 until he does, so a
+   plain Enter keeps committing the free text he typed rather than swallowing it. */
+var memoSuggestPick = -1;
+
+function hideMemoSuggest_() {
+  const box = document.getElementById('memoSuggest');
+  if (box) { box.hidden = true; box.innerHTML = ''; }
+  memoSuggestFor = -1;
+  memoSuggestPick = -1;
+}
+
+/* The box lives outside the .tablewrap (which scrolls, and would clip it), so it is
+   placed against the input's own rectangle each time it is shown. */
+function positionMemoSuggest_(i) {
+  const box = document.getElementById('memoSuggest');
+  const inp = document.getElementById('memoProd' + i);
+  if (!box || !inp || typeof inp.getBoundingClientRect !== 'function') return;
+  const r = inp.getBoundingClientRect();
+  box.style.position = 'fixed';
+  box.style.left = Math.max(6, r.left) + 'px';
+  box.style.top = (r.bottom + 2) + 'px';
+  box.style.minWidth = Math.max(240, r.width) + 'px';
+}
+
+function suggestRowHtml_(i, p, idx) {
+  const code = String(p.sku || p.barcode || '').trim();
+  const meta = (code ? 'Code ' + code + ' \u00b7 ' : '') + money(num(p.rate));
+  return '<button type="button" class="suggest-row' + (idx === memoSuggestPick ? ' on' : '') + '" ' +
+    /* mousedown must not steal focus from the box being typed in, or the click that
+       follows lands after a blur and the pick is lost. */
+    'onmousedown="return false" ' +
+    'onclick="memoPickProduct(' + i + ',\'' + p.id + '\')">' +
+    '<span class="suggest-name">' + esc(p.name) + '</span>' +
+    '<span class="suggest-meta">' + esc(meta) + '</span>' +
+    '</button>';
+}
+
+function renderMemoSuggest_(i, q) {
+  const box = document.getElementById('memoSuggest');
+  if (!box) return;
+  const hits = memoProductSearch_(q);
+  if (!hits.length) { hideMemoSuggest_(); return; }
+  memoSuggestFor = i;
+  /* When the words have narrowed it to one product, highlight it: the owner's flow
+     is "type girls, then 3pcs" until a single item is left, and Enter should take
+     it. With several hits nothing is highlighted, so Enter still commits free text. */
+  if (hits.length === 1) memoSuggestPick = 0;
+  else if (memoSuggestPick >= hits.length) memoSuggestPick = -1;
+  box.innerHTML = hits.map((p, k) => suggestRowHtml_(i, p, k)).join('');
+  box.hidden = false;
+  positionMemoSuggest_(i);
+}
+
+/* Arrow keys move onto a suggestion; Enter then picks it. Nothing is highlighted
+   until an arrow is pressed or the list has narrowed to one, which is what keeps
+   Enter free to commit a brand-new product name - the free-text path must survive
+   the suggestions. */
+function memoProductKey_(i, ev) {
+  ev = ev || {};
+  const box = document.getElementById('memoSuggest');
+  const open = box && !box.hidden && memoSuggestFor === i;
+  const hits = open ? memoProductSearch_(document.getElementById('memoProd' + i)?.value || '') : [];
+  const key = ev.key;
+  if (key === 'Escape') { hideMemoSuggest_(); return; }
+  if (key === 'ArrowDown' || key === 'ArrowUp') {
+    if (!hits.length) return;
+    if (ev.preventDefault) ev.preventDefault();
+    const dir = key === 'ArrowDown' ? 1 : -1;
+    /* From "nothing highlighted", Down goes to the first row and Up to the last;
+       from a row, it wraps. */
+    if (memoSuggestPick < 0) memoSuggestPick = dir > 0 ? 0 : hits.length - 1;
+    else memoSuggestPick = (memoSuggestPick + dir + hits.length) % hits.length;
+    renderMemoSuggest_(i, document.getElementById('memoProd' + i)?.value || '');
+    return;
+  }
+  if (key === 'Enter' && open && memoSuggestPick >= 0 && hits[memoSuggestPick]) {
+    if (ev.preventDefault) ev.preventDefault();
+    memoPickProduct(i, hits[memoSuggestPick].id);
+  }
 }
 
 /* Match what was typed to a product, tolerating case and spacing. Returns null
@@ -1043,13 +1151,21 @@ function renderMemoProductOptions() {
 function memoProductMatch_(name) {
   const k = nameKey_(name);
   if (!k) return null;
-  return (db.products || []).find(p => nameKey_(p.name) === k) || null;
+  const all = db.products || [];
+  const exact = all.find(p => nameKey_(p.name) === k);
+  if (exact) return exact;
+  /* A name typed as a keyword search ("girls 3pcs") or as a SKU ("GTS") is not the
+     product's full name, so an exact match misses it. When the words narrow the
+     catalogue to exactly one product, that is the one he meant; anything ambiguous
+     stays free text, so a new product can still be typed. */
+  const hits = memoProductSearch_(name);
+  return hits.length === 1 ? hits[0] : null;
 }
 
 function renderMemoLines() {
   const tb = document.getElementById('memoRows');
   if (!tb) return;
-  renderMemoProductOptions();
+  hideMemoSuggest_();
   tb.innerHTML = memoDraft.items.map((it, i) => {
     const p = productById(it.productId);
     const s = p ? db.stock.find(x => x.productId === p.id) : null;
@@ -1058,10 +1174,11 @@ function renderMemoLines() {
     const margin = num(it.qty) * (num(it.rate) - num(it.cost));
     return '<tr>' +
       '<td class="right">' + String(i + 1).padStart(2, '0') + '</td>' +
-      '<td><input id="memoProd' + i + '" list="memoProductNames" autocomplete="off" ' +
-        'placeholder="Type a product name" value="' + esc(p ? p.name : it.productName || '') + '" ' +
+      '<td><input id="memoProd' + i + '" autocomplete="off" spellcheck="false" ' +
+        'placeholder="Type a name, word or code" value="' + esc(p ? p.name : it.productName || '') + '" ' +
         'oninput="memoProductTyped(' + i + ',this.value)" ' +
-        'onchange="memoProductTyped(' + i + ',this.value)"></td>' +
+        'onkeydown="memoProductKey_(' + i + ',event)" ' +
+        'onblur="setTimeout(hideMemoSuggest_,150)"></td>' +
       '<td class="right"><span id="memoAvail' + i + '" class="pill ' + (avail <= 0 ? 'danger' : avail <= num(p?.reorderLevel) ? 'warn' : 'ok') + '">' +
         (it.productId ? avail : '-') + '</span></td>' +
       '<td><input id="memoRate' + i + '" class="' + (notEntered ? 'warn-field' : '') + '" type="number" step="0.01" value="' + num(it.rate) + '" oninput="memoSet(' + i + ',\'rate\',this.value)"></td>' +
@@ -1113,11 +1230,21 @@ function memoSyncLines() {
 
 function memoPickProduct(i, pid) {
   const it = memoDraft.items[i];
+  if (!it) return;
   const p = productById(pid);
+  if (!p) return;
   it.productId = pid;
-  if (p) { it.rate = num(p.rate); it.vat = num(p.vat); it.cost = stockCost(p.id) || num(p.cost); }
+  it.productName = p.name;
+  it.rate = num(p.rate);
+  it.vat = num(p.vat);
+  it.cost = stockCost(p.id) || num(p.cost);
+  /* Rebuild the row so the box shows the picked name, then reopen nothing: the pick
+     is done, and leaving the list up would cover the rate the owner types next. */
+  hideMemoSuggest_();
   renderMemoLines();
   calcMemo();
+  const ri = document.getElementById('memoRate' + i);
+  if (ri && ri.focus) ri.focus();
 }
 
 /* The owner types a product name instead of hunting a dropdown. What he typed is
@@ -1130,6 +1257,9 @@ function memoProductTyped(i, value) {
   if (!it) return;
   const typed = String(value || '').trim();
   it.productName = typed;
+  /* Suggestions are driven from here, not from a second handler on the input: the
+     words narrow as they are typed, and a word that matches nothing closes the box. */
+  renderMemoSuggest_(i, typed);
   const found = memoProductMatch_(typed);
   if (found) {
     if (it.productId !== found.id) {

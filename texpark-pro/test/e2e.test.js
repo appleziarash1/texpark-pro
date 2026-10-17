@@ -772,40 +772,119 @@ ok(!!fakeStore['texpark_pro_v2'], 'data stored under the v2 key');
 ok(!fakeStore['texpark_biz_v1'], 'old v1 key not mixed in');
 eq(loadDB().memos.length, 1, 'reload reads the same memos back');
 
-console.log('\n--- the memo product box is typed, and suggests the catalogue ---');
-/* The owner types a product name instead of hunting a dropdown, so the box has to
-   suggest what is already saved and match what it can - the same way the customer
-   box does. An unknown name becomes a real product at save time, so a memo is never
-   blocked by a missing product entry. */
+console.log('\n--- the memo product box searches by keyword ---');
+/* The owner types a word and expects every item carrying it, then a second word to
+   narrow the list, and a SKU/code to find its product. A <datalist> can do none of
+   that - it matches one substring on the name alone - so the box is drawn by hand
+   and this is what proves the search behind it. An unknown name still becomes a real
+   product at save time, so a memo is never blocked by a missing product entry. */
 nav('memo');
 newMemo();
 const typedBefore = db.products.length;
 el('customerName').value = 'Sultana';
+db.products.push(
+  { id: 'tst-g3', name: 'Girls 3pcs Set', sku: 'G3S', category: 'Kids', unit: 'pcs', rate: 310, cost: 240, vat: 0, reorderLevel: 5 },
+  { id: 'tst-g2', name: 'Girls 2pcs Set', sku: 'G2S', category: 'Kids', unit: 'pcs', rate: 260, cost: 200, vat: 0, reorderLevel: 5 },
+  { id: 'tst-gts', name: 'Girls T-shirt', sku: 'GTS', barcode: '8801234567890', category: 'Kids', unit: 'pcs', rate: 180, cost: 140, vat: 0, reorderLevel: 5 },
+  { id: 'tst-b3', name: 'Boys 3pcs Set', sku: 'B3S', category: 'Kids', unit: 'pcs', rate: 300, cost: 230, vat: 0, reorderLevel: 5 },
+  { id: 'tst-gown', name: 'Party Gown', sku: 'PWG', category: 'Girls', unit: 'pcs', rate: 900, cost: 700, vat: 0, reorderLevel: 2 }
+);
+
+/* One keyword lists every item that carries it, wherever it carries it. */
+const girls = memoProductSearch_('girls').map(p => p.id);
+['tst-g3', 'tst-g2', 'tst-gts'].forEach(id => ok(girls.indexOf(id) !== -1, 'typing "girls" lists ' + id));
+ok(girls.indexOf('tst-b3') === -1, 'a boys item is not listed for "girls"');
+ok(girls.indexOf('tst-gown') !== -1, 'a product whose category is Girls is found too, not just the name');
+
+/* A second keyword narrows the first. */
+const girls3 = memoProductSearch_('girls 3pcs').map(p => p.id);
+eq(girls3.length, 1, 'adding "3pcs" narrows "girls" to one item');
+eq(girls3[0], 'tst-g3', 'and it is the right one');
+ok(memoProductSearch_('3pcs').length >= 2, 'a keyword on its own still searches the whole catalogue');
+
+/* A SKU or code finds its product. */
+eq(memoProductSearch_('GTS').map(p => p.id).join(','), 'tst-gts', 'the SKU finds its product');
+eq(memoProductSearch_('gts').map(p => p.id).join(','), 'tst-gts', 'and the SKU is case-insensitive');
+eq(memoProductSearch_('8801234567890').map(p => p.id).join(','), 'tst-gts', 'a barcode finds its product');
+eq(memoProductSearch_('zzzznothing').length, 0, 'a word that matches nothing returns nothing');
+
+/* The typed text still resolves to the product, and its rate lands on the line. */
 memoDraft.items = [{ productId: '', productName: '', qty: 1, rate: 0, cost: 0, vat: 0, amount: 0 }];
 renderMemoLines();
-ok(/memoProductNames/.test(el('memoRows').innerHTML), 'the product box is wired to the suggestion list');
-ok(el('memoProductNames').innerHTML.indexOf(db.products[0].name) !== -1,
-   'the suggestion list carries the saved catalogue');
+memoProductTyped(0, 'girls 3pcs');
+const g3 = db.products.find(p => p.id === 'tst-g3');
+eq(memoDraft.items[0].productId, 'tst-g3', 'the searched name resolves to the product on the line');
+eq(memoDraft.items[0].rate, num(g3.rate), 'and its selling price lands on the line');
 
-/* Typing an existing name matches it, and pulls its selling price into the rate. */
-const known = db.products.find(p => num(p.rate) > 0) || db.products[0];
-memoProductTyped(0, known.name);
-eq(memoDraft.items[0].productId, known.id, 'a typed saved name resolves to that product');
-eq(memoDraft.items[0].rate, num(known.rate), 'and its selling price lands on the line');
+/* Typing opens the list; a word that matches nothing closes it. */
+memoDraft.items = [{ productId: '', productName: '', qty: 1, rate: 0, cost: 0, vat: 0, amount: 0 }];
+renderMemoLines();
+memoProductTyped(0, 'girls');
+ok(!el('memoSuggest').hidden, 'typing a keyword opens the suggestion list');
+ok(/Girls 3pcs Set/.test(el('memoSuggest').innerHTML), 'and it lists the matching product');
+ok(/Code G3S/.test(el('memoSuggest').innerHTML), 'with the code beside it, so a code hit is visible');
+memoProductTyped(0, 'zzzznothing');
+ok(el('memoSuggest').hidden, 'a word that matches nothing closes the list again');
 
-/* Typing a brand-new name keeps the line unmatched for now... */
-memoDraft.items[0].productId = '';
-memoDraft.items[0].rate = 0;
+/* Narrowing to one product highlights it, so Enter takes it with no arrow key:
+   that is the "girls, then 3pcs" flow the owner described. */
+memoDraft.items = [{ productId: '', productName: '', qty: 1, rate: 0, cost: 0, vat: 0, amount: 0 }];
+renderMemoLines();
+el('memoProd0').value = 'girls 3pcs';
+memoProductTyped(0, 'girls 3pcs');
+eq(memoSuggestPick, 0, 'narrowing to a single product highlights it');
+memoProductKey_(0, { key: 'Enter', preventDefault() {} });
+eq(memoDraft.items[0].productId, 'tst-g3', 'Enter takes the only remaining match, with no arrow key');
+eq(memoDraft.items[0].productName, 'Girls 3pcs Set', 'and the box shows its full name');
+eq(memoDraft.items[0].rate, num(g3.rate), 'and its rate is on the line');
+
+/* Arrow keys move onto a suggestion, and Enter picks it. */
+memoDraft.items = [{ productId: '', productName: '', qty: 1, rate: 0, cost: 0, vat: 0, amount: 0 }];
+renderMemoLines();
+memoProductTyped(0, 'girls');
+el('memoProd0').value = 'girls';
+memoSuggestPick = -1;
+memoProductKey_(0, { key: 'ArrowDown', preventDefault() {} });
+eq(memoSuggestPick, 0, 'ArrowDown moves onto the first suggestion');
+ok(/suggest-row on/.test(el('memoSuggest').innerHTML), 'and the row is marked as highlighted');
+/* The list is alphabetical, so the first row for "girls" is the 2pcs set. */
+eq(memoProductSearch_('girls')[0].id, 'tst-g2', 'the first row is the alphabetically first match');
+memoProductKey_(0, { key: 'Enter', preventDefault() {} });
+eq(memoDraft.items[0].productId, 'tst-g2', 'Enter picks the highlighted suggestion');
+eq(memoDraft.items[0].productName, 'Girls 2pcs Set', 'and the box now holds its name');
+ok(el('memoSuggest').hidden, 'and the list closes behind the pick');
+/* Down then wraps back round to the top rather than sticking on the last row. */
+memoDraft.items = [{ productId: '', productName: '', qty: 1, rate: 0, cost: 0, vat: 0, amount: 0 }];
+renderMemoLines();
+memoProductTyped(0, 'girls');
+el('memoProd0').value = 'girls';
+memoSuggestPick = -1;
+const girlsCount = memoProductSearch_('girls').length;
+for (let k = 0; k < girlsCount; k++) memoProductKey_(0, { key: 'ArrowDown', preventDefault() {} });
+eq(memoSuggestPick, girlsCount - 1, 'ArrowDown walks to the last row and stops there');
+memoProductKey_(0, { key: 'ArrowDown', preventDefault() {} });
+eq(memoSuggestPick, 0, 'and one more ArrowDown wraps back to the first');
+
+/* Escape closes without picking, and a plain Enter never steals the free text -
+   typing a product that is not in the catalogue must keep working. */
+memoDraft.items = [{ productId: '', productName: '', qty: 1, rate: 0, cost: 0, vat: 0, amount: 0 }];
+renderMemoLines();
+memoProductTyped(0, 'girls');
+memoProductKey_(0, { key: 'Escape' });
+ok(el('memoSuggest').hidden, 'Escape closes the list');
+eq(memoDraft.items[0].productName, 'girls', 'and leaves what was typed alone');
 memoProductTyped(0, 'Brand New Thing');
-eq(memoDraft.items[0].productId, '', 'an unknown name is not matched to anything yet');
-eq(db.products.length, typedBefore, 'and no product is created while typing');
+memoSuggestPick = -1;
+memoProductKey_(0, { key: 'Enter', preventDefault() {} });
+eq(memoDraft.items[0].productId, '', 'Enter without an arrow keeps the free-text path');
+eq(db.products.length, typedBefore + 5, 'and no product is created while typing');
 
 /* ...and saving turns it into a real product with a stock card, not a loose string. */
 memoSet(0, 'qty', '4');
 saveMemo();
 const created = db.products.find(p => /brand new thing/i.test(p.name));
 ok(!!created, 'the typed name became a real product on save');
-eq(db.products.length, typedBefore + 1, 'exactly one product was created');
+eq(db.products.length, typedBefore + 6, 'exactly one product was created');
 eq(!!findStock(created.id), true, 'and it got its stock card, like any other sale');
 const lastMemo = db.memos[db.memos.length - 1];
 eq(lastMemo.items[0].productId, created.id, 'the memo points at the product id, not a string');
