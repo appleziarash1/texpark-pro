@@ -724,6 +724,8 @@ async function cloudSendJob(job) {
 var fbRealtimeUnsub = null;
 var fbRealtimeStarting = false;
 var fbRealtimeMergeQueued = false;
+var fbRealtimeChangePending = false;
+var fbRealtimeDrainTimer = null;
 /* A dropped stream must come back on its own. Left with an empty error handler the
    tab silently fell from push (~0.3 s) to the idle poll for the rest of the session -
    the exact "sometimes it is live, sometimes it is not" the owner kept hitting. Retry
@@ -760,14 +762,29 @@ function fbRealtimeStop() {
   if (cfOn_()) return cfRealtimeStop();
   fbRealtimeStarting = false;
   fbRealtimeRetryClear();
+  if (fbRealtimeDrainTimer) { clearTimeout(fbRealtimeDrainTimer); fbRealtimeDrainTimer = null; }
+  fbRealtimeChangePending = false;
   if (fbRealtimeUnsub) { try { fbRealtimeUnsub(); } catch (e) {} fbRealtimeUnsub = null; }
+}
+function fbRealtimeDrainChanges_() {
+  if (!fbRealtimeChangePending || fbRealtimeMergeQueued) return;
+  if (!fbRealtimeShouldRun()) { fbRealtimeChangePending = false; return; }
+  if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) {
+    if (!fbRealtimeDrainTimer) fbRealtimeDrainTimer = setTimeout(function () {
+      fbRealtimeDrainTimer = null;
+      fbRealtimeDrainChanges_();
+    }, 150);
+    return;
+  }
+  fbRealtimeChangePending = false;
+  fbRealtimeMergeQueued = true;
+  Promise.resolve().then(function () { return cloudPullMerge(); }).catch(function () {})
+    .then(function () { fbRealtimeMergeQueued = false; fbRealtimeDrainChanges_(); });
 }
 function fbRealtimeOnChange() {
   if (cfOn_()) return cfRealtimeOnChange();
-  if (fbRealtimeMergeQueued) return;
-  if (cloudBusy || (typeof cloudDirty !== 'undefined' && cloudDirty)) return;
-  fbRealtimeMergeQueued = true;
-  cloudPullMerge().catch(function () {}).then(function () { fbRealtimeMergeQueued = false; });
+  fbRealtimeChangePending = true;
+  fbRealtimeDrainChanges_();
 }
 async function fbRealtimeStart() {
   if (cfOn_()) return cfRealtimeStart();

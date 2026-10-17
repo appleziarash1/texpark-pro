@@ -107,15 +107,21 @@ function makeSandbox(sdk) {
     sdk.snaps[0].onNext(); await ticks(3);
     eq(pulls, 1, 'a server push wakes the ONE proven merge exactly once');
 
-    /* A burst coalesces while a merge is in flight. */
+    /* A new change during a merge must trigger one follow-up pull after it. */
     pulls = 0;
-    let release;
-    s.cloudPullMerge = () => new Promise(r => { release = () => { pulls++; r({}); }; });
-    s.fbRealtimeOnChange(); s.fbRealtimeOnChange(); s.fbRealtimeOnChange();
-    await tick();
-    eq(pulls, 0, 'while a merge is in flight, further pushes do not stack');
-    release(); await tick();
-    eq(pulls, 1, 'the burst produced exactly one merge');
+    let release, mergeCalls = 0;
+    s.cloudPullMerge = () => {
+      mergeCalls++;
+      if (mergeCalls === 1) return new Promise(r => { release = () => { pulls++; r({}); }; });
+      pulls++;
+      return Promise.resolve({});
+    };
+    s.fbRealtimeOnChange(); await tick();
+    s.fbRealtimeOnChange(); s.fbRealtimeOnChange();
+    eq(mergeCalls, 1, 'while a merge is in flight, pushes do not start parallel pulls');
+    release(); await ticks(4);
+    eq(mergeCalls, 2, 'a push during the first merge schedules one follow-up pull');
+    eq(pulls, 2, 'the first and catch-up pull both completed');
 
     /* Starting again does not attach a second listener. */
     s.fbRealtimeStart(); await ticks(3);
