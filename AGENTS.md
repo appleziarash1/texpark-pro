@@ -644,6 +644,51 @@ card with the grand total and the due highlighted, two signature lines, terms an
   now feeds both implementations the same amounts and compares the strings rather than
   hard-coding an expectation, so the next drift fails the build instead of the shop's paperwork.
 
+## The memo product box is typed, not a dropdown (2026-10-17)
+The memo's product cell used to be a `<select>` over the whole catalogue. The owner asked for a
+free-text box with suggestions, "like the customer-name field", because a long catalogue makes a
+dropdown unusable on a phone. The cell is now an `<input list="memoProductNames">` plus a
+`<datalist>`, filled by `renderMemoProductOptions()` from `db.products` - the same pattern the
+customer box (`customerName` + `customerNames`) and the order form already use.
+- **`memoProductTyped(i, value)` is the handler, and it never rewrites the box.** It matches what
+  was typed through `nameKey_` (the customer-name normaliser, so case and a stray `Md.` do not
+  split one product into two). On a match it fills `rate`/`cost`/`vat` from the product and then
+  patches only the other cells (`memoPatchLine`), so the caret stays in the product box while
+  typing - the same reason `memoSet` patches instead of re-rendering. On no match the line keeps
+  its old `productId` only while the box still shows that product's name; any other text means
+  the owner changed his mind, and the line goes unmatched.
+- **A name that matches nothing becomes a real product at save time, not while typing.** Typing
+  creates nothing (a half-typed word must not litter the catalogue); `saveMemo()` calls
+  `memoEnsureTypedProduct_` for each unmatched line, then `ensureStockCard`, so the memo, its
+  stock card and every report point at a product id rather than at a loose string. This mirrors
+  the voice entry, which already creates a product on the spot - a memo is never blocked by a
+  missing product entry.
+- **`productName` is now carried on the draft line** (`addMemoLine`, `editMemo`) so an edited or
+  unmatched line still shows its name in the box and on the printed sheet.
+- `test/e2e.test.js` pins: the box is wired to the datalist, the datalist carries the catalogue,
+  a typed saved name resolves and pulls its price, an unknown name creates nothing while typing,
+  and saving turns it into exactly one product with a stock card.
+
+## The memo carries the Steadfast parcel (2026-10-17)
+A memo for an order booked with Steadfast now prints the parcel's identity the way Steadfast's
+own label does, so the delivery man and the customer read it off the paper: the consignment id
+in full, plus a scannable **Code 128** barcode of the tracking code.
+- **`memoSteadfastBlock(m)` in `js/courier.js`** looks up the order that settles the memo
+  (`orderForMemo_`, by `memoId` then `memoNo`) and returns `''` when there is no parcel - a memo
+  with no parcel must not grow an empty band. `memoSheet()` appends it right after the strip.
+- **The barcode is encoded here, with no library**, so the sheet stays one self-contained file.
+  `CODE128_BARS_` is the 107-pattern Code 128 table (values 0-106); `code128Modules_` builds
+  Set B with the start symbol, the mod-103 check symbol and the stop, and returns `''` for a
+  character Set B cannot carry rather than a barcode that scans to something else.
+  `code128SVG_` draws the bars as inline SVG with quiet zones. Set B covers every character a
+  consignment id or tracking code is made of, so no code-set switching is needed.
+- **`MEMO_CSS` carries the `.memo-steadfast` / `.memo-sf-*` / `.memo-bc-svg` rules**, because the
+  PNG/PDF export wraps the sheet in an SVG whose only stylesheet is that constant - the
+  existing class cross-check in `test/e2e.test.js` covers the new classes too. `memoSheetHeight`
+  adds room for the band so the exported image is not cut off.
+- The native `MemoSheet.java` does **not** render this band yet; the phone's Store has no order
+  records. Worth doing if the owner prints memos from the phone.
+
 ## Android app (rewritten natively 2026-09-29)
 `TexparkPro.apk` â€” a **fully native** app, not a WebView. The owner asked for a real Android
 app, and the WebView had a fatal flaw he reported himself: **a memo could not be printed**,

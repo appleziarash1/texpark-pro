@@ -249,6 +249,50 @@ const paymentsBefore = db.payments.length;
   eq(el('ordConsignment').value, '555111', 'modal consignment field synced from the order');
   eq(el('ordTrackingUrl').value, 'https://steadfast.com.bd/t/TC555', 'modal tracking field synced from the order');
 
+  /* ---------- 11a. the memo carries the parcel like Steadfast's own label ---------- */
+  /* A memo with no parcel must not grow a block, or every memo printed would carry
+     an empty band. */
+  eq(memoSteadfastBlock({ id: 'noOrd', memoNo: 'X' }), '', 'a memo with no parcel has no Steadfast block');
+
+  /* memoB is settled by ordB, which was just booked, so the memo now has a parcel. */
+  const sfBlock = memoSteadfastBlock(memoB);
+  ok(sfBlock.indexOf('555111') !== -1, 'the consignment id is on the memo');
+  ok(sfBlock.indexOf('TC555') !== -1, 'the tracking code is on the memo too');
+  ok(sfBlock.indexOf('memo-bc-svg') !== -1, 'and a scannable barcode is drawn beside it');
+
+  /* The barcode is Code 128, so it must be checkable rather than decorative. The
+     encoded value is recovered from the module string and compared to the input.
+     Every symbol is 11 modules except the stop, which is 13. */
+  const mods = code128Modules_('TC555');
+  eq(mods.slice(0, 11), CODE128_BARS_[104], 'the barcode starts with Start B');
+  eq(mods.slice(-13), CODE128_BARS_[106], 'and ends with the stop pattern');
+  const body = mods.slice(0, -13);
+  eq(body.length % 11, 0, 'the symbols before the stop are all 11 modules');
+  const syms = body.match(/.{11}/g);
+  const values = syms.map(m => CODE128_BARS_.indexOf(m));
+  eq(values[0], 104, 'first symbol is Start B (104)');
+  let check = values[0];
+  for (let i = 1; i < values.length - 1; i++) check += values[i] * i;
+  eq(values[values.length - 1], check % 103, 'the check symbol is the mod-103 checksum');
+  eq(values.slice(1, -1).map(v => String.fromCharCode(v + 32)).join(''), 'TC555',
+     'the data symbols read back as the tracking code');
+
+  /* A character Set B cannot carry must not produce a barcode that scans to
+     something else - better to print the id with no barcode at all. */
+  eq(code128Modules_('AB\u09EE'), '', 'a non-ASCII character yields no barcode');
+  eq(code128Modules_(''), '', 'an empty value yields no barcode');
+
+  /* The sheet renders the block, and every class it uses is in MEMO_CSS so the
+     exported PNG/PDF is styled rather than bare. */
+  const sfSheet = memoSheet(memoB);
+  ok(sfSheet.indexOf('memo-steadfast') !== -1, 'the sheet carries the Steadfast band');
+  ok(sfSheet.indexOf('555111') !== -1, 'the sheet prints the consignment id');
+  const sfClasses = [...sfSheet.matchAll(/class="([^"]+)"/g)]
+    .flatMap(m => m[1].split(/\s+/)).filter(Boolean);
+  const sfStyled = new Set([...MEMO_CSS.matchAll(/\.([a-zA-Z][\w-]*)/g)].map(m => m[1]));
+  const sfUnstyled = [...new Set(sfClasses)].filter(c => !sfStyled.has(c));
+  eq(sfUnstyled.join(','), '', 'every class the Steadfast band uses is in MEMO_CSS: ' + sfUnstyled.join(', '));
+
   /* A refused call changes nothing: no parcel is recorded on the order. */
   const ordC = { id: 'oC', orderNo: 'TP-0010', customerName: 'Z', productName: 'Y', qty: 1, deliveryDate: T, status: 'received' };
   db.orders.push(ordC);

@@ -25,6 +25,7 @@ function memoSheetHeight(m) {
   let h = 470 + rows * 34;
   if (m.note) h += 40;
   if (m.customerAddress) h += 18;
+  if (typeof memoSteadfastBlock === 'function' && memoSteadfastBlock(m)) h += 84;
   const needed = h + MEMO_PAGE.margin * 2;
   return Math.max(MEMO_PAGE.h, Math.round(needed));
 }

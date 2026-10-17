@@ -1015,13 +1015,41 @@ function newMemo() {
 }
 
 function addMemoLine(data) {
-  memoDraft.items.push(Object.assign({ productId: '', qty: 1, rate: 0, cost: 0, vat: 0, amount: 0 }, data || {}));
+  memoDraft.items.push(Object.assign({ productId: '', productName: '', qty: 1, rate: 0, cost: 0, vat: 0, amount: 0 }, data || {}));
   renderMemoLines();
+}
+
+function memoProductNames_() {
+  const seen = {}, out = [];
+  (db.products || []).forEach(p => {
+    const n = String(p.name || '').trim();
+    const k = n.toLowerCase();
+    if (n && !seen[k]) { seen[k] = 1; out.push(n); }
+  });
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+/* Fill the product suggestion list under the memo table. A memo line is a typed
+   box now, so this is what makes the existing catalogue appear as the owner types -
+   the same way the customer box suggests saved names. */
+function renderMemoProductOptions() {
+  const dl = document.getElementById('memoProductNames');
+  if (!dl) return;
+  dl.innerHTML = memoProductNames_().map(n => '<option value="' + esc(n) + '"></option>').join('');
+}
+
+/* Match what was typed to a product, tolerating case and spacing. Returns null
+   when nothing matches, which is the signal that a new product is needed. */
+function memoProductMatch_(name) {
+  const k = nameKey_(name);
+  if (!k) return null;
+  return (db.products || []).find(p => nameKey_(p.name) === k) || null;
 }
 
 function renderMemoLines() {
   const tb = document.getElementById('memoRows');
   if (!tb) return;
+  renderMemoProductOptions();
   tb.innerHTML = memoDraft.items.map((it, i) => {
     const p = productById(it.productId);
     const s = p ? db.stock.find(x => x.productId === p.id) : null;
@@ -1030,11 +1058,10 @@ function renderMemoLines() {
     const margin = num(it.qty) * (num(it.rate) - num(it.cost));
     return '<tr>' +
       '<td class="right">' + String(i + 1).padStart(2, '0') + '</td>' +
-      '<td><select onchange="memoPickProduct(' + i + ',this.value)">' +
-        '<option value="">- select -</option>' +
-        db.products.map(x => '<option value="' + x.id + '"' + (x.id === it.productId ? ' selected' : '') + '>' +
-          esc(x.name) + (x.sku ? ' [' + esc(x.sku) + ']' : '') + '</option>').join('') +
-      '</select></td>' +
+      '<td><input id="memoProd' + i + '" list="memoProductNames" autocomplete="off" ' +
+        'placeholder="Type a product name" value="' + esc(p ? p.name : it.productName || '') + '" ' +
+        'oninput="memoProductTyped(' + i + ',this.value)" ' +
+        'onchange="memoProductTyped(' + i + ',this.value)"></td>' +
       '<td class="right"><span id="memoAvail' + i + '" class="pill ' + (avail <= 0 ? 'danger' : avail <= num(p?.reorderLevel) ? 'warn' : 'ok') + '">' +
         (it.productId ? avail : '-') + '</span></td>' +
       '<td><input id="memoRate' + i + '" class="' + (notEntered ? 'warn-field' : '') + '" type="number" step="0.01" value="' + num(it.rate) + '" oninput="memoSet(' + i + ',\'rate\',this.value)"></td>' +
@@ -1091,6 +1118,56 @@ function memoPickProduct(i, pid) {
   if (p) { it.rate = num(p.rate); it.vat = num(p.vat); it.cost = stockCost(p.id) || num(p.cost); }
   renderMemoLines();
   calcMemo();
+}
+
+/* The owner types a product name instead of hunting a dropdown. What he typed is
+   matched against the catalogue; if nothing matches, the product is created on the
+   spot with that name - a memo must never be blocked by a missing product entry,
+   exactly as the voice entry already behaves. The typed box is never rewritten
+   here, so the caret stays where it is. */
+function memoProductTyped(i, value) {
+  const it = memoDraft.items[i];
+  if (!it) return;
+  const typed = String(value || '').trim();
+  it.productName = typed;
+  const found = memoProductMatch_(typed);
+  if (found) {
+    if (it.productId !== found.id) {
+      it.productId = found.id;
+      it.rate = num(found.rate);
+      it.vat = num(found.vat);
+      it.cost = stockCost(found.id) || num(found.cost);
+      /* Fill the rate box from the matched product, but only where the owner has not
+         put a figure himself. The product box is the one he is typing in, so it is
+         left untouched and its caret stays put. */
+      const ri = document.getElementById('memoRate' + i);
+      if (ri && !num(ri.value)) ri.value = num(found.rate);
+    }
+    memoPatchLine(i);
+    calcMemo();
+    return;
+  }
+  /* Nothing matches. Keep whatever id the line had only while the box still shows
+     that product's name; anything else means the owner changed his mind. */
+  const current = productById(it.productId);
+  if (!current || nameKey_(current.name) !== nameKey_(typed)) it.productId = '';
+  memoPatchLine(i);
+  calcMemo();
+}
+
+/* Turn a typed-but-unmatched name into a real product, at save time. Returns the
+   product, or null when there is no name to create. */
+function memoEnsureTypedProduct_(name) {
+  const n = String(name || '').trim();
+  if (!n) return null;
+  const found = memoProductMatch_(n);
+  if (found) return found;
+  const p = {
+    id: id(), name: n, sku: '', category: 'Memo Entry', unit: 'pcs',
+    rate: 0, cost: 0, vat: 0, reorderLevel: num(db.settings.lowStockLevel)
+  };
+  db.products.push(p);
+  return p;
 }
 
 function memoSet(i, field, v) {
@@ -1232,9 +1309,23 @@ function pickMemoCustomer(cid) {
 }
 
 function saveMemo() {
-  const valid = memoDraft.items.filter(x => x.productId && num(x.qty) > 0);
+  const typed = memoDraft.items.filter(x => (x.productId || String(x.productName || '').trim()) && num(x.qty) > 0);
   const name = document.getElementById('customerName').value.trim();
   if (!name) return alert('Enter a customer name.');
+  if (!typed.length) return alert('Add at least one product with a quantity.');
+
+  /* A name the owner typed but never picked from the suggestion list becomes a real
+     product here, so the memo, its stock card and every report point at a product id
+     rather than at a string. A memo is never blocked by a missing product entry. */
+  typed.forEach(it => {
+    if (it.productId) return;
+    const p = memoEnsureTypedProduct_(it.productName);
+    if (!p) return;
+    it.productId = p.id;
+    if (!num(p.rate) && num(it.rate) > 0) p.rate = num(it.rate);
+    if (!num(p.cost) && num(it.cost) > 0) p.cost = num(it.cost);
+  });
+  const valid = typed.filter(x => x.productId);
   if (!valid.length) return alert('Add at least one product with a quantity.');
 
   /* The memo is the source of truth. It saves even with no stock - and any product
@@ -1473,7 +1564,7 @@ function editMemo(mid) {
   if (!m) return;
   if (!can('memo')) return alert('You do not have permission.');
   editingMemoId = mid;
-  memoDraft = { items: m.items.map(i => ({ productId: i.productId, qty: i.qty, rate: i.rate, cost: i.cost, vat: i.vat })) };
+  memoDraft = { items: m.items.map(i => ({ productId: i.productId, productName: i.productName, qty: i.qty, rate: i.rate, cost: i.cost, vat: i.vat })) };
   nav('memo');
   document.getElementById('memoNo').value = m.memoNo;
   document.getElementById('memoDate').value = m.date;
@@ -1583,6 +1674,19 @@ const MEMO_CSS = '' +
   '.memo-sheet .memo-strip{display:flex;justify-content:space-between;gap:16px;background:#f1f5f9;' +
     'border:1px solid #dbe3ec;border-top:0;padding:9px 20px;font-size:11px;color:#334155}' +
   '.memo-sheet .memo-strip b{color:#0f2b52}' +
+  /* the Steadfast parcel band: the consignment id and its scannable Code 128,
+     so the delivery man reads the parcel off the memo the same way he reads
+     Steadfast's own label */
+  '.memo-sheet .memo-steadfast{display:flex;justify-content:space-between;align-items:center;gap:16px;' +
+    'background:#fff8e9;border:1px solid #fde3a7;border-top:0;padding:10px 20px}' +
+  '.memo-sheet .memo-sf-left{min-width:0}' +
+  '.memo-sheet .memo-sf-tag{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;' +
+    'color:#a05b00;font-weight:800}' +
+  '.memo-sheet .memo-sf-id{font-size:19px;font-weight:800;color:#0f2b52;letter-spacing:.02em;line-height:1.2}' +
+  '.memo-sheet .memo-sf-code{font-size:10.5px;color:#475569;margin-top:2px}' +
+  '.memo-sheet .memo-sf-code b{color:#0f2b52}' +
+  '.memo-sheet .memo-sf-right{flex:0 0 auto;text-align:right}' +
+  '.memo-sheet .memo-bc-svg{display:block;max-width:100%;height:auto}' +
   '.memo-sheet .memo-cards{display:flex;gap:0;border:1px solid #dbe3ec;border-top:0;margin-top:16px}' +
   '.memo-sheet .memo-card{flex:1;padding:12px 16px;min-width:0}' +
   '.memo-sheet .memo-card + .memo-card{border-left:1px solid #dbe3ec}' +
@@ -1707,6 +1811,7 @@ function memoSheet(m) {
         '</td><td class="right"><b>' + money(r.amount) + '</b></td></tr>').join('')
     : '<tr><td class="memo-empty" colspan="5">No products</td></tr>';
   const contacts = memoCompanyLines(c).map(l => '<div>' + esc(l) + '</div>').join('');
+  const steadfast = (typeof memoSteadfastBlock === 'function') ? memoSteadfastBlock(m) : '';
   return '<div class="memo-sheet">' +
     '<div class="memo-top">' +
       '<div class="memo-co"><div class="memo-logo">' + esc(memoInitials(c.name)) + '</div>' +
@@ -1723,6 +1828,7 @@ function memoSheet(m) {
       '<div><b>Payment:</b> ' + esc(m.paymentMode || 'Cash / bKash') + '</div>' +
       '<div><b>Delivery:</b> ' + esc(m.deliveryMode || 'Shop pick-up') + '</div>' +
     '</div>' +
+    steadfast +
     '<div class="memo-cards">' +
       '<div class="memo-card"><h4>Bill To</h4>' +
         '<div class="memo-big">' + esc(m.customerName) + '</div>' +

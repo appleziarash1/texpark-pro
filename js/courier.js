@@ -594,3 +594,91 @@ function bookOrderCourier() {
     alert('Booked. Consignment ' + r.shipment.consignmentId + '. Status will sync automatically.');
   });
 }
+
+/* ===================== the memo's Steadfast label =====================
+   A memo that has been booked with Steadfast has to carry the parcel's identity
+   the way Steadfast's own label does, because the delivery man and the customer
+   read it off the paper: the consignment id, in full, plus the scannable Code 128
+   barcode of it. The barcode is drawn here as plain bars - no library - so the
+   sheet stays a single self-contained file. */
+
+/* Code 128 Set B patterns for values 0-106, as the 11-module bar/space strings
+   from the standard. Set B covers the ASCII a consignment id and a tracking code
+   are made of, so no code-set switching is needed. */
+const CODE128_BARS_ = [
+  '11011001100','11001101100','11001100110','10010011000','10010001100','10001001100',
+  '10011001000','10011000100','10001100100','11001001000','11001000100','11000100100',
+  '10110011100','10011011100','10011001110','10111001100','10011101100','10011100110',
+  '11001110010','11001011100','11001001110','11011100100','11001110100','11101101110',
+  '11101001100','11100101100','11100100110','11101100100','11100110100','11100110010',
+  '11011011000','11011000110','11000110110','10100011000','10001011000','10001000110',
+  '10110001000','10001101000','10001100010','11010001000','11000101000','11000100010',
+  '10110111000','10110001110','10001101110','10111011000','10111000110','10001110110',
+  '11101110110','11010001110','11000101110','11011101000','11011100010','11011101110',
+  '11101011000','11101000110','11100010110','11101101000','11101100010','11100011010',
+  '11101111010','11001000010','11110001010','10100110000','10100001100','10010110000',
+  '10010000110','10000101100','10000100110','10110010000','10110000100','10011010000',
+  '10011000010','10000110100','10000110010','11000010010','11001010000','11110111010',
+  '11000010100','10001111010','10100111100','10010111100','10010011110','10111100100',
+  '10011110100','10011110010','11110100100','11110010100','11110010010','11011011110',
+  '11011110110','11110110110','10101111000','10100011110','10001011110','10111101000',
+  '10111100010','11110101000','11110100010','10111011110','10111101110','11101011110',
+  '11110101110','11010000100','11010010000','11010011100','1100011101011'
+];
+
+/* The module string for `text` in Code 128 Set B, including the start symbol, the
+   mod-103 check symbol and the stop. Returns '' for characters Set B cannot carry,
+   so the caller can fall back to printing the id without a barcode rather than a
+   barcode that scans to the wrong thing. */
+function code128Modules_(text) {
+  const s = String(text == null ? '' : text);
+  if (!s) return '';
+  const values = [104];   // Start B
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 32 || c > 126) return '';
+    values.push(c - 32);
+  }
+  let sum = values[0];
+  for (let i = 1; i < values.length; i++) sum += values[i] * i;
+  values.push(sum % 103);
+  values.push(106);       // Stop
+  return values.map(v => CODE128_BARS_[v]).join('');
+}
+
+/* The barcode as an inline SVG, sized so it reads at print size. Quiet zones are
+   included because a barcode flush against a border often will not scan. */
+function code128SVG_(text, height) {
+  const mods = code128Modules_(text);
+  if (!mods) return '';
+  const quiet = 10, w = mods.length + quiet * 2, h = height || 44;
+  let bars = '', x = quiet;
+  for (let i = 0; i < mods.length; i++) {
+    if (mods[i] === '1') bars += '<rect x="' + x + '" y="0" width="1" height="' + h + '"/>';
+    x++;
+  }
+  return '<svg class="memo-bc-svg" xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h +
+    '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    '<rect width="' + w + '" height="' + h + '" fill="#ffffff"/>' +
+    '<g fill="#000000">' + bars + '</g></svg>';
+}
+
+/* The memo's Steadfast block, or '' when the memo has no parcel. The id is looked
+   up from the order that settles the memo, which is where a booking records it. */
+function memoSteadfastBlock(m) {
+  if (!m) return '';
+  const ord = (typeof orderForMemo_ === 'function') ? orderForMemo_(m) : null;
+  const cid = ord ? String(ord.consignmentId || '').trim() : '';
+  const code = ord ? String(ord.trackingCode || '').trim() : '';
+  if (!cid && !code) return '';
+  const scan = code || cid;
+  return '<div class="memo-steadfast">' +
+      '<div class="memo-sf-left">' +
+        '<div class="memo-sf-tag">Steadfast Courier &middot; Consignment</div>' +
+        '<div class="memo-sf-id">' + esc(cid || scan) + '</div>' +
+        (code && cid ? '<div class="memo-sf-code">Tracking Code: <b>' + esc(code) + '</b></div>' : '') +
+      '</div>' +
+      '<div class="memo-sf-right">' + code128SVG_(scan, 46) + '</div>' +
+    '</div>';
+}
+

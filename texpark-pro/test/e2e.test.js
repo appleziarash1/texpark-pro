@@ -772,6 +772,45 @@ ok(!!fakeStore['texpark_pro_v2'], 'data stored under the v2 key');
 ok(!fakeStore['texpark_biz_v1'], 'old v1 key not mixed in');
 eq(loadDB().memos.length, 1, 'reload reads the same memos back');
 
+console.log('\n--- the memo product box is typed, and suggests the catalogue ---');
+/* The owner types a product name instead of hunting a dropdown, so the box has to
+   suggest what is already saved and match what it can - the same way the customer
+   box does. An unknown name becomes a real product at save time, so a memo is never
+   blocked by a missing product entry. */
+nav('memo');
+newMemo();
+const typedBefore = db.products.length;
+el('customerName').value = 'Sultana';
+memoDraft.items = [{ productId: '', productName: '', qty: 1, rate: 0, cost: 0, vat: 0, amount: 0 }];
+renderMemoLines();
+ok(/memoProductNames/.test(el('memoRows').innerHTML), 'the product box is wired to the suggestion list');
+ok(el('memoProductNames').innerHTML.indexOf(db.products[0].name) !== -1,
+   'the suggestion list carries the saved catalogue');
+
+/* Typing an existing name matches it, and pulls its selling price into the rate. */
+const known = db.products.find(p => num(p.rate) > 0) || db.products[0];
+memoProductTyped(0, known.name);
+eq(memoDraft.items[0].productId, known.id, 'a typed saved name resolves to that product');
+eq(memoDraft.items[0].rate, num(known.rate), 'and its selling price lands on the line');
+
+/* Typing a brand-new name keeps the line unmatched for now... */
+memoDraft.items[0].productId = '';
+memoDraft.items[0].rate = 0;
+memoProductTyped(0, 'Brand New Thing');
+eq(memoDraft.items[0].productId, '', 'an unknown name is not matched to anything yet');
+eq(db.products.length, typedBefore, 'and no product is created while typing');
+
+/* ...and saving turns it into a real product with a stock card, not a loose string. */
+memoSet(0, 'qty', '4');
+saveMemo();
+const created = db.products.find(p => /brand new thing/i.test(p.name));
+ok(!!created, 'the typed name became a real product on save');
+eq(db.products.length, typedBefore + 1, 'exactly one product was created');
+eq(!!findStock(created.id), true, 'and it got its stock card, like any other sale');
+const lastMemo = db.memos[db.memos.length - 1];
+eq(lastMemo.items[0].productId, created.id, 'the memo points at the product id, not a string');
+eq(lastMemo.items[0].productName, created.name, 'and keeps the name for the printed sheet');
+
 console.log('\n=================');
 console.log('PASS ' + pass + '   FAIL ' + fail);
 console.log('=================');
