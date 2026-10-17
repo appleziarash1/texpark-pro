@@ -629,6 +629,17 @@ card with the grand total and the due highlighted, two signature lines, terms an
   page tree, page, image XObject, content stream. The test parses the xref table back and
   asserts each offset lands on its object, because a wrong offset gives a PDF that looks fine
   in the bytes and is refused by every viewer.
+- **The sheet is XML, and only the five XML entities exist** (2026-10-17). The PNG/PDF path
+  wraps the sheet in an SVG and loads it into an `<img>`, and *that* is parsed as strict XML -
+  unlike the preview and the printer, which go through the HTML parser. A single named HTML
+  entity in the markup (`&middot;`, `&nbsp;`, `&mdash;`) makes the XML parse fail, so the export
+  dies with "could not render the memo as an image" while **Print still works** and the sheet
+  still looks right on screen. `&middot;` had been sitting in `memoSteadfastBlock`, so every memo
+  that carried a Steadfast parcel failed to save as PNG/PDF and every memo without one was fine -
+  which is exactly the shape of bug that reads as "it is broken sometimes". Write the character
+  itself or its **numeric** form (`&#183;`), never a named HTML entity. `test/courier.test.js`
+  now scans the rendered parcel sheet for entities outside `&amp; &lt; &gt; &quot; &apos;`, so a
+  reintroduction fails the build instead of the owner's export.
 - **Native**: `MemoSheet.java` builds the same sheet out of real Android views, and `viewMemo()`
   shows it with Share (PNG) and Save PDF buttons. `toBitmap()` measures *and* layouts the view
   before drawing â€” skipping either gives a blank white rectangle, i.e. a share that silently

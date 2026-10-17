@@ -535,14 +535,14 @@ function voiceHandle(text) {
     if (a.kind === 'in') {
       return '<div class="vp-row"><b>' + esc(nm) + '</b>' +
         (a.created ? ' <span class="vp-new">new product</span>' : '') +
-        ' &middot; received <b>' + num(a.qty) + '</b>' +
-        (num(a.cost) ? ' &middot; cost ' + money(a.cost) : '') +
+        ' &#183; received <b>' + num(a.qty) + '</b>' +
+        (num(a.cost) ? ' &#183; cost ' + money(a.cost) : '') +
         '</div>';
     }
     return '<div class="vp-row"><b>' + esc(nm) + '</b>' +
       (a.created ? ' <span class="vp-new">new product</span>' : '') +
-      ' &middot; on memo <b>' + num(a.qty) + '</b> pcs &middot; rate ' + money(a.rate) +
-      ' &middot; line total <b>' + money(num(a.qty) * num(a.rate)) + '</b></div>';
+      ' &#183; on memo <b>' + num(a.qty) + '</b> pcs &#183; rate ' + money(a.rate) +
+      ' &#183; line total <b>' + money(num(a.qty) * num(a.rate)) + '</b></div>';
   }).join('');
 
   const speech = parsed.actions.map(a => {

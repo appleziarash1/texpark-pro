@@ -293,6 +293,19 @@ const paymentsBefore = db.payments.length;
   const sfUnstyled = [...new Set(sfClasses)].filter(c => !sfStyled.has(c));
   eq(sfUnstyled.join(','), '', 'every class the Steadfast band uses is in MEMO_CSS: ' + sfUnstyled.join(', '));
 
+  /* The sheet becomes a download by being wrapped in an SVG and loaded into an
+     <img>, and an SVG loaded that way is parsed as XML. XML knows only the five
+     predefined entities, so one `&middot;` in the markup kills the whole parse and
+     the export fails with "could not render the memo as an image" - the sheet still
+     previews and still prints, because both go through the HTML parser. This is the
+     check that keeps that from coming back: every entity in the sheet must be one
+     XML accepts, or written numerically. */
+  const xmlSafe = new Set(['&amp;', '&lt;', '&gt;', '&quot;', '&apos;']);
+  const namedEnts = [...new Set([...memoSheet(memoB).matchAll(/&[a-zA-Z][a-zA-Z0-9]*;/g)]
+    .map(m => m[0]))].filter(e => !xmlSafe.has(e));
+  eq(namedEnts.join(','), '',
+     'the sheet carries no HTML-only entity, which would break the XML parse behind PNG/PDF: ' + namedEnts.join(', '));
+
   /* A refused call changes nothing: no parcel is recorded on the order. */
   const ordC = { id: 'oC', orderNo: 'TP-0010', customerName: 'Z', productName: 'Y', qty: 1, deliveryDate: T, status: 'received' };
   db.orders.push(ordC);

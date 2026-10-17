@@ -674,7 +674,7 @@ function memoSteadfastBlock(m) {
   const scan = code || cid;
   return '<div class="memo-steadfast">' +
       '<div class="memo-sf-left">' +
-        '<div class="memo-sf-tag">Steadfast Courier &middot; Consignment</div>' +
+        '<div class="memo-sf-tag">Steadfast Courier &#183; Consignment</div>' +
         '<div class="memo-sf-id">' + esc(cid || scan) + '</div>' +
         (code && cid ? '<div class="memo-sf-code">Tracking Code: <b>' + esc(code) + '</b></div>' : '') +
       '</div>' +
