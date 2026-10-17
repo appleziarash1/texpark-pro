@@ -13,12 +13,14 @@ let syncTimer = null;
 let syncFlushing = false;
 
 function syncLoad() {
-  try { syncQueue = JSON.parse(localStorage.getItem(SYNC_KEY) || '[]'); }
-  catch (e) { syncQueue = []; }
+  try {
+    const v = storeGet(SYNC_KEY);
+    syncQueue = Array.isArray(v) ? v : JSON.parse(v || '[]');
+  } catch (e) { syncQueue = []; }
   syncRequeueFailed();
 }
 function syncSave() {
-  try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncQueue.slice(-500))); } catch (e) {}
+  try { storeSet(SYNC_KEY, syncQueue.slice(-500)); } catch (e) {}
 }
 function syncUrl() { return (db?.settings?.syncUrl || '').trim(); }
 
@@ -272,17 +274,17 @@ async function cloudRestore(device) {
   if (!j.success) throw new Error(j.message || 'pull failed');
   if (!j.json) return alert('The sheet has no backup for "' + dev + '".');
   if (!confirm('Restore "' + dev + '" backup from ' + (j.date || '') + ' and replace the current data?')) return;
-  restoreFromJSONText(j.json);
+  await restoreFromJSONText(j.json);
 }
 
-function restoreFromJSONText(text, opts) {
+async function restoreFromJSONText(text, opts) {
   try {
     const incoming = JSON.parse(text);
     if (!incoming || typeof incoming !== 'object') throw new Error('bad payload');
     snapshot();                       // local safety copy before the swap
     db = migrate(incoming);
     if (!db.users || !db.users.length) db.users = defaultUsers();
-    if (!commit()) return;
+    if (!await commit()) return;
     if (!opts || !opts.silent) alert('Restored from the cloud. The page will reload.');
     location.reload();
   } catch (e) {
@@ -423,7 +425,7 @@ async function pullAndMerge() {
     mergeCloudInto_(migrate(incoming));
   }
   if (!merged) return { merged: false, reason: 'nothing to merge' };
-  if (!commit()) return { merged: false, reason: 'save failed' };
+  if (!await commit()) return { merged: false, reason: 'save failed' };
   // Push the merged result back up, so the other devices inherit what this one just
   // learned instead of each machine holding a different half of the picture.
   await pushBackupNow();

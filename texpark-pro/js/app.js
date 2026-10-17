@@ -208,10 +208,25 @@ function statBox(label, value, sub) {
 }
 
 /* ===================== boot ===================== */
+/* Booting is asynchronous because the database now lives in IndexedDB: the store has
+   to be opened, the one-time move out of localStorage verified, and the mirror filled
+   before loadDB() reads it. Where IndexedDB is unavailable (Node, old WebViews) the
+   whole boot runs synchronously, exactly as it did when localStorage was the store. */
 function boot() {
   // The memo sheet's stylesheet, so the preview is not unstyled HTML. First, before
   // anything can render a memo.
   memoCssTag();
+  if (typeof storageInit === 'function' && idbAvailable) {
+    return storageInit(STORAGE_KEYS).then(function () { bootFromStore(); return true; },
+      function () { bootFromStore(); return true; });
+  }
+  bootFromStore();
+  return Promise.resolve(true);
+}
+
+/* Everything after the store is ready. Kept separate so the async and synchronous
+   paths run the identical sequence and cannot drift. */
+function bootFromStore() {
   db = loadDB();
   if (!db.users || !db.users.length) db.users = defaultUsers();
   // Before anything reads the settings: a ?sync=<url> link is how a phone gets the
@@ -3336,14 +3351,16 @@ function restoreJSON(e) {
   const f = e.target.files[0];
   if (!f) return;
   const r = new FileReader();
-  r.onload = () => {
+  r.onload = async () => {
     try {
       const incoming = JSON.parse(r.result);
       if (!incoming || typeof incoming !== 'object') throw new Error('bad file');
       if (!confirm('Restore this backup? The current data will be replaced.')) return;
       db = migrate(incoming);
       if (!db.users || !db.users.length) db.users = defaultUsers();
-      commit();
+      // Wait for the write to land: the reload below cancels an in-flight
+      // IndexedDB transaction, so an unawaited save would restore nothing.
+      await commit();
       alert('Backup restored. The page will reload.');
       location.reload();
     } catch (err) {

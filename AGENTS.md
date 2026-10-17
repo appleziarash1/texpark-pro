@@ -55,7 +55,10 @@ so they were not invented; the plan stands on the audited code + the one bug the
 | `test/logic.test.js` | 42 headless business-rule tests |
 | `test/e2e.test.js` | 93 tests driving the real `app.js` through a DOM shim |
 
-New localStorage key: **`texpark_pro_v2`** (old `texpark_biz_v1` untouched; one-way import in Backup page).
+New storage key: **`texpark_pro_v2`** (old `texpark_biz_v1` untouched; one-way import in Backup page).
+It now lives in **IndexedDB** (database `texpark_pro_db`, store `kv`), not localStorage; a device with
+an old localStorage copy migrates it once, verified, on first boot. See "Storage is IndexedDB, not
+localStorage" below.
 Admin seed: `admin` / `admin123`, password stored as a hash. 4 roles: admin, manager, salesman, accountant.
 
 ### The rule the owner set: the memo is the source of truth
@@ -582,8 +585,10 @@ so this symptom can never be "fixed" by changing what an unpaired device display
 - `npm test` runs `test/logic.test.js` (84), `test/sheet.test.js` (48), `test/e2e.test.js` (251),
   `test/cost.test.js` (11), `test/journey.test.js` (19), `test/autopull.test.js` (32),
   `test/return.test.js` (51), `test/session.test.js` (25), `test/pairing.test.js` (31),
-  `test/repair.test.js` (30), `test/ownerdata.test.js` (29), then `node --test test/android.test.js`
-  (27) and `node --test test/native.test.js` (30). Total 668.
+  `test/repair.test.js` (30), `test/ownerdata.test.js` (29), `test/idb.test.js` (34), then
+  `node --test test/android.test.js` (27) and `node --test test/native.test.js` (30). Total 702.
+  `test/idb.test.js` is the only suite that drives the real IndexedDB storage path; see
+  "Storage is IndexedDB, not localStorage" below.
 - `test/sheet.test.js` now also pushes a >200 KB and a >2 MB payload through the real `Code.gs`,
   pulls each back byte-identical, proves a smaller backup leaves no stale chunks, reads a
   hand-written legacy single-cell row, and checks that a missing chunk and a wrong checksum are
@@ -1094,4 +1099,59 @@ How it is wired, and the rule that keeps it reversible:
   on the phone*, not a Worker/merge fault. When a day's memo is missing everywhere,
   confirm whether the writing device pushed at all (its records' `at` on the Worker)
   before hunting a sync bug.
+
+## Storage is IndexedDB, not localStorage (2026-10-17)
+
+The database, the sync queue and the snapshots used to live in `localStorage`
+(`texpark_pro_v2`, `texpark_pro_syncq`, `texpark_pro_snapshots`). localStorage is a
+synchronous string store capped near 5 MB per origin, and every save `JSON.stringify`'d
+the whole book on the main thread - a visible freeze on a shop with thousands of memos,
+and one more month of data away from `QuotaExceededError` mid-save. All three keys now
+live in IndexedDB (database `texpark_pro_db`, object store `kv`).
+
+- **The storage layer is the top of `js/db.js`, not a new file.** Every test that
+  already loads `db.js` gets it without touching a loader, and the service worker's
+  `ASSETS` list cannot drift out of step with the code (`test/e2e.test.js` fails if
+  `index.html` loads a script the SW does not cache). The `js/` list in `build.js` and
+  `sw.js` is unchanged, so nothing else had to move.
+- **`storeGet`/`storeSet`/`storeDel` are the only persistence the app uses now.**
+  `loadDB`, `commit`, `snapshot`/`listSnapshots`/`restoreSnapshot`, `syncLoad`/`syncSave`
+  all go through them. `KEY`, `SYNC_KEY` and `SNAP_KEY` are unchanged - only where the
+  bytes live moved.
+- **It must keep working where IndexedDB does not exist.** Node has no `indexedDB`
+  (`typeof indexedDB === 'undefined'`), and the whole headless suite runs the real
+  `db.js`/`sync.js` in it. When it is absent, `storeAsync` stays false and
+  `storeGet`/`storeSet` are the same synchronous localStorage calls as before, so the
+  668 existing tests exercise the identical old path. Do not "clean up" the fallback:
+  it is what makes the tests meaningful and what keeps an old WebView working.
+- **`commit()` returns the pending write on IndexedDB and `true` on the fallback.**
+  A synchronous caller that only checks truthiness (`if (!commit()) return;`) still
+  works, because the mirror is updated synchronously - every reader right after the
+  save sees the new book. Callers that reload or that must be durable `await` it:
+  `restoreFromJSONText`, `cloudPullMerge`, `restoreJSON`, `restoreSnapshot`. A reload
+  cancels an in-flight IndexedDB transaction, so an unawaited save there restores
+  nothing. **Any new `location.reload()` after a write must `await commit()`.**
+- **`boot()` is async and `bootFromStore()` holds the rest.** The async and synchronous
+  paths run the identical `bootFromStore()` so they cannot drift. `boot()` returns a
+  promise, but the tests call it without awaiting and it runs synchronously under them
+  (no IndexedDB), which is why 17 `vm.runInThisContext('boot();')` call sites still work.
+- **The migration is one-time, verified, and never destructive.** `storageInit()` opens
+  IndexedDB, copies each key out of localStorage (structured clone, no stringify),
+  reads it back and compares `JSON.stringify` before removing the original. A copy that
+  will not verify, an unparseable value, or a blocked/absent IndexedDB all leave the
+  device on localStorage rather than coming up blank. An existing IndexedDB copy always
+  wins over a stale localStorage one, so a device that booted twice does not clobber
+  its newer book.
+- **`test/idb.test.js` (34 checks) is the only suite that exercises the real IndexedDB
+  path.** It drives the unchanged `db.js`/`sync.js` against a small in-memory IndexedDB
+  shim (async callbacks, structured clone on put) and pins: the one-time migration and
+  its cleanup, `commit` returning an awaitable write, the queue landing in IndexedDB,
+  the migration running once, the existing-copy-wins rule, a corrupt value not being
+  moved, and the no-IndexedDB fallback. Node has no `indexedDB`, so without this file
+  the path the owner's browser actually takes would ship untested. It is wired into
+  `npm test` right after `test/date.test.js`.
+- **The snapshots stay JSON strings.** `snapshot()` has to freeze the book at capture
+  time; a live object reference would keep mutating with `db`. It is throttled to one
+  copy a minute, so this is not the per-save cost the migration was about.
+
 

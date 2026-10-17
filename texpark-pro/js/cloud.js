@@ -819,7 +819,7 @@ async function cloudPullMerge() {
     mergeCloudInto_(incoming);
     cloudMuted = true;                 // do not echo the merged records straight back up
     let saved = false;
-    try { saved = commit(); } finally { cloudMuted = false; }
+    try { saved = await commit(); } finally { cloudMuted = false; }
     if (!saved) return { merged: false, reason: 'save failed' };
     cloudCursorSet(delta.newest);
     await cloudPullCatchupSettings();
