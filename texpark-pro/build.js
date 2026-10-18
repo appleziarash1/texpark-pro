@@ -71,7 +71,9 @@ let single = html
   .replace(/[ \t]*<script src="js\/[a-z-]+\.js"><\/script>\s*\n?/g, '');
 const bundle = scripts.map((s, i) => '<script>\n/* bundle ' + i + ' */\n' + s + '\n</script>').join('\n');
 single = single.replace('</body>', bundle + '\n</body>');
-fs.writeFileSync(outFile, single);
+// Normalize the single-file bundle so Windows and Linux produce identical
+// committed output even when the source checkout uses CRLF line endings.
+fs.writeFileSync(outFile, single.replace(/\r\n?/g, '\n'));
 
 const kb = (p) => Math.round(fs.statSync(p).size / 1024);
 console.log('built folder  ' + outDir + '  (' + kb(path.join(outDir, 'index.html')) + ' KB html + js/css)');
