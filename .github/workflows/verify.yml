@@ -41,6 +41,8 @@ jobs:
           # build.js rewrites these from source. A dirty tree means a generated file
           # was hand-edited, so the deployed app would drift from what was tested.
           if ! git diff --quiet; then
+            git status --short
+            git diff --stat
             echo "::error::Generated site differs from texpark-pro/ source - run 'node texpark-pro/build.js' and commit the result."
             exit 1
           fi
