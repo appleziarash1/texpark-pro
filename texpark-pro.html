@@ -3355,12 +3355,12 @@ if (typeof window !== 'undefined' && typeof speechSynthesis !== 'undefined') {
 const SYNC_KEY = 'texpark_pro_syncq';
 
 var syncQueue = [];
-let syncTimer = null;
-/* syncFlush is not re-entrant. Before cloud.js, commit() queued one job and
-   syncPush's flush usually found nothing else to do; now a single save queues many
-   records, so the flush that each syncPush starts could run nested over the same
-   queue. A commit kicks off one flush at the end; the nested ones just return. */
+let syncSheetTimer = null;
+let syncCloudTimer = null;
+/* Sheet and Cloudflare use separate flush lanes so a slow mirror request cannot
+   block a live write. Each lane has its own guard and retry timer. */
 let syncFlushing = false;
+let syncCloudFlushing = false;
 
 function syncLoad() {
   try {
@@ -3480,9 +3480,50 @@ function syncReply(txt, status) {
   return { ok: false, message: body.slice(0, 160) || ('HTTP ' + status) };
 }
 
-async function syncFlush() {
-  if (!syncUrl() && !(typeof cloudConfigured === 'function' && cloudConfigured())) { syncStatusRender(); return; }
-  if (syncTimer) return;
+function syncFlush() {
+  const lanes = [];
+  if (typeof cloudConfigured === 'function' && cloudConfigured()) lanes.push(syncFlushCloud());
+  if (syncUrl()) lanes.push(syncFlushSheet());
+  if (!lanes.length) syncStatusRender();
+  return Promise.all(lanes);
+}
+
+async function syncFlushCloud() {
+  if (syncCloudTimer || syncCloudFlushing) return;
+  syncCloudFlushing = true;
+  const attempted = {};
+  try {
+    for (let guard = 0; guard < 1000; guard++) {
+      const job = syncQueue.find(j => j.state === 'pending' && j.via === 'firestore' && !attempted[j.id]);
+      if (!job) break;
+      attempted[job.id] = true;
+      try {
+        const r = await cloudSendJob(job);
+        if (!r.ok) {
+          job.tries++;
+          job.error = String(r.message || r);
+          if (job.tries >= 5) job.state = 'failed';
+          continue;
+        }
+        syncQueue = syncQueue.filter(j => j.id !== job.id);
+        syncSave();
+      } catch (e) {
+        job.tries++;
+        job.error = String(e.message || e);
+        if (job.tries >= 5) job.state = 'failed';
+      }
+    }
+  } finally {
+    syncCloudFlushing = false;
+    syncStatusRender();
+  }
+  if (syncQueue.some(j => j.via === 'firestore' && j.state === 'pending')) {
+    syncCloudTimer = setTimeout(() => { syncCloudTimer = null; syncFlush(); }, 8000);
+  }
+}
+
+async function syncFlushSheet() {
+  if (syncSheetTimer) return;
   if (syncFlushing) return;            // a flush is already walking the queue
   syncFlushing = true;
   const attempted = {};
@@ -3493,25 +3534,10 @@ async function syncFlush() {
     // rest waiting for the retry timer; picking the next pending job each turn
     // sends them all in one pass.
     for (let guard = 0; guard < 1000; guard++) {
-      const job = syncQueue.find(j => j.state === 'pending' && !attempted[j.id]);
+      const job = syncQueue.find(j => j.state === 'pending' && j.via !== 'firestore' && !attempted[j.id]);
       if (!job) break;
       attempted[job.id] = true;
       try {
-        // A Firestore job is sent by cloud.js, not POSTed to the sheet. Its failure
-        // mode (quota, offline) degrades the device to the Sheet path, and the job
-        // stays queued for the retry timer.
-        if (job.via === 'firestore') {
-          const r = await cloudSendJob(job);
-          if (!r.ok) {
-            job.tries++;
-            job.error = String(r.message || r);
-            if (job.tries >= 5) job.state = 'failed';
-            continue;
-          }
-          syncQueue = syncQueue.filter(j => j.id !== job.id);
-          syncSave();
-          continue;
-        }
         if (!url) { continue; }   // a sheet job with no URL simply waits
         const res = await fetch(url, {
           method: 'POST',
@@ -3540,28 +3566,33 @@ async function syncFlush() {
   } finally {
     syncFlushing = false;
   }
-  if (syncQueue.some(j => j.state === 'pending')) {
-    syncTimer = setTimeout(() => { syncTimer = null; syncFlush(); }, 8000);
+  if (syncQueue.some(j => j.state === 'pending' && j.via !== 'firestore')) {
+    syncSheetTimer = setTimeout(() => { syncSheetTimer = null; syncFlush(); }, 8000);
   }
 }
 
 function syncRetryAll() {
   syncQueue.forEach(j => { j.state = 'pending'; j.tries = 0; j.error = ''; });
   syncSave();
-  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+  if (syncSheetTimer) { clearTimeout(syncSheetTimer); syncSheetTimer = null; }
+  if (syncCloudTimer) { clearTimeout(syncCloudTimer); syncCloudTimer = null; }
   syncFlush();
 }
 
 function syncCounts() {
   const pending = syncQueue.filter(j => j.state === 'pending').length;
   const failed = syncQueue.filter(j => j.state === 'failed').length;
-  return { pending, failed };
+  const pendingCloud = syncQueue.filter(j => j.state === 'pending' && j.via === 'firestore').length;
+  const failedCloud = syncQueue.filter(j => j.state === 'failed' && j.via === 'firestore').length;
+  const pendingSheet = pending - pendingCloud;
+  const failedSheet = failed - failedCloud;
+  return { pending, failed, pendingCloud, failedCloud, pendingSheet, failedSheet };
 }
 
 function syncStatusRender() {
   const el = document.getElementById('syncBadge');
   if (!el) return;
-  const { pending, failed } = syncCounts();
+  const { pending, failed, pendingCloud, failedCloud, pendingSheet, failedSheet } = syncCounts();
   const on = !!syncUrl();
   let cls = 'sync-blue', txt = 'Sync off';
   if (on && failed) { cls = 'sync-red'; txt = failed + ' failed' + (pending ? ' · ' + pending + ' pending' : ''); }
@@ -3571,7 +3602,16 @@ function syncStatusRender() {
      say so and pulse a dot - the owner wants to see "real time", not infer it. The
      bump class is preserved so an arriving change's pulse is not cancelled here. */
   const live = typeof fbRealtimeLive === 'function' && fbRealtimeLive();
-  if (live && !failed && !pending) { cls = 'sync-green sync-live'; txt = 'Live'; }
+  if (live && !pendingCloud && !failedCloud) {
+    cls = 'sync-green sync-live';
+    // The Sheet mirror is recovery/fallback work. Its backlog must not hide
+    // that Cloudflare is live or block Cloudflare writes (which flush first).
+    const sheetBacklog = pendingSheet + failedSheet;
+    txt = 'Live' + (sheetBacklog ? ' · Sheet ' + sheetBacklog + ' queued' : '');
+  } else if (live) {
+    cls = 'sync-amber sync-live';
+    txt = 'Cloud live · ' + (pendingCloud + failedCloud) + ' cloud queued';
+  }
   const bump = el.classList && el.classList.contains('sync-bump') ? ' sync-bump' : '';
   el.className = 'sync-badge ' + cls + bump;
   el.textContent = txt;
@@ -6034,7 +6074,7 @@ function memoSteadfastBlock(m) {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.14';
+const APP_VERSION = '2027-01-01.15';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */

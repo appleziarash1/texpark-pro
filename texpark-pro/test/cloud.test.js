@@ -419,6 +419,51 @@ async function flush(dev) {
   eq(snapshots, 2, 'it really opened a second listen, not just flipped a flag');
   ok(unsubs >= 1, 'the dead listen was torn down before reconnecting');
 
+  console.log('\n--- live cloud writes pass the Sheet mirror backlog ---');
+  const badge = { className: '', textContent: '', classList: { contains: () => false } };
+  rt.document.getElementById = id => id === 'syncBadge' ? badge : null;
+  rt.syncQueue = [
+    { id: 'sheet-backlog', type: 'record', via: 'sheet', state: 'pending', tries: 0 }
+  ];
+  rt.syncStatusRender();
+  eq(badge.textContent, 'Live · Sheet 1 queued', 'Sheet mirror backlog no longer hides the live cloud status');
+  const order = [];
+  const originalFetch = rt.fetch;
+  rt.fetch = (url, opts) => {
+    const u = String(url);
+    if (/firestore\.googleapis\.com/.test(u) && opts && opts.method === 'PATCH') order.push('cloud');
+    else if (/sheet\.test/.test(u)) order.push('sheet');
+    return originalFetch(url, opts);
+  };
+  rt.syncQueue = [
+    { id: 'old-sheet', type: 'record', via: 'sheet', data: { key: 'memos', id: 'old', json: '{}' }, state: 'pending', tries: 0, at: '2026-10-17T00:00:00Z' },
+    { id: 'new-cloud', type: 'firestore_record', via: 'firestore', data: { key: 'memos', id: 'new', at: '2026-10-18T00:00:00Z', record: { id: 'new', at: '2026-10-18T00:00:00Z' } }, state: 'pending', tries: 0, at: '2026-10-18T00:00:00Z' }
+  ];
+  await rt.syncFlush();
+  ok(order.includes('cloud') && order.includes('sheet'), 'live and Sheet mirror jobs use their own transport lanes');
+  eq(rt.syncQueue.length, 0, 'both jobs still drain successfully');
+
+  let finishSheet;
+  rt.fetch = (url, opts) => {
+    if (/sheet\.test/.test(String(url))) return new Promise(resolve => {
+      finishSheet = () => resolve({ ok: true, status: 200, text: async () => '{"success":true}' });
+    });
+    return originalFetch(url, opts);
+  };
+  rt.syncQueue = [
+    { id: 'slow-sheet', type: 'record', via: 'sheet', data: { key: 'memos', id: 'slow', json: '{}' }, state: 'pending', tries: 0, at: '2026-10-17T00:00:00Z' }
+  ];
+  const slowSheetFlush = rt.syncFlush();
+  await new Promise(resolve => setImmediate(resolve));
+  ok(typeof finishSheet === 'function', 'the Sheet request is deliberately held open');
+  rt.syncQueue.push({ id: 'while-sheet-waits', type: 'firestore_record', via: 'firestore', data: { key: 'memos', id: 'while-sheet-waits', at: '2026-10-18T00:00:01Z', record: { id: 'while-sheet-waits', at: '2026-10-18T00:00:01Z' } }, state: 'pending', tries: 0, at: '2026-10-18T00:00:01Z' });
+  const cloudWhileSheetWaits = rt.syncFlush();
+  await cloudWhileSheetWaits;
+  ok(order.includes('cloud'), 'the live cloud write completes while the Sheet request is still waiting');
+  finishSheet();
+  await slowSheetFlush;
+  eq(rt.syncQueue.length, 0, 'the Sheet request then finishes and the shared queue drains');
+
 /* A build that truly has no keys still falls back to the Sheet exactly as before.
      That case is now produced by removing the baked config, not by blanking the
      per-device setting (which no longer exists as a concept). */
