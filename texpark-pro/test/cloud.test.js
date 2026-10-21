@@ -300,11 +300,13 @@ async function flush(dev) {
   console.log('\n--- a fresh browser recovers cloud data before any migration ---');
   const recovered = makeDevice('RECOVERED', firestore, auth, sheet);
   recovered.db = recovered.blankDB();
+  recovered.db.customers.push({ id: 'local-backup-customer', name: 'Local backup', at: new Date().toISOString() });
   recovered.lastCommitted = recovered.indexRecs_(recovered.db);
   recovered.localStorage.setItem('texpark_pro_firestore_cursor', '2999-01-01T00:00:00.000Z');
   await recovered.fbSignIn('shop@example.com', 'secret1');
   await recovered.cloudAutoSyncNew('test fresh browser');
-  ok(recovered.db.memos.some(m => m.memoNo === 'TXP/SM/1-PC001'), 'blank device reset its stale cursor and pulled existing memos');
+  ok(recovered.db.memos.some(m => m.memoNo === 'TXP/SM/1-PC001'), 'device reset its stale cursor and pulled existing memos alongside a local backup');
+  ok(recovered.db.customers.some(c => c.id === 'local-backup-customer'), 'the local backup was preserved during the full merge');
   ok(recovered.cloudMigrated(), 'the populated local/cloud union migrated only after the successful pull');
 
   /* -------- an empty new shop must never receive a seeded blank-book migration */

@@ -5038,16 +5038,20 @@ async function cloudAutoSyncNew(reason) {
   }
   cloudBusy = true;
   try {
-    /* A cursor belongs to this browser profile, not to the shop. If this device's
-       IndexedDB was cleared/restored while localStorage survived, the cursor can be
-       newer than every cloud record and a delta pull would return nothing forever.
-       A fresh book has only the fixed seed products and default user; reset its cursor
-       and fetch the shop's full history before any one-time local migration. */
-    const freshBook = !cloudLocalHasBusinessData_();
-    if (freshBook && cloudCursor()) cloudCursorSet('');
+    /* A cursor belongs to a browser profile and shop pair. If IndexedDB was cleared
+       or a backup restored while localStorage survived, the old cursor can be newer
+       than every cloud record. Every newly connected shop therefore gets one full
+       pull, even when a local JSON backup is already present. */
+    const bootstrapKey = cloudBootstrapKey_();
+    let initialPullDone = false;
+    try { initialPullDone = !!localStorage.getItem(bootstrapKey); } catch (e) {}
+    if (!initialPullDone && cloudCursor()) cloudCursorSet('');
     if (typeof syncFlush === 'function') { try { syncFlush(); } catch (e) {} }
     const r = await cloudPullMerge();
     const pullSucceeded = !!(r && (r.merged || r.reason === 'no change'));
+    if (pullSucceeded) {
+      try { localStorage.setItem(bootstrapKey, new Date().toISOString()); } catch (e) {}
+    }
     /* Migration is only safe after the first read. A blank device must never publish
        its empty starter book over the shop; a populated device can migrate its union
        once a successful pull has completed. */
@@ -5056,6 +5060,20 @@ async function cloudAutoSyncNew(reason) {
     }
     return r;
   } finally { cloudBusy = false; }
+}
+
+/* Keep the one-time full-pull marker separate for each configured shop. The key is
+   a short hash so a Cloudflare token never appears in localStorage's key names. */
+function cloudBootstrapKey_() {
+  let identity = '';
+  if (cfOn_()) {
+    const c = cfConfig();
+    identity = 'cf:' + c.url + ':' + c.token;
+  } else {
+    const a = fbAuthLoad();
+    identity = 'fb:' + ((a && a.uid) || '');
+  }
+  return 'texpark_pro_cloud_bootstrap_' + hash(identity);
 }
 
 /* A new installation has three fixed product examples and a default login. They are
