@@ -3310,7 +3310,6 @@ async function cloudSignIn() {
   try {
     await fbSignIn(email, pass);
     if (typeof fbProvSave === 'function') fbProvSave(email, pass);   // this device can now re-issue the link
-    if (!cloudMigrated()) await cloudMigrate(true);
     await cloudAutoSyncNew('signin');
     cloudProvRender();
     cloudOut('<span style="color:var(--green)">Signed in as ' + email + '. Cloud sync is live. ' +

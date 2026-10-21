@@ -296,6 +296,27 @@ async function flush(dev) {
     'only the phone\'s few changed documents were read (' + (firestore.state.reads - pcReads) + ')');
   eq(pc.db.memos.filter(m => m.memoNo === 'TXP/SM/2-PH001').length, 1, 'the PC has the phone memo');
 
+  /* -------- a blank browser with a stale local cursor recovers the whole shop */
+  console.log('\n--- a fresh browser recovers cloud data before any migration ---');
+  const recovered = makeDevice('RECOVERED', firestore, auth, sheet);
+  recovered.db = recovered.blankDB();
+  recovered.lastCommitted = recovered.indexRecs_(recovered.db);
+  recovered.localStorage.setItem('texpark_pro_firestore_cursor', '2999-01-01T00:00:00.000Z');
+  await recovered.fbSignIn('shop@example.com', 'secret1');
+  await recovered.cloudAutoSyncNew('test fresh browser');
+  ok(recovered.db.memos.some(m => m.memoNo === 'TXP/SM/1-PC001'), 'blank device reset its stale cursor and pulled existing memos');
+  ok(recovered.cloudMigrated(), 'the populated local/cloud union migrated only after the successful pull');
+
+  /* -------- an empty new shop must never receive a seeded blank-book migration */
+  console.log('\n--- an empty new shop does not get overwritten by starter data ---');
+  const emptyShop = makeDevice('EMPTY', firestore, auth, sheet);
+  await emptyShop.fbSignUp('empty@example.com', 'secret2');
+  emptyShop.localStorage.setItem('texpark_pro_firestore_cursor', '2999-01-01T00:00:00.000Z');
+  const emptyWritesBefore = firestore.state.writes;
+  await emptyShop.cloudAutoSyncNew('test empty shop');
+  ok(!emptyShop.cloudMigrated(), 'an empty starter book is not marked as migrated');
+  eq(firestore.state.writes, emptyWritesBefore, 'opening an empty shop does not push starter records');
+
   /* ------------------- a delete travels as a tombstone ------------------- */
   console.log('\n--- a delete travels and cannot be resurrected ---');
   const victim = pc.db.memos.filter(m => m.memoNo === 'TXP/SM/1-PC001')[0];
