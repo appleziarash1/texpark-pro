@@ -318,7 +318,6 @@ async function fbSignInDefault() {
   if (!p || !p.email || !p.password) return false;
   try {
     const a = await fbSignIn(p.email, p.password);
-    if (!cloudMigrated()) cloudMigrate(true).catch(function () {});
     // cloudBoot() signs in here and then returns early, so on a cold load whose
     // sign-in finishes after boot no listener would ever start. Start the pipeline
     // now: the first pull, the live stream, and (if we degraded) the retry timer.
@@ -830,7 +829,12 @@ async function cloudPullMerge() {
   if (!cloudConfigured()) return { merged: false, reason: 'not configured' };
   try {
     const delta = await fbPullDelta();
-    if (!delta.records.length) { cloudCursorSet(delta.newest); return { merged: false, reason: 'no change' }; }
+    if (!delta.records.length) {
+      cloudCursorSet(delta.newest);
+      cloudBackoffStep = 0;
+      cloudStateSet('ONLINE_FIRESTORE', '', 0);
+      return { merged: false, reason: 'no change' };
+    }
     const incoming = cloudMergeDelta(delta);
     snapshot();
     mergeCloudInto_(incoming);
@@ -892,10 +896,37 @@ async function cloudAutoSyncNew(reason) {
   }
   cloudBusy = true;
   try {
+    /* A cursor belongs to this browser profile, not to the shop. If this device's
+       IndexedDB was cleared/restored while localStorage survived, the cursor can be
+       newer than every cloud record and a delta pull would return nothing forever.
+       A fresh book has only the fixed seed products and default user; reset its cursor
+       and fetch the shop's full history before any one-time local migration. */
+    const freshBook = !cloudLocalHasBusinessData_();
+    if (freshBook && cloudCursor()) cloudCursorSet('');
     if (typeof syncFlush === 'function') { try { syncFlush(); } catch (e) {} }
     const r = await cloudPullMerge();
+    const pullSucceeded = !!(r && (r.merged || r.reason === 'no change'));
+    /* Migration is only safe after the first read. A blank device must never publish
+       its empty starter book over the shop; a populated device can migrate its union
+       once a successful pull has completed. */
+    if (pullSucceeded && !cloudMigrated() && cloudLocalHasBusinessData_()) {
+      await cloudMigrate(true);
+    }
     return r;
   } finally { cloudBusy = false; }
+}
+
+/* A new installation has three fixed product examples and a default login. They are
+   not a business book and must not be mistaken for restored shop data. */
+function cloudLocalHasBusinessData_() {
+  if (!db) return false;
+  const seedProducts = { 'seed-k3s': true, 'seed-kgs': true, 'seed-bk': true };
+  const keys = (typeof MERGE_KEYS !== 'undefined' ? MERGE_KEYS : []).filter(k => k !== 'users');
+  return keys.some(k => (db[k] || []).some(rec => {
+    if (!rec) return false;
+    if (k === 'products' && seedProducts[rec.id] && !rec.at) return false;
+    return !!(rec.at || (rec.id && !(k === 'products' && seedProducts[rec.id])));
+  })) || (tombList_(db) || []).length > 0;
 }
 
 function cloudArmRetry() {
@@ -971,7 +1002,6 @@ function cloudBoot() {
      imported its old book sat on the slow poll until its migration finished. Start
      the pull and the listener regardless; the migration is idempotent and no longer
      gates them. */
-  if (!cloudMigrated()) cloudMigrate(true).catch(function () {});
   cloudAutoSyncNew('open').catch(function () {});
   if (cloudState() === 'DEGRADED_SHEET') cloudArmRetry();
   if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
