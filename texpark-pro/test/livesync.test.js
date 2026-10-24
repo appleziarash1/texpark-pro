@@ -131,6 +131,17 @@ document.hidden = false;
   eq(liveDelay_(), 2000, 'push up and idle well past boot: 2 s safety pull');
   global.fbRealtimeLive = () => false;     // stream dropped
   eq(liveDelay_(), 2000, 'stream dropped: poll fast again so we stay live');
+
+  db = { settings: { liveSyncMode: '1s' } };
+  eq(liveDelay_(), 1000, '1 second mode checks every second');
+  db.settings.liveSyncMode = '1m';
+  eq(liveDelay_(), 60000, '1 minute mode checks every minute');
+  db.settings.liveSyncMode = '1h';
+  eq(liveDelay_(), 3600000, '1 hour mode checks every hour');
+  db.settings.liveSyncMode = '1d';
+  eq(liveDelay_(), 86400000, '1 day mode checks once a day');
+  db.settings.liveSyncMode = 'live';
+  eq(liveDelay_(), 2000, 'live mode uses push with the 2 second fallback check');
   delete global.fbRealtimeLive;
 
   console.log('\n=================');

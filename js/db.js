@@ -355,7 +355,7 @@ const TOMB_MAX = 4000;                 // plenty of history; stops unbounded gro
 
    `autoPull` is deliberately per-device too: switching auto-pull off on the phone
    is a decision about the phone, and it must not silence the PC. */
-const LOCAL_SETTING_KEYS = ['syncUrl', 'deviceTag', 'autoPull', 'firebase'];
+const LOCAL_SETTING_KEYS = ['syncUrl', 'deviceTag', 'autoPull', 'firebase', 'liveSyncMode'];
 
 /* A record without its change stamp - what "changed?" actually compares. */
 function bare_(o) {
