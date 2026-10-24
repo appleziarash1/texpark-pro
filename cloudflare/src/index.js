@@ -19,6 +19,8 @@
  *   GET  /health                 -> { ok:true }          (no token, no data)
  *   GET  /records?since=<at>     -> { records:[...], now }
  *   POST /records                -> { ok:true, now }     body { records:[...] }
+ *   GET  /sync-control           -> { mode, updatedAt }
+ *   PUT  /sync-control           -> { ok:true, mode, updatedAt }
  *   GET  /live?token=...         -> WebSocket: {type:'hello',now} then
  *                                  {type:'change', records:[...]} on each write
  *
@@ -34,7 +36,7 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
    origin, is what guards the shop, so any origin may read the responses. */
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-methods': 'GET, POST, PUT, OPTIONS',
   'access-control-allow-headers': 'authorization, content-type',
   'access-control-max-age': '86400'
 };
@@ -119,6 +121,8 @@ export class Shop {
     ctx.blockConcurrencyWhile(async () => {
       this.db = await ctx.storage.get('db');           // { lastAt }
       if (!this.db) this.db = { lastAt: '' };
+      this.syncControl = await ctx.storage.get('syncControl');
+      if (!this.syncControl) this.syncControl = { mode: 'live', updatedAt: '' };
       ctx.storage.sql.exec(
         'CREATE TABLE IF NOT EXISTS records (' +
         'key TEXT, id TEXT, at TEXT, deleted INTEGER, device TEXT, data TEXT, ' +
@@ -138,7 +142,7 @@ export class Shop {
       // The hibernation API takes over the accept: calling accept() first and then
       // acceptWebSocket() throws ("already accepted"), so acceptWebSocket alone.
       this.ctx.acceptWebSocket(server);
-      server.send(JSON.stringify({ type: 'hello', now: this.db.lastAt }));
+      server.send(JSON.stringify({ type: 'hello', now: this.db.lastAt, syncControl: this.syncControl }));
       return new Response(null, { status: 101, webSocket: client });
     }
 
@@ -151,6 +155,19 @@ export class Shop {
       try { body = await request.json(); } catch (e) { return json({ error: 'bad_json' }, 400); }
       const result = this.apply(Array.isArray(body && body.records) ? body.records : []);
       return json({ ok: true, now: result.now, applied: result.records.length });
+    }
+
+    if (path === '/sync-control' && request.method === 'GET') return json(this.syncControl);
+    if (path === '/sync-control' && request.method === 'PUT') {
+      let body;
+      try { body = await request.json(); } catch (e) { return json({ error: 'bad_json' }, 400); }
+      const mode = String(body && body.mode || '');
+      if (!['live', '1s', '1m', '1h', '1d'].includes(mode)) return json({ error: 'invalid_mode' }, 400);
+      this.syncControl = { mode, updatedAt: new Date().toISOString() };
+      await this.ctx.storage.put('syncControl', this.syncControl);
+      const frame = JSON.stringify({ type: 'sync-control', syncControl: this.syncControl });
+      for (const ws of this.ctx.getWebSockets()) { try { ws.send(frame); } catch (e) {} }
+      return json({ ok: true, syncControl: this.syncControl });
     }
 
     return json({ error: 'not_found' }, 404);
