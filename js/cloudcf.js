@@ -139,7 +139,7 @@ var CF_RT_RETRY_MAX_MS = 30000;
 var cfRtFatal = false;
 
 function cfRealtimeShouldRun() {
-  return cfBackendOn() && (typeof session !== 'undefined' && !!session);
+  return cfBackendOn() && (typeof liveSyncMode_ !== 'function' || liveSyncMode_() === 'live') && (typeof session !== 'undefined' && !!session);
 }
 function cfRealtimeLive() { return !!cfRtSocket && cfRtSocket.readyState === 1 && Date.now() - cfRtLastPong < CF_RT_PONG_TIMEOUT_MS; }
 function cfRealtimeRetryClear() {
