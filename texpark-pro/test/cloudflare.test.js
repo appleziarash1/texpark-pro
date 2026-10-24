@@ -165,6 +165,7 @@ function makeSandbox(cfg) {
     s.cloudPullMerge = async () => { pulls++; return {}; };
 
     s.cfRealtimeStart(); await ticks(3);
+    s.liveSyncMode_ = () => String((s.db.settings && s.db.settings.liveSyncMode) || 'live');
     eq(ws.sockets.length, 1, 'one socket was opened');
     eq(ws.sockets[0].url, 'wss://w.example.dev/live?token=tok-123', 'it upgrades https to wss and carries the token in the query');
 
@@ -178,6 +179,10 @@ function makeSandbox(cfg) {
     ws.sockets[0].emit('message', { data: JSON.stringify({ type: 'hello', now: '' }) });
     await ticks(3);
     eq(pulls, 1, 'the greeting is not a change and does not merge');
+    s.db.settings.liveSyncMode = '1m';
+    ws.sockets[0].emit('message', { data: JSON.stringify({ type: 'change', records: [{ key: 'customers', id: 'c2' }] }) });
+    await ticks(3);
+    eq(pulls, 1, 'record push does not bypass the chosen non-live shop interval');
 
     ws.sockets[0].emit('message', { data: 'not json' });
     await ticks(3);
