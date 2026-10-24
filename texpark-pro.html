@@ -1098,8 +1098,9 @@ tbody tr:hover td{background:#f7fafd}
         <div class="card">
           <h2>Google Sheets Sync</h2>
           <div class="note">
-            This sync <b>verifies</b> each upload — it will not say "synced" without a reply. If the internet
-            is down the job waits in a queue and is sent automatically when it returns.
+            This sync <b>verifies</b> each upload — it will not say "synced" without a reply. When Cloudflare
+            is connected, Cloudflare controls cross-device updates and Sheets stays a separate backup.
+            Sheet pulls are used only when Cloudflare is not configured.
           </div>
           <label>Google Apps Script Web App URL</label>
           <input id="stSyncUrl" placeholder="https://script.google.com/macros/s/.../exec">
@@ -1111,15 +1112,14 @@ tbody tr:hover td{background:#f7fafd}
           <label style="margin-top:14px;display:flex;align-items:center;gap:9px">
             <input id="stAutoPull" type="checkbox" style="width:auto" onchange="saveAutoPull()">
             <span><b>Pull new data from the sheet automatically</b><br>
-            <span class="muted">When this is on, opening the PC or phone brings in what the other
-            device wrote — no need to press anything.</span></span>
+            <span class="muted">For Sheet-only sync. Cloudflare-connected devices follow the Cloud update frequency above.</span></span>
           </label>
           <div id="syncTestOut" style="margin-top:10px;font-size:13px"></div>
         </div>
 
         <div class="card">
           <h2>Cloud update frequency</h2>
-          <div class="note">Choose how often <b>all Cloudflare-connected devices</b> check for changes. This shop-wide setting is saved in Cloudflare and reaches connected devices immediately. Live push is fastest; 1 sec and longer intervals use scheduled checks. Sleeping/background browsers check when they are allowed to run or when they return. Google Sheets backup sync keeps its separate behavior.</div>
+          <div class="note">Choose how often <b>all Cloudflare-connected devices</b> check for business-data changes. The sync preference itself reaches connected devices immediately; business data is checked on the selected schedule. Sheets stays a separate backup and cannot bypass this delay. Sleeping/background browsers check when they are allowed to run or when they return.</div>
           <label for="stLiveSyncMode">Sync mode</label>
           <select id="stLiveSyncMode" onchange="saveLiveSyncMode()">
             <option value="live">Live push (0 sec target)</option>
@@ -1134,11 +1134,9 @@ tbody tr:hover td{background:#f7fafd}
         <div class="card">
           <h2><span id="cloudCardTitle">Cloud sync</span> <span id="cloudStatus" class="sync-badge sync-blue">Cloud off (Sheet only)</span></h2>
           <div class="note" id="cloudCardNote">
-            The Google Sheet above ships the whole book and is not instant. This adds
-            <b>live</b> sync: one changed memo is one small update, so a sale typed on the phone shows
-            on the PC in seconds. It uses Firebase's <b>free</b> plan — no card, no server. If the
-            cloud is unreachable, or over quota, the app keeps saving and falls back to the Sheet by
-            itself, then recovers when the cloud comes back.
+            Cloudflare is the primary cross-device sync. Each saved change is stored there, then other
+            devices receive it according to the <b>Cloud update frequency</b> above. Google Sheets
+            remains a separate backup and does not control or accelerate those updates.
           </div>
           <div class="note" style="margin-top:6px" id="cloudCardSetup">
             The cloud is already wired in — there is <b>nothing to type</b>. Just open your private
@@ -5120,6 +5118,8 @@ async function cloudAutoSyncNew(reason) {
      so the sign-in guard only applies to the Firestore path. */
   if (!cfOn_() && !fbSignedIn()) return { skipped: 'firebase not signed in' };
   if (cloudBusy) return { skipped: 'busy' };
+  // Existing Cloudflare devices respect the shop-wide interval across opens/reconnects.
+  // New devices still get their initial recovery pull; explicit Sync now still works.
   const routinePull=['open','signin','online','visible','provisioned'].includes(String(reason||''));
   const interval=typeof liveSyncIntervalMs_==='function'?liveSyncIntervalMs_():null;
   if(cfOn_()&&interval&&routinePull){let initialized=false;try{initialized=!!localStorage.getItem(cloudBootstrapKey_());}catch(e){} const last=typeof liveLastPullAt_==='function'?liveLastPullAt_():0; if(initialized&&last&&Date.now()-last<interval)return {skipped:'scheduled interval'};}
@@ -6378,7 +6378,7 @@ function liveSyncModeChanged_() {
     if (typeof fbRealtimeStop === 'function') fbRealtimeStop();
     if (liveSyncMode_() === 'live' && typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
   }
-  liveDeltaPull_();
+  // A mode change must not itself fetch data: that would bypass a delay just selected.
   liveScheduleNext_();
 }
 
