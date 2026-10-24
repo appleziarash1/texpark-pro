@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.19';
+const APP_VERSION = '2027-01-01.20';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -100,6 +100,9 @@ const LIVE_BOOT_WINDOW_MS = 20000;
 var liveSyncInFlight = false;
 var liveLastActivityAt = 0;
 var liveBootAt = Date.now();
+const LIVE_PULL_AT_KEY = 'texpark_pro_cloud_last_pull_at';
+function liveLastPullAt_() { try { return Number(localStorage.getItem(LIVE_PULL_AT_KEY) || 0); } catch (e) { return 0; } }
+function livePullStamp_() { try { localStorage.setItem(LIVE_PULL_AT_KEY, String(Date.now())); } catch (e) {} }
  
 /* Cloudflare stores this preference once per shop; Firebase keeps the legacy
    device-local behavior because it has no matching control endpoint here. */
@@ -146,7 +149,7 @@ function liveSyncModeChanged_() {
     if (typeof fbRealtimeStop === 'function') fbRealtimeStop();
     if (liveSyncMode_() === 'live' && typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
   }
-  liveDeltaPull_();
+  // A mode change must not itself fetch data: that would bypass a delay just selected.
   liveScheduleNext_();
 }
 
@@ -183,7 +186,7 @@ function livePulse_() {
 }
 function liveDelay_() {
   const selectedInterval = liveSyncIntervalMs_();
-  if (selectedInterval) return selectedInterval;
+  if (selectedInterval) { const last=liveLastPullAt_(); return last ? Math.max(1000, selectedInterval-(Date.now()-last)) : 1000; }
   if (!livePushHealthy_()) return LIVE_SYNC_ACTIVE_MS;
   const warm = (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS) ||
                (Date.now() - liveBootAt < LIVE_BOOT_WINDOW_MS);
@@ -196,10 +199,13 @@ async function liveDeltaPull_() {
   if (!cfOn && typeof fbSignedIn === 'function' && !fbSignedIn()) return;
   if (typeof cloudBusy !== 'undefined' && cloudBusy) return;
   if (typeof cloudDirty !== 'undefined' && cloudDirty) return;   // our own edit is going up
+  const selectedInterval=liveSyncIntervalMs_(); const lastPull=liveLastPullAt_();
+  if (selectedInterval && lastPull && Date.now()-lastPull<selectedInterval) return;
   if (liveSyncInFlight) return;
-  liveSyncInFlight = true;
-  try { await cloudPullMerge(); } catch (e) { /* offline is normal; the 30 s net retries */ }
-  finally { liveSyncInFlight = false; }
+  liveSyncInFlight=true;
+  try { const result=await cloudPullMerge(); if(result&&(result.merged||result.reason==='no change')) livePullStamp_(); }
+  catch(e) { /* offline is normal; the next scheduled check retries */ }
+  finally { liveSyncInFlight=false; }
 }
 window.addEventListener('load', function () {
   ['pointerdown', 'keydown', 'input', 'touchstart'].forEach(function (ev) {

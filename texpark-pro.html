@@ -3669,10 +3669,12 @@ function syncStatusRender() {
     // The Sheet mirror is recovery/fallback work. Its backlog must not hide
     // that Cloudflare is live or block Cloudflare writes (which flush first).
     const sheetBacklog = pendingSheet + failedSheet;
-    txt = 'Live' + (sheetBacklog ? ' · Sheet ' + sheetBacklog + ' queued' : '');
+    const mode=typeof liveSyncMode_==='function'?liveSyncMode_():'live'; const cadence=({'1s':'1 sec','1m':'1 min','1h':'1 hour','1d':'1 day'})[mode];
+    txt=(cadence?'Cloud connected · '+cadence:'Live')+(sheetBacklog?' · Sheet '+sheetBacklog+' queued':'');
   } else if (live) {
     cls = 'sync-amber sync-live';
-    txt = 'Cloud live · ' + (pendingCloud + failedCloud) + ' cloud queued';
+    const mode=typeof liveSyncMode_==='function'?liveSyncMode_():'live'; const cadence=({'1s':'1 sec','1m':'1 min','1h':'1 hour','1d':'1 day'})[mode];
+    txt='Cloud connected'+(cadence?' · '+cadence:'')+' · '+(pendingCloud+failedCloud)+' cloud queued';
   }
   const bump = el.classList && el.classList.contains('sync-bump') ? ' sync-bump' : '';
   el.className = 'sync-badge ' + cls + bump;
@@ -3828,6 +3830,8 @@ async function pushBackupNow() {
 /* Called on login/open and whenever the tab becomes visible again, which is the
    moment someone comes back to look at the numbers. */
 function cloudAutoSync(reason) {
+  // Cloudflare is primary when configured; Sheet snapshots remain backup-only.
+  if (typeof cfBackendOn === 'function' && cfBackendOn()) return;
   if (!autosyncEnabled()) return;
   // Only once someone is signed in. Running it over the login screen would rewrite
   // the books under a user who has not yet chosen an account - and the login form
@@ -5116,6 +5120,9 @@ async function cloudAutoSyncNew(reason) {
      so the sign-in guard only applies to the Firestore path. */
   if (!cfOn_() && !fbSignedIn()) return { skipped: 'firebase not signed in' };
   if (cloudBusy) return { skipped: 'busy' };
+  const routinePull=['open','signin','online','visible','provisioned'].includes(String(reason||''));
+  const interval=typeof liveSyncIntervalMs_==='function'?liveSyncIntervalMs_():null;
+  if(cfOn_()&&interval&&routinePull){let initialized=false;try{initialized=!!localStorage.getItem(cloudBootstrapKey_());}catch(e){} const last=typeof liveLastPullAt_==='function'?liveLastPullAt_():0; if(initialized&&last&&Date.now()-last<interval)return {skipped:'scheduled interval'};}
   if (CLOUD_STATE.retryAt && Date.now() < CLOUD_STATE.retryAt) {
     cloudArmRetry();
     return { skipped: 'backoff' };
@@ -5144,6 +5151,7 @@ async function cloudAutoSyncNew(reason) {
     const pullSucceeded = !!(r && (r.merged || r.reason === 'no change'));
     if (pullSucceeded) {
       try { localStorage.setItem(bootstrapKey, new Date().toISOString()); } catch (e) {}
+      if (typeof livePullStamp_ === 'function') livePullStamp_();
       if (emptyDeviceRecovery) {
         try { localStorage.setItem(recoveryKey, new Date().toISOString()); } catch (e) {}
       }
@@ -6223,7 +6231,7 @@ function memoSteadfastBlock(m) {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.19';
+const APP_VERSION = '2027-01-01.20';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -6321,6 +6329,9 @@ const LIVE_BOOT_WINDOW_MS = 20000;
 var liveSyncInFlight = false;
 var liveLastActivityAt = 0;
 var liveBootAt = Date.now();
+const LIVE_PULL_AT_KEY = 'texpark_pro_cloud_last_pull_at';
+function liveLastPullAt_() { try { return Number(localStorage.getItem(LIVE_PULL_AT_KEY) || 0); } catch (e) { return 0; } }
+function livePullStamp_() { try { localStorage.setItem(LIVE_PULL_AT_KEY, String(Date.now())); } catch (e) {} }
  
 /* Cloudflare stores this preference once per shop; Firebase keeps the legacy
    device-local behavior because it has no matching control endpoint here. */
@@ -6404,7 +6415,7 @@ function livePulse_() {
 }
 function liveDelay_() {
   const selectedInterval = liveSyncIntervalMs_();
-  if (selectedInterval) return selectedInterval;
+  if (selectedInterval) { const last=liveLastPullAt_(); return last ? Math.max(1000, selectedInterval-(Date.now()-last)) : 1000; }
   if (!livePushHealthy_()) return LIVE_SYNC_ACTIVE_MS;
   const warm = (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS) ||
                (Date.now() - liveBootAt < LIVE_BOOT_WINDOW_MS);
@@ -6417,10 +6428,13 @@ async function liveDeltaPull_() {
   if (!cfOn && typeof fbSignedIn === 'function' && !fbSignedIn()) return;
   if (typeof cloudBusy !== 'undefined' && cloudBusy) return;
   if (typeof cloudDirty !== 'undefined' && cloudDirty) return;   // our own edit is going up
+  const selectedInterval=liveSyncIntervalMs_(); const lastPull=liveLastPullAt_();
+  if (selectedInterval && lastPull && Date.now()-lastPull<selectedInterval) return;
   if (liveSyncInFlight) return;
-  liveSyncInFlight = true;
-  try { await cloudPullMerge(); } catch (e) { /* offline is normal; the 30 s net retries */ }
-  finally { liveSyncInFlight = false; }
+  liveSyncInFlight=true;
+  try { const result=await cloudPullMerge(); if(result&&(result.merged||result.reason==='no change')) livePullStamp_(); }
+  catch(e) { /* offline is normal; the next scheduled check retries */ }
+  finally { liveSyncInFlight=false; }
 }
 window.addEventListener('load', function () {
   ['pointerdown', 'keydown', 'input', 'touchstart'].forEach(function (ev) {

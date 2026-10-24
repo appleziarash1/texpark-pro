@@ -890,6 +890,11 @@ async function cloudAutoSyncNew(reason) {
      so the sign-in guard only applies to the Firestore path. */
   if (!cfOn_() && !fbSignedIn()) return { skipped: 'firebase not signed in' };
   if (cloudBusy) return { skipped: 'busy' };
+  // Existing Cloudflare devices respect the shop-wide interval across opens/reconnects.
+  // New devices still get their initial recovery pull; explicit Sync now still works.
+  const routinePull=['open','signin','online','visible','provisioned'].includes(String(reason||''));
+  const interval=typeof liveSyncIntervalMs_==='function'?liveSyncIntervalMs_():null;
+  if(cfOn_()&&interval&&routinePull){let initialized=false;try{initialized=!!localStorage.getItem(cloudBootstrapKey_());}catch(e){} const last=typeof liveLastPullAt_==='function'?liveLastPullAt_():0; if(initialized&&last&&Date.now()-last<interval)return {skipped:'scheduled interval'};}
   if (CLOUD_STATE.retryAt && Date.now() < CLOUD_STATE.retryAt) {
     cloudArmRetry();
     return { skipped: 'backoff' };
@@ -918,6 +923,7 @@ async function cloudAutoSyncNew(reason) {
     const pullSucceeded = !!(r && (r.merged || r.reason === 'no change'));
     if (pullSucceeded) {
       try { localStorage.setItem(bootstrapKey, new Date().toISOString()); } catch (e) {}
+      if (typeof livePullStamp_ === 'function') livePullStamp_();
       if (emptyDeviceRecovery) {
         try { localStorage.setItem(recoveryKey, new Date().toISOString()); } catch (e) {}
       }

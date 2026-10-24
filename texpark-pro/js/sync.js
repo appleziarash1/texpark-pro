@@ -257,10 +257,12 @@ function syncStatusRender() {
     // The Sheet mirror is recovery/fallback work. Its backlog must not hide
     // that Cloudflare is live or block Cloudflare writes (which flush first).
     const sheetBacklog = pendingSheet + failedSheet;
-    txt = 'Live' + (sheetBacklog ? ' · Sheet ' + sheetBacklog + ' queued' : '');
+    const mode=typeof liveSyncMode_==='function'?liveSyncMode_():'live'; const cadence=({'1s':'1 sec','1m':'1 min','1h':'1 hour','1d':'1 day'})[mode];
+    txt=(cadence?'Cloud connected · '+cadence:'Live')+(sheetBacklog?' · Sheet '+sheetBacklog+' queued':'');
   } else if (live) {
     cls = 'sync-amber sync-live';
-    txt = 'Cloud live · ' + (pendingCloud + failedCloud) + ' cloud queued';
+    const mode=typeof liveSyncMode_==='function'?liveSyncMode_():'live'; const cadence=({'1s':'1 sec','1m':'1 min','1h':'1 hour','1d':'1 day'})[mode];
+    txt='Cloud connected'+(cadence?' · '+cadence:'')+' · '+(pendingCloud+failedCloud)+' cloud queued';
   }
   const bump = el.classList && el.classList.contains('sync-bump') ? ' sync-bump' : '';
   el.className = 'sync-badge ' + cls + bump;
@@ -416,6 +418,8 @@ async function pushBackupNow() {
 /* Called on login/open and whenever the tab becomes visible again, which is the
    moment someone comes back to look at the numbers. */
 function cloudAutoSync(reason) {
+  // Cloudflare is primary when configured; Sheet snapshots remain backup-only.
+  if (typeof cfBackendOn === 'function' && cfBackendOn()) return;
   if (!autosyncEnabled()) return;
   // Only once someone is signed in. Running it over the login screen would rewrite
   // the books under a user who has not yet chosen an account - and the login form
