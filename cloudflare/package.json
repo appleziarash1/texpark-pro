@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node test/logic.test.mjs",
+    "test": "node test/logic.test.mjs && node test/control.test.mjs",
     "test:e2e": "node test/e2e.test.js"
   },
   "devDependencies": {
