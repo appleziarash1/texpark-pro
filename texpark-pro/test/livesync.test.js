@@ -133,6 +133,17 @@ document.hidden = false;
   eq(liveDelay_(), 2000, 'stream dropped: poll fast again so we stay live');
   delete global.fbRealtimeLive;
 
+  db = { settings: { liveSyncMode: '1s' } };
+  eq(liveDelay_(), 1000, '1 second mode checks every second');
+  db.settings.liveSyncMode = '1m';
+  eq(liveDelay_(), 60000, '1 minute mode checks every minute');
+  db.settings.liveSyncMode = '1h';
+  eq(liveDelay_(), 3600000, '1 hour mode checks every hour');
+  db.settings.liveSyncMode = '1d';
+  eq(liveDelay_(), 86400000, '1 day mode checks once a day');
+  db.settings.liveSyncMode = 'live';
+  eq(liveDelay_(), 2000, 'live mode uses push with the 2 second fallback check');
+
   console.log('\n=================');
   console.log('PASS ' + pass + '   FAIL ' + fail);
   if (fail) process.exit(1);
