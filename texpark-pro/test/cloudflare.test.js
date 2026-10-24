@@ -144,7 +144,7 @@ function makeSandbox(cfg) {
     eq(sent.records[0].deleted, false, 'a live write is not a tombstone');
   }
 
-  console.log('\\n--- shop-wide sync control ---');
+  console.log('\n--- shop-wide sync control ---');
   {
     const { s, fetch } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
     fetch.reply(200, { mode: '1m', updatedAt: '2026-01-01T00:00:00.000Z' });
@@ -158,7 +158,7 @@ function makeSandbox(cfg) {
     eq(saved.mode, '1h', 'uses the server-confirmed setting');
   }
 
-  console.log('\\n--- the live stream ---');
+  console.log('\n--- the live stream ---');
   {
     const { s, ws } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
     let pulls = 0;
