@@ -1118,6 +1118,20 @@ tbody tr:hover td{background:#f7fafd}
         </div>
 
         <div class="card">
+          <h2>Cloud update frequency</h2>
+          <div class="note">Choose how often <b>this device</b> checks Cloudflare/Firestore for changes. Live push is the fastest option; 1 sec and longer intervals use scheduled checks and can use more cloud reads. Google Sheets backup sync keeps its separate behavior. A sleeping/background browser checks when it is allowed to run or when you return to the app.</div>
+          <label for="stLiveSyncMode">Sync mode</label>
+          <select id="stLiveSyncMode" onchange="saveLiveSyncMode()">
+            <option value="live">Live push (0 sec target)</option>
+            <option value="1s">Every 1 second</option>
+            <option value="1m">Every 1 minute</option>
+            <option value="1h">Every 1 hour</option>
+            <option value="1d">Every 1 day</option>
+          </select>
+          <div id="liveSyncModeNote" class="muted" style="margin-top:8px">Live push arrives as soon as the network and cloud deliver it; a literal zero delay cannot be guaranteed.</div>
+        </div>
+
+        <div class="card">
           <h2><span id="cloudCardTitle">Cloud sync</span> <span id="cloudStatus" class="sync-badge sync-blue">Cloud off (Sheet only)</span></h2>
           <div class="note" id="cloudCardNote">
             The Google Sheet above ships the whole book and is not instant. This adds
@@ -1805,7 +1819,7 @@ const TOMB_MAX = 4000;                 // plenty of history; stops unbounded gro
 
    `autoPull` is deliberately per-device too: switching auto-pull off on the phone
    is a decision about the phone, and it must not silence the PC. */
-const LOCAL_SETTING_KEYS = ['syncUrl', 'deviceTag', 'autoPull', 'firebase'];
+const LOCAL_SETTING_KEYS = ['syncUrl', 'deviceTag', 'autoPull', 'firebase', 'liveSyncMode'];
 
 /* A record without its change stamp - what "changed?" actually compares. */
 function bare_(o) {
@@ -4029,7 +4043,7 @@ var CF_RT_RETRY_MAX_MS = 30000;
 var cfRtFatal = false;
 
 function cfRealtimeShouldRun() {
-  return cfBackendOn() && (typeof session !== 'undefined' && !!session);
+  return cfBackendOn() && (typeof liveSyncMode_ !== 'function' || liveSyncMode_() === 'live') && (typeof session !== 'undefined' && !!session);
 }
 function cfRealtimeLive() { return !!cfRtSocket && cfRtSocket.readyState === 1 && Date.now() - cfRtLastPong < CF_RT_PONG_TIMEOUT_MS; }
 function cfRealtimeRetryClear() {
@@ -4876,7 +4890,7 @@ var fbRealtimeRetryMs = 1000;
 var FB_REALTIME_RETRY_MAX_MS = 30000;
 
 function fbRealtimeShouldRun() {
-  return cloudConfigured() && fbSignedIn() && (typeof session !== 'undefined' && !!session);
+  return cloudConfigured() && (typeof liveSyncMode_ !== 'function' || liveSyncMode_() === 'live') && fbSignedIn() && (typeof session !== 'undefined' && !!session);
 }
 /* True while the push stream is connected. app.js reads this to choose a poll
    cadence: calm when push is doing the work, fast while the stream is down and the
@@ -6122,7 +6136,7 @@ function memoSteadfastBlock(m) {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.15';
+const APP_VERSION = '2027-01-01.16';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -6220,6 +6234,32 @@ const LIVE_BOOT_WINDOW_MS = 20000;
 var liveSyncInFlight = false;
 var liveLastActivityAt = 0;
 var liveBootAt = Date.now();
+ 
+/* This preference belongs to this browser/device. */
+function liveSyncMode_() {
+  const mode = String((db && db.settings && db.settings.liveSyncMode) || 'live');
+  return ({ live: 'live', '1s': '1s', '1m': '1m', '1h': '1h', '1d': '1d' })[mode] || 'live';
+}
+function liveSyncIntervalMs_() {
+  const mode = liveSyncMode_();
+  return mode === '1s' ? 1000 : mode === '1m' ? 60000 : mode === '1h' ? 3600000 : mode === '1d' ? 86400000 : null;
+}
+var liveSyncTimer = null;
+function liveScheduleNext_() {
+  if (liveSyncTimer) clearTimeout(liveSyncTimer);
+  liveSyncTimer = setTimeout(function () {
+    liveSyncTimer = null;
+    if (!document.hidden) liveDeltaPull_();
+    liveScheduleNext_();
+  }, liveDelay_());
+}
+function liveSyncModeChanged_() {
+  if (liveSyncTimer) { clearTimeout(liveSyncTimer); liveSyncTimer = null; }
+  if (typeof fbRealtimeStop === 'function') fbRealtimeStop();
+  if (liveSyncMode_() === 'live' && typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
+  liveDeltaPull_();
+  liveScheduleNext_();
+}
 
 function liveNoteActivity_() { liveLastActivityAt = Date.now(); }
 /* Cadence depends on whether the push stream is carrying the load:
@@ -6253,6 +6293,8 @@ function livePulse_() {
   } catch (e) {}
 }
 function liveDelay_() {
+  const selectedInterval = liveSyncIntervalMs_();
+  if (selectedInterval) return selectedInterval;
   if (!livePushHealthy_()) return LIVE_SYNC_ACTIVE_MS;
   const warm = (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS) ||
                (Date.now() - liveBootAt < LIVE_BOOT_WINDOW_MS);
@@ -6279,13 +6321,7 @@ window.addEventListener('load', function () {
   // on a cold one it is the difference between the first change appearing in ~2 s
   // and waiting a full poll tick. Bounded by the same guards, so it is always safe.
   liveDeltaPull_();
-  (function liveLoop() {
-    var wait = liveDelay_();
-    setTimeout(function () {
-      if (!document.hidden) liveDeltaPull_();
-      liveLoop();
-    }, wait);
-  })();
+  liveScheduleNext_();
 });
 
 const PAGES = [
@@ -9302,6 +9338,8 @@ function renderSettings() {
   if (typeof cloudProvRender === 'function') cloudProvRender();
   const ap = document.getElementById('stAutoPull');
   if (ap) ap.checked = db.settings.autoPull !== false;
+  const lsm = document.getElementById('stLiveSyncMode');
+  if (lsm) lsm.value = liveSyncMode_();
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
   const dt = document.getElementById('stDeviceTag');
   if (dt) dt.value = db.settings.deviceTag || '';
@@ -9411,6 +9449,20 @@ function saveAutoPull() {
   if (on) cloudAutoSync('turned on');
   alert(on ? 'Auto-pull on — from now on it pulls from the sheet on open.'
            : 'Auto-pull off — now it only pulls from the sheet when you press the button.');
+}
+
+
+function saveLiveSyncMode() {
+  const el = document.getElementById('stLiveSyncMode');
+  const mode = el && el.value;
+  if (!['live', '1s', '1m', '1h', '1d'].includes(mode)) return;
+  db.settings.liveSyncMode = mode;
+  commit();
+  liveSyncModeChanged_();
+  const note = document.getElementById('liveSyncModeNote');
+  if (note) note.textContent = mode === 'live'
+    ? 'Live push is enabled. Changes arrive as soon as the network and cloud deliver them; a literal zero delay cannot be guaranteed.'
+    : 'This device checks for cloud changes ' + ({ '1s': 'every second', '1m': 'every minute', '1h': 'every hour', '1d': 'once a day' })[mode] + '. On returning to the app it checks immediately.';
 }
 
 /* ===================== cloud (Firestore) settings =====================
@@ -9883,6 +9935,7 @@ window.addEventListener('DOMContentLoaded', function () {
       return;
     }
     cloudAutoSync('visible');
+    liveDeltaPull_();
     // A tab that was backgrounded may have had its stream torn down by the browser.
     // Ask for it back so returning to the tab restores true push, not just a poll.
     if (typeof fbRealtimeLive === 'function' && typeof fbRealtimeStart === 'function' && !fbRealtimeLive()) {
