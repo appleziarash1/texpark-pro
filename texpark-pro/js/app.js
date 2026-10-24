@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.20';
+const APP_VERSION = '2027-01-01.21';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -186,7 +186,7 @@ function livePulse_() {
 }
 function liveDelay_() {
   const selectedInterval = liveSyncIntervalMs_();
-  if (selectedInterval) { const last=liveLastPullAt_(); return last ? Math.max(1000, selectedInterval-(Date.now()-last)) : 1000; }
+  if (selectedInterval) { const last=liveLastPullAt_(); return last ? Math.max(1000, selectedInterval-(Date.now()-last)) : selectedInterval; }
   if (!livePushHealthy_()) return LIVE_SYNC_ACTIVE_MS;
   const warm = (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS) ||
                (Date.now() - liveBootAt < LIVE_BOOT_WINDOW_MS);
