@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.16';
+const APP_VERSION = '2027-01-01.17';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -101,12 +101,29 @@ var liveSyncInFlight = false;
 var liveLastActivityAt = 0;
 var liveBootAt = Date.now();
  
-/* This preference belongs to this browser/device. */
+/* Cloudflare stores this preference once per shop; Firebase keeps the legacy
+   device-local behavior because it has no matching control endpoint here. */
 function liveSyncMode_() {
   const mode = String((db && db.settings && db.settings.liveSyncMode) || 'live');
   return ({ live: 'live', '1s': '1s', '1m': '1m', '1h': '1h', '1d': '1d' })[mode] || 'live';
 }
-function liveSyncIntervalMs_() {
+function liveSyncModeApply_(mode, updatedAt) {
+  if (!['live', '1s', '1m', '1h', '1d'].includes(mode)) return false;
+  const changed = liveSyncMode_() !== mode;
+  if (!db.settings) db.settings = {};
+  db.settings.liveSyncMode = mode;
+  db.settings.liveSyncModeUpdatedAt = updatedAt || new Date().toISOString();
+  if (changed) commit();
+  const el = document.getElementById('stLiveSyncMode');
+  if (el) el.value = mode;
+  const note = document.getElementById('liveSyncModeNote');
+  const shared = typeof cfBackendOn === 'function' && cfBackendOn();
+  if (note) note.textContent = mode === 'live'
+    ? (shared ? 'Live push is enabled for this shop. Connected devices receive updates as soon as the network and cloud deliver them; literal zero delay cannot be guaranteed.' : 'Live push is enabled on this device; a literal zero delay cannot be guaranteed.')
+    : (shared ? 'All connected devices check for cloud changes ' : 'This device checks for cloud changes ') + ({ '1s': 'every second', '1m': 'every minute', '1h': 'every hour', '1d': 'once a day' })[mode] + '. Sleeping browsers check when they resume.';
+  if (changed) liveSyncModeChanged_();
+  return true;
+}function liveSyncIntervalMs_() {
   const mode = liveSyncMode_();
   return mode === '1s' ? 1000 : mode === '1m' ? 60000 : mode === '1h' ? 3600000 : mode === '1d' ? 86400000 : null;
 }
@@ -121,8 +138,14 @@ function liveScheduleNext_() {
 }
 function liveSyncModeChanged_() {
   if (liveSyncTimer) { clearTimeout(liveSyncTimer); liveSyncTimer = null; }
-  if (typeof fbRealtimeStop === 'function') fbRealtimeStop();
-  if (liveSyncMode_() === 'live' && typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
+  const cf = typeof cfBackendOn === 'function' && cfBackendOn();
+  if (cf) {
+    // Keep the control socket connected in every mode so shop-wide changes propagate now.
+    if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
+  } else {
+    if (typeof fbRealtimeStop === 'function') fbRealtimeStop();
+    if (liveSyncMode_() === 'live' && typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
+  }
   liveDeltaPull_();
   liveScheduleNext_();
 }
@@ -3318,17 +3341,22 @@ function saveAutoPull() {
 }
 
 
-function saveLiveSyncMode() {
+async function saveLiveSyncMode() {
   const el = document.getElementById('stLiveSyncMode');
   const mode = el && el.value;
   if (!['live', '1s', '1m', '1h', '1d'].includes(mode)) return;
-  db.settings.liveSyncMode = mode;
-  commit();
-  liveSyncModeChanged_();
-  const note = document.getElementById('liveSyncModeNote');
-  if (note) note.textContent = mode === 'live'
-    ? 'Live push is enabled. Changes arrive as soon as the network and cloud deliver them; a literal zero delay cannot be guaranteed.'
-    : 'This device checks for cloud changes ' + ({ '1s': 'every second', '1m': 'every minute', '1h': 'every hour', '1d': 'once a day' })[mode] + '. On returning to the app it checks immediately.';
+  if (typeof cfBackendOn === 'function' && cfBackendOn()) {
+    try {
+      const saved = await cfSetSyncControl(mode);
+      liveSyncModeApply_(saved.mode, saved.updatedAt);
+    } catch (e) {
+      const note = document.getElementById('liveSyncModeNote');
+      if (note) note.textContent = 'Could not save the shop-wide sync setting: ' + String(e.message || e);
+      el.value = liveSyncMode_();
+    }
+    return;
+  }
+  liveSyncModeApply_(mode);
 }
 
 /* ===================== cloud (Firestore) settings =====================

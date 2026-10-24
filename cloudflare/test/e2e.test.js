@@ -31,6 +31,16 @@ function ok(name, cond, extra) { console.log((cond ? 'PASS ' : 'FAIL ') + name +
   await new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', e => rej(new Error('ws error'))); });
   await sleep(300);
   ok('hello on connect', frames[0] && frames[0].type === 'hello');
+  const control0 = await j(await fetch(BASE + '/sync-control', { headers: H }));
+  ok('new shop defaults to live push', control0.body && control0.body.mode === 'live');
+  const controlPut = await j(await fetch(BASE + '/sync-control', { method: 'PUT', headers: H, body: JSON.stringify({ mode: '1m' }) }));
+  ok('shop-wide mode accepted', controlPut.body && controlPut.body.ok && controlPut.body.syncControl.mode === '1m');
+  await sleep(150);
+  ok('setting broadcasts to connected devices', frames.some(f => f && f.type === 'sync-control' && f.syncControl.mode === '1m'));
+  const control1 = await j(await fetch(BASE + '/sync-control', { headers: H }));
+  ok('shop-wide mode persists', control1.body && control1.body.mode === '1m');
+  const badControl = await j(await fetch(BASE + '/sync-control', { method: 'PUT', headers: H, body: JSON.stringify({ mode: '2s' }) }));
+  ok('unsupported mode rejected', badControl.status === 400);
 
   // device A writes two records (fresh timestamps so a persisted DO from an earlier
   // run cannot treat them as stale; unique ids so the assertions stay exact)

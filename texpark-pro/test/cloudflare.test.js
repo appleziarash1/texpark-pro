@@ -144,6 +144,20 @@ function makeSandbox(cfg) {
     eq(sent.records[0].deleted, false, 'a live write is not a tombstone');
   }
 
+  console.log('\n--- shop-wide sync control ---');
+  {
+    const { s, fetch } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
+    fetch.reply(200, { mode: '1m', updatedAt: '2026-01-01T00:00:00.000Z' });
+    const control = await s.cfGetSyncControl();
+    eq(fetch.calls[0].url, 'https://w.example.dev/sync-control', 'reads the shop-level sync control');
+    eq(control.mode, '1m', 'adopts the shared interval');
+    fetch.reply(200, { ok: true, syncControl: { mode: '1h', updatedAt: '2026-01-01T00:01:00.000Z' } });
+    const saved = await s.cfSetSyncControl('1h');
+    eq(fetch.calls[1].opts.method, 'PUT', 'writes the shared interval to the Worker');
+    eq(JSON.parse(fetch.calls[1].opts.body).mode, '1h', 'sends the selected mode');
+    eq(saved.mode, '1h', 'uses the server-confirmed setting');
+  }
+
   console.log('\n--- the live stream ---');
   {
     const { s, ws } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
@@ -151,6 +165,7 @@ function makeSandbox(cfg) {
     s.cloudPullMerge = async () => { pulls++; return {}; };
 
     s.cfRealtimeStart(); await ticks(3);
+    s.liveSyncMode_ = () => String((s.db.settings && s.db.settings.liveSyncMode) || 'live');
     eq(ws.sockets.length, 1, 'one socket was opened');
     eq(ws.sockets[0].url, 'wss://w.example.dev/live?token=tok-123', 'it upgrades https to wss and carries the token in the query');
 
@@ -164,6 +179,10 @@ function makeSandbox(cfg) {
     ws.sockets[0].emit('message', { data: JSON.stringify({ type: 'hello', now: '' }) });
     await ticks(3);
     eq(pulls, 1, 'the greeting is not a change and does not merge');
+    s.db.settings.liveSyncMode = '1m';
+    ws.sockets[0].emit('message', { data: JSON.stringify({ type: 'change', records: [{ key: 'customers', id: 'c2' }] }) });
+    await ticks(3);
+    eq(pulls, 1, 'record push does not bypass the chosen non-live shop interval');
 
     ws.sockets[0].emit('message', { data: 'not json' });
     await ticks(3);

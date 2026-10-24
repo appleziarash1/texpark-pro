@@ -698,7 +698,7 @@
 
         <div class="card">
           <h2>Cloud update frequency</h2>
-          <div class="note">Choose how often <b>this device</b> checks Cloudflare/Firestore for changes. Live push is the fastest option; 1 sec and longer intervals use scheduled checks and can use more cloud reads. Google Sheets backup sync keeps its separate behavior. A sleeping/background browser checks when it is allowed to run or when you return to the app.</div>
+          <div class="note">Choose how often <b>all Cloudflare-connected devices</b> check for changes. This shop-wide setting is saved in Cloudflare and reaches connected devices immediately. Live push is fastest; 1 sec and longer intervals use scheduled checks. Sleeping/background browsers check when they are allowed to run or when they return. Google Sheets backup sync keeps its separate behavior.</div>
           <label for="stLiveSyncMode">Sync mode</label>
           <select id="stLiveSyncMode" onchange="saveLiveSyncMode()">
             <option value="live">Live push (0 sec target)</option>
@@ -707,7 +707,7 @@
             <option value="1h">Every 1 hour</option>
             <option value="1d">Every 1 day</option>
           </select>
-          <div id="liveSyncModeNote" class="muted" style="margin-top:8px">Live push arrives as soon as the network and cloud deliver it; a literal zero delay cannot be guaranteed.</div>
+          <div id="liveSyncModeNote" class="muted" style="margin-top:8px">The selected mode is shared across connected Cloudflare devices. Live push arrives as soon as the network and cloud deliver it; literal zero delay cannot be guaranteed.</div>
         </div>
 
         <div class="card">
