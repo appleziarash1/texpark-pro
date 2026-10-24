@@ -109,20 +109,21 @@ function liveSyncMode_() {
 }
 function liveSyncModeApply_(mode, updatedAt) {
   if (!['live', '1s', '1m', '1h', '1d'].includes(mode)) return false;
+  const changed = liveSyncMode_() !== mode;
   if (!db.settings) db.settings = {};
   db.settings.liveSyncMode = mode;
   db.settings.liveSyncModeUpdatedAt = updatedAt || new Date().toISOString();
-  commit();
+  if (changed) commit();
   const el = document.getElementById('stLiveSyncMode');
   if (el) el.value = mode;
   const note = document.getElementById('liveSyncModeNote');
+  const shared = typeof cfBackendOn === 'function' && cfBackendOn();
   if (note) note.textContent = mode === 'live'
-    ? 'Live push is enabled for this shop. Connected devices receive updates as soon as the network and cloud deliver them; literal zero delay cannot be guaranteed.'
-    : 'All connected devices check for cloud changes ' + ({ '1s': 'every second', '1m': 'every minute', '1h': 'every hour', '1d': 'once a day' })[mode] + '. Sleeping browsers check when they resume.';
-  liveSyncModeChanged_();
+    ? (shared ? 'Live push is enabled for this shop. Connected devices receive updates as soon as the network and cloud deliver them; literal zero delay cannot be guaranteed.' : 'Live push is enabled on this device; a literal zero delay cannot be guaranteed.')
+    : (shared ? 'All connected devices check for cloud changes ' : 'This device checks for cloud changes ') + ({ '1s': 'every second', '1m': 'every minute', '1h': 'every hour', '1d': 'once a day' })[mode] + '. Sleeping browsers check when they resume.';
+  if (changed) liveSyncModeChanged_();
   return true;
-}
-function liveSyncIntervalMs_() {
+}function liveSyncIntervalMs_() {
   const mode = liveSyncMode_();
   return mode === '1s' ? 1000 : mode === '1m' ? 60000 : mode === '1h' ? 3600000 : mode === '1d' ? 86400000 : null;
 }
