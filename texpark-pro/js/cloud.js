@@ -734,7 +734,7 @@ var fbRealtimeRetryMs = 1000;
 var FB_REALTIME_RETRY_MAX_MS = 30000;
 
 function fbRealtimeShouldRun() {
-  return cloudConfigured() && (typeof liveSyncMode_ !== 'function' || liveSyncMode_() === 'live') && fbSignedIn() && (typeof session !== 'undefined' && !!session);
+  return cloudConfigured() && fbSignedIn() && (typeof session !== 'undefined' && !!session);
 }
 /* True while the push stream is connected. app.js reads this to choose a poll
    cadence: calm when push is doing the work, fast while the stream is down and the
