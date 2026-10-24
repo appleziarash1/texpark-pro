@@ -903,12 +903,24 @@ async function cloudAutoSyncNew(reason) {
     const bootstrapKey = cloudBootstrapKey_();
     let initialPullDone = false;
     try { initialPullDone = !!localStorage.getItem(bootstrapKey); } catch (e) {}
-    if (!initialPullDone && cloudCursor()) cloudCursorSet('');
+    /* An IndexedDB book can be lost while its localStorage cursor survives. A delta
+       pull then skips the old shop records and leaves this device blank. Give an empty
+       device one full recovery pull per shop. It merges cloud data first; the empty
+       starter book is never migrated before that read succeeds. */
+    const recoveryKey = cloudEmptyRecoveryKey_();
+    let emptyRecoveryDone = false;
+    try { emptyRecoveryDone = !!localStorage.getItem(recoveryKey); } catch (e) {}
+    const emptyDeviceRecovery = !cloudLocalHasBusinessData_() && !emptyRecoveryDone &&
+      ['open', 'signin', 'manual'].includes(String(reason || ''));
+    if ((!initialPullDone || emptyDeviceRecovery) && cloudCursor()) cloudCursorSet('');
     if (typeof syncFlush === 'function') { try { syncFlush(); } catch (e) {} }
     const r = await cloudPullMerge();
     const pullSucceeded = !!(r && (r.merged || r.reason === 'no change'));
     if (pullSucceeded) {
       try { localStorage.setItem(bootstrapKey, new Date().toISOString()); } catch (e) {}
+      if (emptyDeviceRecovery) {
+        try { localStorage.setItem(recoveryKey, new Date().toISOString()); } catch (e) {}
+      }
     }
     /* Migration is only safe after the first read. A blank device must never publish
        its empty starter book over the shop; a populated device can migrate its union
@@ -932,6 +944,11 @@ function cloudBootstrapKey_() {
     identity = 'fb:' + ((a && a.uid) || '');
   }
   return 'texpark_pro_cloud_bootstrap_' + hash(identity);
+}
+
+/* One-time empty-device recovery marker, scoped to the same shop as the bootstrap. */
+function cloudEmptyRecoveryKey_() {
+  return cloudBootstrapKey_().replace('texpark_pro_cloud_bootstrap_', 'texpark_pro_cloud_empty_recovery_');
 }
 
 /* A new installation has three fixed product examples and a default login. They are
