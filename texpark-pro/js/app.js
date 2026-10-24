@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.16';
+const APP_VERSION = '2027-01-01.15';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -101,32 +101,6 @@ var liveSyncInFlight = false;
 var liveLastActivityAt = 0;
 var liveBootAt = Date.now();
 
-/* This preference belongs to this browser/device. */
-function liveSyncMode_() {
-  const mode = String((db && db.settings && db.settings.liveSyncMode) || 'live');
-  return ({ live: 'live', '1s': '1s', '1m': '1m', '1h': '1h', '1d': '1d' })[mode] || 'live';
-}
-function liveSyncIntervalMs_() {
-  const mode = liveSyncMode_();
-  return mode === '1s' ? 1000 : mode === '1m' ? 60000 : mode === '1h' ? 3600000 : mode === '1d' ? 86400000 : null;
-}
-var liveSyncTimer = null;
-function liveScheduleNext_() {
-  if (liveSyncTimer) clearTimeout(liveSyncTimer);
-  liveSyncTimer = setTimeout(function () {
-    liveSyncTimer = null;
-    if (!document.hidden) liveDeltaPull_();
-    liveScheduleNext_();
-  }, liveDelay_());
-}
-function liveSyncModeChanged_() {
-  if (liveSyncTimer) { clearTimeout(liveSyncTimer); liveSyncTimer = null; }
-  if (typeof fbRealtimeStop === 'function') fbRealtimeStop();
-  if (liveSyncMode_() === 'live' && typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
-  liveDeltaPull_();
-  liveScheduleNext_();
-}
-
 function liveNoteActivity_() { liveLastActivityAt = Date.now(); }
 /* Cadence depends on whether the push stream is carrying the load:
    - stream connected  -> calm poll (15 s) as a belt-and-braces net; the ~0.3 s push
@@ -159,8 +133,6 @@ function livePulse_() {
   } catch (e) {}
 }
 function liveDelay_() {
-  const selectedInterval = liveSyncIntervalMs_();
-  if (selectedInterval) return selectedInterval;
   if (!livePushHealthy_()) return LIVE_SYNC_ACTIVE_MS;
   const warm = (Date.now() - liveLastActivityAt < LIVE_ACTIVE_WINDOW_MS) ||
                (Date.now() - liveBootAt < LIVE_BOOT_WINDOW_MS);
@@ -187,7 +159,13 @@ window.addEventListener('load', function () {
   // on a cold one it is the difference between the first change appearing in ~2 s
   // and waiting a full poll tick. Bounded by the same guards, so it is always safe.
   liveDeltaPull_();
-  liveScheduleNext_();
+  (function liveLoop() {
+    var wait = liveDelay_();
+    setTimeout(function () {
+      if (!document.hidden) liveDeltaPull_();
+      liveLoop();
+    }, wait);
+  })();
 });
 
 const PAGES = [
@@ -3204,8 +3182,6 @@ function renderSettings() {
   if (typeof cloudProvRender === 'function') cloudProvRender();
   const ap = document.getElementById('stAutoPull');
   if (ap) ap.checked = db.settings.autoPull !== false;
-  const lsm = document.getElementById('stLiveSyncMode');
-  if (lsm) lsm.value = liveSyncMode_();
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
   const dt = document.getElementById('stDeviceTag');
   if (dt) dt.value = db.settings.deviceTag || '';
@@ -3315,19 +3291,6 @@ function saveAutoPull() {
   if (on) cloudAutoSync('turned on');
   alert(on ? 'Auto-pull on — from now on it pulls from the sheet on open.'
            : 'Auto-pull off — now it only pulls from the sheet when you press the button.');
-}
-
-function saveLiveSyncMode() {
-  const el = document.getElementById('stLiveSyncMode');
-  const mode = el && el.value;
-  if (!['live', '1s', '1m', '1h', '1d'].includes(mode)) return;
-  db.settings.liveSyncMode = mode;
-  commit();
-  liveSyncModeChanged_();
-  const note = document.getElementById('liveSyncModeNote');
-  if (note) note.textContent = mode === 'live'
-    ? 'Live push is enabled. Changes arrive as soon as the network and cloud deliver them; a literal zero delay cannot be guaranteed.'
-    : 'This device checks for cloud changes ' + ({ '1s': 'every second', '1m': 'every minute', '1h': 'every hour', '1d': 'once a day' })[mode] + '. On returning to the app it checks immediately.';
 }
 
 /* ===================== cloud (Firestore) settings =====================
@@ -3800,7 +3763,6 @@ window.addEventListener('DOMContentLoaded', function () {
       return;
     }
     cloudAutoSync('visible');
-    liveDeltaPull_();
     // A tab that was backgrounded may have had its stream torn down by the browser.
     // Ask for it back so returning to the tab restores true push, not just a poll.
     if (typeof fbRealtimeLive === 'function' && typeof fbRealtimeStart === 'function' && !fbRealtimeLive()) {
