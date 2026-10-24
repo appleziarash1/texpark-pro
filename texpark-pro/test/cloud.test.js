@@ -309,6 +309,19 @@ async function flush(dev) {
   ok(recovered.db.customers.some(c => c.id === 'local-backup-customer'), 'the local backup was preserved during the full merge');
   ok(recovered.cloudMigrated(), 'the populated local/cloud union migrated only after the successful pull');
 
+  /* -------- a wiped IndexedDB with an old bootstrap marker also recovers safely */
+  console.log('\\n--- an empty device with a stale bootstrap marker recovers the shop ---');
+  const wiped = makeDevice('WIPED', firestore, auth, sheet);
+  wiped.db = wiped.blankDB();
+  wiped.lastCommitted = wiped.indexRecs_(wiped.db);
+  wiped.localStorage.setItem('texpark_pro_firestore_cursor', '2999-01-01T00:00:00.000Z');
+  wiped.localStorage.setItem(wiped.cloudBootstrapKey_(), new Date().toISOString());
+  await wiped.fbSignIn('shop@example.com', 'secret1');
+  await wiped.cloudAutoSyncNew('open');
+  ok(wiped.db.memos.some(m => m.memoNo === 'TXP/SM/1-PC001'), 'an empty browser resets its stale cursor and retrieves old cloud records');
+  ok(wiped.cloudMigrated(), 'the existing post-pull migration runs only after the cloud data was merged');
+  ok(!!wiped.localStorage.getItem(wiped.cloudEmptyRecoveryKey_()), 'successful recovery is remembered for this shop');
+
   /* -------- an empty new shop must never receive a seeded blank-book migration */
   console.log('\n--- an empty new shop does not get overwritten by starter data ---');
   const emptyShop = makeDevice('EMPTY', firestore, auth, sheet);
