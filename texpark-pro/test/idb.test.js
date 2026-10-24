@@ -26,6 +26,7 @@ function eq(a, b, label) { ok(a === b, label + '  (got ' + JSON.stringify(a) + '
 function makeIndexedDB() {
   const dbs = {};                          // name -> { version, stores: { name -> Map } }
   const stats = { opens: 0, puts: 0, gets: 0 };
+  let failNextTransaction = false;
 
   function req(result, err, tx) {
     const r = { result: result, error: err || null, onsuccess: null, onerror: null };
@@ -62,6 +63,12 @@ function makeIndexedDB() {
         objectStoreNames: { contains: n => Object.prototype.hasOwnProperty.call(db.stores, n) },
         createObjectStore(n) { if (!db.stores[n]) db.stores[n] = new Map(); return store(n, db.stores[n]); },
         transaction(n, mode) {
+          if (failNextTransaction) {
+            failNextTransaction = false;
+            const e = new Error('The database connection is closing');
+            e.name = 'InvalidStateError';
+            throw e;
+          }
           if (!db.stores[n]) throw new Error('no such store ' + n);
           const tx = { objectStore: () => store(n, db.stores[n], tx), onabort: null, oncomplete: null, error: null };
           return tx;
@@ -86,19 +93,20 @@ function makeIndexedDB() {
     const map = db.stores[storeName] = db.stores[storeName] || new Map();
     map.set(key, clone(value));
   }
-  return { open, peek, seed, stats, dbs };
+  return { open, peek, seed, stats, dbs, failNextTransaction() { failNextTransaction = true; } };
 }
 
 /* A device: the real db.js + sync.js over a private localStorage and one IndexedDB. */
 function makeDevice(idb) {
   const store = {};
+  const alerts = [], toasts = [];
   const localStorage = {
     getItem: k => (k in store ? store[k] : null),
     setItem: (k, v) => { store[k] = String(v); },
     removeItem: k => { delete store[k]; }
   };
   const sandbox = {
-    localStorage, console, alert() {}, confirm: () => true,
+    localStorage, console, alert(message) { alerts.push(message); }, toast(message) { toasts.push(message); }, confirm: () => true,
     document: { getElementById: () => null, addEventListener() {} },
     navigator: { userAgent: 'Mozilla/5.0' },
     setTimeout, clearTimeout, Promise, JSON,
@@ -106,6 +114,8 @@ function makeDevice(idb) {
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
+  sandbox.alerts = alerts;
+  sandbox.toasts = toasts;
   vm.createContext(sandbox);
   for (const f of ['js/db.js', 'js/sync.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), sandbox, { filename: f });
@@ -163,6 +173,22 @@ function makeDevice(idb) {
   ok(dev.storeMirror['texpark_pro_v2'].memos.length === 2,
      'the mirror already held both, so a reader never saw the old book');
 
+  console.log('\\n--- repeated save failures never open blocking browser dialogs ---');
+  dev.notifyCommitFailure_(new Error('disk temporarily unavailable'));
+  dev.notifyCommitFailure_(new Error('disk temporarily unavailable'));
+  eq(dev.alerts.length, 0, 'save errors do not use browser alert dialogs');
+  eq(dev.toasts.length, 1, 'the same save failure is shown once as a non-blocking toast');
+
+  console.log('\\n--- a closed IndexedDB connection is reopened and the write retried ---');
+  const opensBeforeRetry = idb.stats.opens;
+  idb.failNextTransaction();
+  dev.db.memos.push({ id: 'm3', memoNo: 'TXP/SM/3', customerName: 'Nadia', items: [], due: 300 });
+  const retried = dev.commit();
+  await retried;
+  eq(idb.stats.opens, opensBeforeRetry + 1, 'the closed connection was discarded and a fresh one opened');
+  eq(idb.peek('texpark_pro_db', 'kv', 'texpark_pro_v2').memos.length, 3,
+     'the write succeeded after reopening without losing the memo');
+
   console.log('\n--- the sync queue persists to IndexedDB ---');
   dev.syncQueue = [{ id: 'j9', type: 'memo', state: 'pending', label: 'Memo' }];
   dev.syncSave();
@@ -177,7 +203,7 @@ function makeDevice(idb) {
   await again.storageInit(again.STORAGE_KEYS);
   eq(again.storeAsync, true, 'a second boot stays on IndexedDB');
   eq(idb.stats.puts, putsBefore, 'and does not rewrite the book just to open it');
-  eq(again.loadDB().memos.length, 2, 'it reads the same two memos');
+  eq(again.loadDB().memos.length, 3, 'it reads all three saved memos after reopening');
 
   console.log('\n--- an existing IndexedDB copy is never overwritten by a stale localStorage one ---');
   const idb2 = makeIndexedDB();
