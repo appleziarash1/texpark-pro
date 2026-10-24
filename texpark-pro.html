@@ -34,6 +34,7 @@ a{color:var(--navy)}
 
 /* ---------- sync badge ---------- */
 .sync-badge{font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:99px;cursor:pointer;white-space:nowrap}
+#syncBadge{display:none!important}
 .sync-green{background:#e5f7ee;color:#087b43}
 .sync-amber{background:#fff4dc;color:#a05b00}
 .sync-red{background:#ffe8ef;color:var(--red)}
@@ -430,6 +431,7 @@ tbody tr:hover td{background:#f7fafd}
   .ordcal{grid-template-columns:repeat(7,1fr);gap:4px}
   .ordcal .cday{min-height:60px;padding:5px}
 }
+
 
 </style>
 </head><body>
@@ -969,6 +971,19 @@ tbody tr:hover td{background:#f7fafd}
         </div>
         <div class="card"><h2>Receivable — Customer-wise Ageing</h2><div id="ageingTable"></div></div>
         <div class="card"><h2>Payable — Supplier-wise</h2><div id="payableTable"></div></div>
+        <div class="card">
+          <h2>Cloud update frequency</h2>
+          <div class="note">Choose how often <b>all Cloudflare-connected devices</b> check for business-data changes. The sync preference itself reaches connected devices immediately; business data is checked on the selected schedule. Sheets stays a separate backup and cannot bypass this delay. Sleeping/background browsers check when they are allowed to run or when they return.</div>
+          <label for="stLiveSyncMode">Sync mode</label>
+          <select id="stLiveSyncMode" onchange="saveLiveSyncMode()">
+            <option value="live">Live push (0 sec target)</option>
+            <option value="1s">Every 1 second</option>
+            <option value="1m">Every 1 minute</option>
+            <option value="1h">Every 1 hour</option>
+            <option value="1d">Every 1 day</option>
+          </select>
+          <div id="liveSyncModeNote" class="muted" style="margin-top:8px">The selected mode is shared across connected Cloudflare devices. Live push arrives as soon as the network and cloud deliver it; literal zero delay cannot be guaranteed.</div>
+        </div>
       </section>
 
       <!-- ===== USERS ===== -->
@@ -1112,30 +1127,16 @@ tbody tr:hover td{background:#f7fafd}
           <label style="margin-top:14px;display:flex;align-items:center;gap:9px">
             <input id="stAutoPull" type="checkbox" style="width:auto" onchange="saveAutoPull()">
             <span><b>Pull new data from the sheet automatically</b><br>
-            <span class="muted">For Sheet-only sync. Cloudflare-connected devices follow the Cloud update frequency above.</span></span>
+            <span class="muted">For Sheet-only sync. Cloudflare-connected devices follow the Cloud update frequency under Ledger / Ageing.</span></span>
           </label>
           <div id="syncTestOut" style="margin-top:10px;font-size:13px"></div>
-        </div>
-
-        <div class="card">
-          <h2>Cloud update frequency</h2>
-          <div class="note">Choose how often <b>all Cloudflare-connected devices</b> check for business-data changes. The sync preference itself reaches connected devices immediately; business data is checked on the selected schedule. Sheets stays a separate backup and cannot bypass this delay. Sleeping/background browsers check when they are allowed to run or when they return.</div>
-          <label for="stLiveSyncMode">Sync mode</label>
-          <select id="stLiveSyncMode" onchange="saveLiveSyncMode()">
-            <option value="live">Live push (0 sec target)</option>
-            <option value="1s">Every 1 second</option>
-            <option value="1m">Every 1 minute</option>
-            <option value="1h">Every 1 hour</option>
-            <option value="1d">Every 1 day</option>
-          </select>
-          <div id="liveSyncModeNote" class="muted" style="margin-top:8px">The selected mode is shared across connected Cloudflare devices. Live push arrives as soon as the network and cloud deliver it; literal zero delay cannot be guaranteed.</div>
         </div>
 
         <div class="card">
           <h2><span id="cloudCardTitle">Cloud sync</span> <span id="cloudStatus" class="sync-badge sync-blue">Cloud off (Sheet only)</span></h2>
           <div class="note" id="cloudCardNote">
             Cloudflare is the primary cross-device sync. Each saved change is stored there, then other
-            devices receive it according to the <b>Cloud update frequency</b> above. Google Sheets
+            devices receive it according to the <b>Cloud update frequency</b> under Ledger / Ageing. Google Sheets
             remains a separate backup and does not control or accelerate those updates.
           </div>
           <div class="note" style="margin-top:6px" id="cloudCardSetup">
@@ -5122,7 +5123,20 @@ async function cloudAutoSyncNew(reason) {
   // New devices still get their initial recovery pull; explicit Sync now still works.
   const routinePull=['open','signin','online','visible','provisioned'].includes(String(reason||''));
   const interval=typeof liveSyncIntervalMs_==='function'?liveSyncIntervalMs_():null;
-  if(cfOn_()&&interval&&routinePull){let initialized=false;try{initialized=!!localStorage.getItem(cloudBootstrapKey_());}catch(e){} const last=typeof liveLastPullAt_==='function'?liveLastPullAt_():0; if(initialized&&last&&Date.now()-last<interval)return {skipped:'scheduled interval'};}
+  if (cfOn_() && interval && routinePull) {
+    let initialized = false, emptyRecoveryDone = false;
+    try {
+      initialized = !!localStorage.getItem(cloudBootstrapKey_());
+      emptyRecoveryDone = !!localStorage.getItem(cloudEmptyRecoveryKey_());
+    } catch (e) {}
+    const last = typeof liveLastPullAt_ === 'function' ? liveLastPullAt_() : 0;
+    // A blank browser must recover its shop immediately, even if the shared
+    // schedule is long. Otherwise the owner sees an empty app until the next tick.
+    const needsEmptyRecovery = !cloudLocalHasBusinessData_() && !emptyRecoveryDone;
+    if (initialized && last && Date.now() - last < interval && !needsEmptyRecovery) {
+      return { skipped: 'scheduled interval' };
+    }
+  }
   if (CLOUD_STATE.retryAt && Date.now() < CLOUD_STATE.retryAt) {
     cloudArmRetry();
     return { skipped: 'backoff' };
@@ -10212,4 +10226,5 @@ function exportAllCSV() {
 
 </script>
 </body></html>
+
 

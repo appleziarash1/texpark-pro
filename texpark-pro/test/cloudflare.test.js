@@ -158,6 +158,20 @@ function makeSandbox(cfg) {
     eq(saved.mode, '1h', 'uses the server-confirmed setting');
   }
 
+  console.log('\n--- empty devices bypass a long shop-wide delay for first recovery ---');
+  {
+    const { s } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
+    s.liveSyncIntervalMs_ = () => 24 * 60 * 60 * 1000;
+    s.liveLastPullAt_ = () => Date.now();
+    s.localStorage.setItem(s.cloudBootstrapKey_(), new Date().toISOString());
+    let pulls = 0;
+    s.cloudPullMerge = async () => { pulls++; return { merged: true }; };
+    const result = await s.cloudAutoSyncNew('open');
+    eq(result.merged, true, 'a blank browser recovers without waiting a full day');
+    eq(pulls, 1, 'the cloud is read once for recovery');
+    ok(!!s.localStorage.getItem(s.cloudEmptyRecoveryKey_()), 'the completed recovery is remembered');
+  }
+
   console.log('\n--- the live stream ---');
   {
     const { s, ws } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });

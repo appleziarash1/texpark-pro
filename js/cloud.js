@@ -894,7 +894,20 @@ async function cloudAutoSyncNew(reason) {
   // New devices still get their initial recovery pull; explicit Sync now still works.
   const routinePull=['open','signin','online','visible','provisioned'].includes(String(reason||''));
   const interval=typeof liveSyncIntervalMs_==='function'?liveSyncIntervalMs_():null;
-  if(cfOn_()&&interval&&routinePull){let initialized=false;try{initialized=!!localStorage.getItem(cloudBootstrapKey_());}catch(e){} const last=typeof liveLastPullAt_==='function'?liveLastPullAt_():0; if(initialized&&last&&Date.now()-last<interval)return {skipped:'scheduled interval'};}
+  if (cfOn_() && interval && routinePull) {
+    let initialized = false, emptyRecoveryDone = false;
+    try {
+      initialized = !!localStorage.getItem(cloudBootstrapKey_());
+      emptyRecoveryDone = !!localStorage.getItem(cloudEmptyRecoveryKey_());
+    } catch (e) {}
+    const last = typeof liveLastPullAt_ === 'function' ? liveLastPullAt_() : 0;
+    // A blank browser must recover its shop immediately, even if the shared
+    // schedule is long. Otherwise the owner sees an empty app until the next tick.
+    const needsEmptyRecovery = !cloudLocalHasBusinessData_() && !emptyRecoveryDone;
+    if (initialized && last && Date.now() - last < interval && !needsEmptyRecovery) {
+      return { skipped: 'scheduled interval' };
+    }
+  }
   if (CLOUD_STATE.retryAt && Date.now() < CLOUD_STATE.retryAt) {
     cloudArmRetry();
     return { skipped: 'backoff' };
