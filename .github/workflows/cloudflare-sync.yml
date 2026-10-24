@@ -39,7 +39,7 @@ jobs:
       - name: The backend's decision logic still holds
         if: steps.cf.outputs.ready == 'true'
         working-directory: cloudflare
-        run: node test/logic.test.mjs
+        run: npm test
 
       - name: Publish the token as a Worker secret
         if: steps.cf.outputs.ready == 'true'
