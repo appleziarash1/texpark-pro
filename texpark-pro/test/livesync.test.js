@@ -142,6 +142,21 @@ document.hidden = false;
   eq(liveDelay_(), 86400000, '1 day mode checks once a day');
   db.settings.liveSyncMode = 'live';
   eq(liveDelay_(), 2000, 'live mode uses push with the 2 second fallback check');
+
+  /* Cloudflare's selector is a shop-wide setting delivered over its control socket. */
+  db = { settings: {} };
+  let startCalls = 0;
+  global.commit = () => true;
+  global.cfBackendOn = () => true;
+  global.fbRealtimeStart = async () => { startCalls++; };
+  liveSyncModeApply_('1m', '2026-01-01T00:00:00.000Z');
+  eq(db.settings.liveSyncMode, '1m', 'a remote shop setting updates this device mode');
+  eq(el('stLiveSyncMode').value, '1m', 'the settings selector follows a remote change');
+  eq(liveDelay_(), 60000, 'remote mode controls this device schedule');
+  ok(startCalls > 0, 'the control WebSocket remains connected in scheduled mode');
+  eq(liveSyncModeApply_('invalid'), false, 'an unknown remote mode is ignored');
+  delete global.cfBackendOn;
+  delete global.fbRealtimeStart;
   delete global.fbRealtimeLive;
 
   console.log('\n=================');
