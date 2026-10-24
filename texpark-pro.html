@@ -1504,11 +1504,26 @@ var storeReady = false;
 var storeMirror = {};
 
 var idbDbPromise = null;
+var idbConnection = null;
+
+function idbForgetConnection_(connection) {
+  /* Do not keep a resolved promise that points at a dead IDBDatabase. */
+  if (!connection || connection === idbConnection) {
+    idbConnection = null;
+    idbDbPromise = null;
+  }
+}
+
+function idbIsClosedError_(e) {
+  var message = String(e && e.message || e || '');
+  return (e && e.name === 'InvalidStateError') ||
+    /database connection is closing|connection is closing|database is closed/i.test(message);
+}
 
 function idbOpen_() {
   if (!idbAvailable) return Promise.reject(new Error('IndexedDB is not available'));
   if (idbDbPromise) return idbDbPromise;
-  idbDbPromise = new Promise(function (resolve, reject) {
+  var openPromise = new Promise(function (resolve, reject) {
     var req;
     try { req = indexedDB.open(IDB_NAME, IDB_VERSION); }
     catch (e) { reject(e); return; }
@@ -1516,30 +1531,53 @@ function idbOpen_() {
       var d = req.result;
       if (!d.objectStoreNames.contains(IDB_STORE)) d.createObjectStore(IDB_STORE);
     };
-    req.onsuccess = function () { resolve(req.result); };
+    req.onsuccess = function () {
+      var d = req.result;
+      /* A request may finish after an earlier blocked error. Don't leak that handle. */
+      if (idbDbPromise !== openPromise) { try { d.close(); } catch (e) {} return; }
+      d.onversionchange = function () {
+        idbForgetConnection_(d);
+        try { d.close(); } catch (e) {}
+      };
+      d.onclose = function () { idbForgetConnection_(d); };
+      idbConnection = d;
+      resolve(d);
+    };
     req.onerror = function () { reject(req.error || new Error('IndexedDB open failed')); };
     req.onblocked = function () { reject(new Error('IndexedDB open blocked')); };
   });
-  return idbDbPromise;
+  idbDbPromise = openPromise;
+  /* Let the next operation retry if open itself fails. */
+  openPromise.catch(function () {
+    if (idbDbPromise === openPromise) idbDbPromise = null;
+  });
+  return openPromise;
 }
 
-/* One request on one key. Resolves with the stored value, or null when absent. */
+/* Retry once with a fresh handle if a previously-open connection has closed. */
 function idbRequest_(key, mode, run) {
-  return idbOpen_().then(function (d) {
-    return new Promise(function (resolve, reject) {
-      var tx, store, req;
-      try {
-        tx = d.transaction(IDB_STORE, mode);
-        store = tx.objectStore(IDB_STORE);
-        req = run(store);
-      } catch (e) { reject(e); return; }
-      var result = null;
-      req.onsuccess = function () { result = req.result === undefined ? null : req.result; };
-      req.onerror = function () { reject(req.error || new Error('IndexedDB request failed')); };
-      tx.oncomplete = function () { resolve(result); };
-      tx.onabort = function () { reject(tx.error || new Error('IndexedDB transaction aborted')); };
+  function execute(retry) {
+    return idbOpen_().then(function (d) {
+      return new Promise(function (resolve, reject) {
+        var tx, store, req;
+        try {
+          tx = d.transaction(IDB_STORE, mode);
+          store = tx.objectStore(IDB_STORE);
+          req = run(store);
+        } catch (e) { reject(e); return; }
+        var result = null;
+        req.onsuccess = function () { result = req.result === undefined ? null : req.result; };
+        req.onerror = function () { reject(req.error || new Error('IndexedDB request failed')); };
+        tx.oncomplete = function () { resolve(result); };
+        tx.onabort = function () { reject(tx.error || new Error('IndexedDB transaction aborted')); };
+      }).catch(function (e) {
+        if (!retry || !idbIsClosedError_(e)) throw e;
+        idbForgetConnection_(d);
+        return execute(false);
+      });
     });
-  });
+  }
+  return execute(true);
 }
 
 function idbGet_(key) { return idbRequest_(key, 'readonly', function (s) { return s.get(key); }); }
@@ -2085,7 +2123,7 @@ function commit() {
     write = storeSet(KEY, db);
     lastCommitted = frozenIndex_(db);
   } catch (e) {
-    alert('\u09A1\u09C7\u099F\u09BE \u09B8\u09C7\u09AD \u0995\u09B0\u09BE \u09AF\u09BE\u099A\u09CD\u099B\u09C7 \u09A8\u09BE: ' + e.message);
+    notifyCommitFailure_(e);
     return false;
   }
   /* On IndexedDB the write is asynchronous: report a failure the moment it lands,
@@ -2093,9 +2131,7 @@ function commit() {
      every reader below sees the save. Async callers (the cloud pull) await the
      returned promise for durability. */
   if (write && typeof write.then === 'function') {
-    write.catch(function (e) {
-      alert('\u09A1\u09C7\u099F\u09BE \u09B8\u09C7\u09AD \u0995\u09B0\u09BE \u09AF\u09BE\u099A\u09CD\u099B\u09C7 \u09A8\u09BE: ' + (e && e.message));
-    });
+    write.catch(function (e) { notifyCommitFailure_(e); });
   }
   if (typeof renderAll === 'function') renderAll();
   // Live per-record push: send only the records whose stamp moved, so Firestore sees
@@ -2109,6 +2145,18 @@ function commit() {
   // Anything saved since the last upload is worth pushing before the tab closes.
   if (typeof window !== 'undefined') window.cloudDirty = true;
   return write;
+}
+
+/* Show save failures without trapping the operator in repeated blocking dialogs. */
+var lastCommitFailureNotice_ = { message: '', at: 0 };
+function notifyCommitFailure_(error) {
+  const message = String(error && error.message || error || 'Unknown storage error');
+  const now = Date.now();
+  if (lastCommitFailureNotice_.message === message && now - lastCommitFailureNotice_.at < 30000) return;
+  lastCommitFailureNotice_ = { message, at: now };
+  const notice = 'ডেটা সেভ হয়নি—আবার চেষ্টা করুন: ' + message;
+  if (typeof toast === 'function') toast(notice);
+  else if (typeof console !== 'undefined' && console.error) console.error(notice);
 }
 
 /* The record index as of the last commit, so the next commit can tell what moved. */
@@ -6158,7 +6206,7 @@ function memoSteadfastBlock(m) {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.17';
+const APP_VERSION = '2027-01-01.18';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
