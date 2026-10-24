@@ -144,7 +144,21 @@ function makeSandbox(cfg) {
     eq(sent.records[0].deleted, false, 'a live write is not a tombstone');
   }
 
-  console.log('\n--- the live stream ---');
+  console.log('\\n--- shop-wide sync control ---');
+  {
+    const { s, fetch } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
+    fetch.reply(200, { mode: '1m', updatedAt: '2026-01-01T00:00:00.000Z' });
+    const control = await s.cfGetSyncControl();
+    eq(fetch.calls[0].url, 'https://w.example.dev/sync-control', 'reads the shop-level sync control');
+    eq(control.mode, '1m', 'adopts the shared interval');
+    fetch.reply(200, { ok: true, syncControl: { mode: '1h', updatedAt: '2026-01-01T00:01:00.000Z' } });
+    const saved = await s.cfSetSyncControl('1h');
+    eq(fetch.calls[1].opts.method, 'PUT', 'writes the shared interval to the Worker');
+    eq(JSON.parse(fetch.calls[1].opts.body).mode, '1h', 'sends the selected mode');
+    eq(saved.mode, '1h', 'uses the server-confirmed setting');
+  }
+
+  console.log('\\n--- the live stream ---');
   {
     const { s, ws } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
     let pulls = 0;
