@@ -82,6 +82,23 @@ async function cfPullDelta() {
   return { records: records, newest: newest };
 }
 
+/* Shop-wide sync cadence stored by the Cloudflare Durable Object. */
+async function cfGetSyncControl() {
+  const c = cfConfig();
+  const res = await fetch(c.url + '/sync-control', { headers: cfHeaders_() });
+  if (!res.ok) throw new Error(await cfErrorText_(res));
+  const body = await res.json();
+  return { mode: ['live', '1s', '1m', '1h', '1d'].includes(body.mode) ? body.mode : 'live', updatedAt: body.updatedAt || '' };
+}
+async function cfSetSyncControl(mode) {
+  if (!['live', '1s', '1m', '1h', '1d'].includes(mode)) throw new Error('invalid sync mode');
+  const c = cfConfig();
+  const res = await fetch(c.url + '/sync-control', { method: 'PUT', headers: cfHeaders_(), body: JSON.stringify({ mode }) });
+  if (!res.ok) throw new Error(await cfErrorText_(res));
+  const body = await res.json();
+  return { mode: body.syncControl && body.syncControl.mode || mode, updatedAt: body.syncControl && body.syncControl.updatedAt || '' };
+}
+
 /* Many records in one request - used by the first migration and by settings pushes. */
 async function cfWriteBatch(pairs) {
   const c = cfConfig();
@@ -139,7 +156,7 @@ var CF_RT_RETRY_MAX_MS = 30000;
 var cfRtFatal = false;
 
 function cfRealtimeShouldRun() {
-  return cfBackendOn() && (typeof liveSyncMode_ !== 'function' || liveSyncMode_() === 'live') && (typeof session !== 'undefined' && !!session);
+  return cfBackendOn() && (typeof session !== 'undefined' && !!session);
 }
 function cfRealtimeLive() { return !!cfRtSocket && cfRtSocket.readyState === 1 && Date.now() - cfRtLastPong < CF_RT_PONG_TIMEOUT_MS; }
 function cfRealtimeRetryClear() {
@@ -215,10 +232,15 @@ function cfRealtimeStart() {
       if (ev.data === 'pong') { cfRtLastPong = Date.now(); return; }
       let msg = null;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
-      if (!msg || msg.type !== 'change') return;
+      if (!msg) return;
       cfRtLastPong = Date.now();
       cfRtRetryMs = 1000;                       // a healthy message resets the backoff
-      cfRealtimeOnChange();
+      if ((msg.type === 'hello' || msg.type === 'sync-control') && msg.syncControl &&
+          typeof liveSyncModeApply_ === 'function') {
+        liveSyncModeApply_(msg.syncControl.mode, msg.syncControl.updatedAt);
+        return;
+      }
+      if (msg.type === 'change' && (typeof liveSyncMode_ !== 'function' || liveSyncMode_() === 'live')) cfRealtimeOnChange();
     });
     ws.addEventListener('close', function (ev) {
       clearTimeout(openTimer);
