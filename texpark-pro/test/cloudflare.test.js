@@ -100,6 +100,8 @@ function makeSandbox(cfg) {
     const { s } = makeSandbox({ backend: 'cloudflare', url: 'https://texpark-sync.example.workers.dev', token: 'tok-123' });
     ok(s.cfBackendOn(), 'cloudflare backend is on with a url and token');
     ok(s.cloudConfigured(), 'the cloud counts as configured with no Firebase keys at all');
+    const oldBootstrap = 'texpark_pro_cloud_bootstrap_' + s.hash('cf:https://texpark-sync.example.workers.dev:tok-123');
+    ok(s.cloudBootstrapKey_() !== oldBootstrap, 'this release forces one cursor-safe full reconciliation on existing devices');
     s.window.CLOUDFLARE_SYNC.backend = 'firebase';
     ok(!s.cfBackendOn(), 'switching the build back to firebase turns the adapter off');
   }
@@ -119,6 +121,38 @@ function makeSandbox(cfg) {
     eq(d.records[0].key, 'customers', 'mapped to the {key, rec} shape the merge already speaks');
     eq(d.records[0].rec.name, 'Rahim', 'with the record body intact');
     eq(d.newest, '2026-01-01T00:00:01.000Z', 'and the newest `at` for the cursor');
+  }
+
+  console.log('\n--- a full recovery unions local-only and newer records safely ---');
+  {
+    const { s } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
+    s.db.customers = [
+      { id: 'local-only', at: '2026-01-01T00:00:03.000Z', name: 'Local' },
+      { id: 'local-newer', at: '2026-01-01T00:00:04.000Z', name: 'Newer local' },
+      { id: 'local-stale', at: '2026-01-01T00:00:01.000Z', name: 'Stale local' }
+    ];
+    s.db.tombstones = [{ key: 'customers', id: 'local-delete', at: '2026-01-01T00:00:05.000Z' }];
+    const ahead = s.cloudLocalAheadOfCloud_([
+      { key: 'customers', id: 'local-newer', at: '2026-01-01T00:00:02.000Z', deleted: false, rec: { id: 'local-newer' } },
+      { key: 'customers', id: 'local-stale', at: '2026-01-01T00:00:02.000Z', deleted: false, rec: { id: 'local-stale' } },
+      { key: 'customers', id: 'local-delete', at: '2026-01-01T00:00:04.000Z', deleted: false, rec: { id: 'local-delete' } }
+    ]);
+    const ids = ahead.map(x => x.id || x.rec.id).sort().join(',');
+    eq(ids, 'local-delete,local-newer,local-only', 'only missing/newer local rows and newer tombstones are sent back');
+    ok(ahead.some(x => x.deleted && x.rec.id === 'local-delete'), 'a local tombstone stays a tombstone during recovery');
+  }
+
+  console.log('\n--- an empty cloud is seeded from the preserved local book ---');
+  {
+    const { s, fetch } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
+    s.db.customers = [{ id: 'preserved-local', at: '2026-01-01T00:00:03.000Z', name: 'Local customer' }];
+    fetch.reply(200, { records: [], now: '' });
+    fetch.reply(200, { ok: true, applied: 1 });
+    const result = await s.cloudPullMerge();
+    eq(result.reason, 'no change', 'an empty initial cloud remains a successful empty pull');
+    eq(fetch.calls.length, 2, 'the missing local row is uploaded after the full empty read');
+    const sent = JSON.parse(fetch.calls[1].opts.body).records;
+    eq(sent[0].data.id, 'preserved-local', 'the local record is preserved and restored into the shop');
   }
 
   console.log('\n--- a future-stamped record cannot poison the cursor ---');

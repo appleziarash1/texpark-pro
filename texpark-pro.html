@@ -5053,9 +5053,15 @@ async function fbRealtimeStart() {
 async function cloudPullMerge() {
   if (!cloudConfigured()) return { merged: false, reason: 'not configured' };
   try {
+    /* An empty Cloudflare cursor means this is a full shop read (new device or the
+       one-time post-restore reconciliation). Keep local-only/newer rows so the full
+       read can safely union them back into the shop instead of replacing local data. */
+    const fullCloudRead = cfOn_() && typeof cfCursor === 'function' && !cfCursor();
     const delta = await fbPullDelta();
+    const localAhead = fullCloudRead ? cloudLocalAheadOfCloud_(delta.records || []) : [];
     if (!delta.records.length) {
       cloudCursorSet(delta.newest);
+      if (localAhead.length) await cloudWriteLocalAhead_(localAhead);
       cloudBackoffStep = 0;
       cloudStateSet('ONLINE_FIRESTORE', '', 0);
       return { merged: false, reason: 'no change' };
@@ -5067,6 +5073,7 @@ async function cloudPullMerge() {
     let saved = false;
     try { saved = await commit(); } finally { cloudMuted = false; }
     if (!saved) return { merged: false, reason: 'save failed' };
+    if (localAhead.length) await cloudWriteLocalAhead_(localAhead);
     cloudCursorSet(delta.newest);
     await cloudPullCatchupSettings();
     cloudBackoffStep = 0;
@@ -5085,6 +5092,37 @@ async function cloudPullMerge() {
     }
     return { merged: false, reason: msg };
   }
+}
+
+/* On a full read, compare this device's records with the complete cloud snapshot.
+   Send only local rows absent from cloud or carrying a newer timestamp. Cloudflare's
+   strict newer-wins rule rejects stale copies and preserves tombstones. */
+function cloudLocalAheadOfCloud_(remoteRecords) {
+  const cloudAt = new Map();
+  (remoteRecords || []).forEach(r => {
+    if (!r || !r.key) return;
+    const id = String((r.rec && r.rec.id) || '');
+    cloudAt.set(String(r.key) + '\u0000' + id, { at: String(r.at || (r.rec && r.rec.at) || ''), deleted: !!r.deleted });
+  });
+  const out = [];
+  const keys = typeof MERGE_KEYS !== 'undefined' ? MERGE_KEYS : [];
+  keys.forEach(key => (db[key] || []).forEach(rec => {
+    if (!rec || !rec.id || !rec.at) return;
+    const remote = cloudAt.get(String(key) + '\u0000' + String(rec.id));
+    if (!remote || String(rec.at) > remote.at) out.push({ key, rec, deleted: false });
+  }));
+  (tombList_(db) || []).forEach(t => {
+    if (!t || !t.key || !t.id || !t.at) return;
+    const remote = cloudAt.get(String(t.key) + '\u0000' + String(t.id));
+    if (!remote || String(t.at) > remote.at) {
+      out.push({ key: t.key, rec: { id: t.id, at: t.at }, deleted: true });
+    }
+  });
+  return out;
+}
+
+async function cloudWriteLocalAhead_(pairs) {
+  for (let i = 0; i < pairs.length; i += 200) await fbWriteBatch(pairs.slice(i, i + 200));
 }
 
 /* Business settings move as one document. Machine-local keys are dropped before it is
@@ -5182,7 +5220,9 @@ function cloudBootstrapKey_() {
   let identity = '';
   if (cfOn_()) {
     const c = cfConfig();
-    identity = 'cf:' + c.url + ':' + c.token;
+    /* Change this epoch only for a deliberate recovery rollout. It makes each
+       existing device discard a stale high-water cursor once and reread the shop. */
+    identity = 'cf:' + c.url + ':' + c.token + ':full-reconcile-2026-10-26-a';
   } else {
     const a = fbAuthLoad();
     identity = 'fb:' + ((a && a.uid) || '');
@@ -6241,7 +6281,7 @@ function memoSteadfastBlock(m) {
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.22';
+const APP_VERSION = '2027-01-01.23';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
