@@ -272,8 +272,11 @@ async function flush(dev) {
 
   /* ------------------- the phone pulls only the delta ------------------- */
   console.log('\n--- the phone sees it, reading only the delta ---');
+  let repaintCount = 0;
+  ph.renderAll = () => { repaintCount++; };
   const r = await ph.cloudPullMerge();
   ok(r.merged === true, "the phone merged the change [" + JSON.stringify(r) + "]");
+  eq(repaintCount, 1, 'a remote merge repaints the currently open screen');
   const gotMemo = ph.db.memos.filter(m => m.memoNo === 'TXP/SM/1-PC001');
   eq(gotMemo.length, 1, 'the phone now has the PC memo');
   eq(ph.db.products.length, pc.db.products.length, 'the starter products did not duplicate');

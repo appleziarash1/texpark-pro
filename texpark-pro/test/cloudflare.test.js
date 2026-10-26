@@ -176,10 +176,13 @@ function makeSandbox(cfg) {
   {
     const { s, ws } = makeSandbox({ backend: 'cloudflare', url: 'https://w.example.dev', token: 'tok-123' });
     let pulls = 0;
+    const resetModes = [];
+    s.liveSyncModeApply_ = mode => { s.db.settings.liveSyncMode = 'live'; return true; };
+    s.cfSetSyncControl = async mode => { resetModes.push(mode); return { mode }; };
     s.cloudPullMerge = async () => { pulls++; return {}; };
 
     s.cfRealtimeStart(); await ticks(3);
-    s.liveSyncMode_ = () => String((s.db.settings && s.db.settings.liveSyncMode) || 'live');
+    s.liveSyncMode_ = () => 'live';
     eq(ws.sockets.length, 1, 'one socket was opened');
     eq(ws.sockets[0].url, 'wss://w.example.dev/live?token=tok-123', 'it upgrades https to wss and carries the token in the query');
 
@@ -190,17 +193,18 @@ function makeSandbox(cfg) {
     await ticks(3);
     eq(pulls, 1, 'a server push wakes the ONE proven merge exactly once');
 
-    ws.sockets[0].emit('message', { data: JSON.stringify({ type: 'hello', now: '' }) });
+    ws.sockets[0].emit('message', { data: JSON.stringify({ type: 'hello', now: '', syncControl: { mode: '1d' } }) });
     await ticks(3);
     eq(pulls, 1, 'the greeting is not a change and does not merge');
+    eq(resetModes[0], 'live', 'a legacy shop-wide delay is reset to live on connection');
     s.db.settings.liveSyncMode = '1m';
     ws.sockets[0].emit('message', { data: JSON.stringify({ type: 'change', records: [{ key: 'customers', id: 'c2' }] }) });
     await ticks(3);
-    eq(pulls, 1, 'record push does not bypass the chosen non-live shop interval');
+    eq(pulls, 2, 'record push always pulls immediately even if an old delay remains in local settings');
 
     ws.sockets[0].emit('message', { data: 'not json' });
     await ticks(3);
-    eq(pulls, 1, 'a malformed frame is ignored, not fatal');
+    eq(pulls, 2, 'a malformed frame is ignored, not fatal');
   }
 
   console.log('\n--- a refused token stops instead of hammering ---');

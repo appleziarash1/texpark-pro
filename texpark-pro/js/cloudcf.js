@@ -154,6 +154,7 @@ var CF_RT_RETRY_MAX_MS = 30000;
 /* A token that is not accepted will not be accepted on retry; stop instead of
    hammering the endpoint. Cleared by a manual reconnect or a page reload. */
 var cfRtFatal = false;
+var cfRtResettingLegacyMode = false;
 
 function cfRealtimeShouldRun() {
   return cfBackendOn() && (typeof session !== 'undefined' && !!session);
@@ -237,10 +238,18 @@ function cfRealtimeStart() {
       cfRtRetryMs = 1000;                       // a healthy message resets the backoff
       if ((msg.type === 'hello' || msg.type === 'sync-control') && msg.syncControl &&
           typeof liveSyncModeApply_ === 'function') {
-        liveSyncModeApply_(msg.syncControl.mode, msg.syncControl.updatedAt);
+        const oldMode = msg.syncControl.mode;
+        liveSyncModeApply_('live', msg.syncControl.updatedAt);
+        // Older app versions may have saved a minute/day schedule on the Worker.
+        // Reset it once on connection so every connected device receives live pushes.
+        if (oldMode !== 'live' && !cfRtResettingLegacyMode) {
+          cfRtResettingLegacyMode = true;
+          cfSetSyncControl('live').then(function () { cfRtResettingLegacyMode = false; })
+            .catch(function () { cfRtResettingLegacyMode = false; });
+        }
         return;
       }
-      if (msg.type === 'change' && (typeof liveSyncMode_ !== 'function' || liveSyncMode_() === 'live')) cfRealtimeOnChange();
+      if (msg.type === 'change') cfRealtimeOnChange();
     });
     ws.addEventListener('close', function (ev) {
       clearTimeout(openTimer);

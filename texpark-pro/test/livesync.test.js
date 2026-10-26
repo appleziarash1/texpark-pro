@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const root = path.join(__dirname, '..');
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
 function makeEl(id) {
   const el = {
@@ -67,6 +68,7 @@ cloudDirty = false;
 document.hidden = false;
 
 (async () => {
+  ok(!html.includes('stLiveSyncMode') && !html.includes('Cloud update frequency'), 'the delay selector and its card are removed');
   console.log('\n--- live delta pull: fast lane, only when it is safe ---');
 
   pulls = 0; configured = false; signedIn = true;
@@ -132,16 +134,10 @@ document.hidden = false;
   global.fbRealtimeLive = () => false;     // stream dropped
   eq(liveDelay_(), 2000, 'stream dropped: poll fast again so we stay live');
 
-  db = { settings: { liveSyncMode: '1s' } };
-  eq(liveDelay_(), 1000, '1 second mode checks every second');
-  db.settings.liveSyncMode = '1m';
-  eq(liveDelay_(), 60000, '1 minute mode checks every minute');
-  db.settings.liveSyncMode = '1h';
-  eq(liveDelay_(), 3600000, '1 hour mode checks every hour');
-  db.settings.liveSyncMode = '1d';
-  eq(liveDelay_(), 86400000, '1 day mode checks once a day');
-  db.settings.liveSyncMode = 'live';
-  eq(liveDelay_(), 2000, 'live mode uses push with the 2 second fallback check');
+  db = { settings: { liveSyncMode: '1d' } };
+  eq(liveSyncMode_(), 'live', 'an old saved one-day preference cannot disable live updates');
+  eq(liveSyncIntervalMs_(), null, 'legacy saved intervals are ignored on this live-only build');
+  eq(liveDelay_(), 2000, 'live mode keeps a 2 second fallback if push drops');
 
   /* Cloudflare's selector is a shop-wide setting delivered over its control socket. */
   db = { settings: {} };
@@ -149,11 +145,10 @@ document.hidden = false;
   global.commit = () => true;
   global.cfBackendOn = () => true;
   global.fbRealtimeStart = async () => { startCalls++; };
-  liveSyncModeApply_('1m', '2026-01-01T00:00:00.000Z');
-  eq(db.settings.liveSyncMode, '1m', 'a remote shop setting updates this device mode');
-  eq(el('stLiveSyncMode').value, '1m', 'the settings selector follows a remote change');
-  eq(liveDelay_(), 60000, 'remote mode controls this device schedule');
-  ok(startCalls > 0, 'the control WebSocket remains connected in scheduled mode');
+  liveSyncModeApply_('1d', '2026-01-01T00:00:00.000Z');
+  eq(db.settings.liveSyncMode, 'live', 'the old remote one-day schedule is replaced locally with live');
+  eq(liveDelay_(), 2000, 'a remote legacy schedule cannot delay this device');
+  ok(startCalls > 0, 'the realtime WebSocket is started after adopting live mode');
   eq(liveSyncModeApply_('invalid'), false, 'an unknown remote mode is ignored');
   delete global.cfBackendOn;
   delete global.fbRealtimeStart;

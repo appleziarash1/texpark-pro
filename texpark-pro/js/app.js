@@ -2,7 +2,7 @@
 
 /* Bump this together with CACHE in sw.js. Shown in Settings so a phone can
    prove which build it is actually running. */
-const APP_VERSION = '2027-01-01.21';
+const APP_VERSION = '2027-01-01.22';
 
 /* Where the released build is published. Used only to tell an owner whose copy
    was opened from a stale address where the current one lives. */
@@ -104,32 +104,20 @@ const LIVE_PULL_AT_KEY = 'texpark_pro_cloud_last_pull_at';
 function liveLastPullAt_() { try { return Number(localStorage.getItem(LIVE_PULL_AT_KEY) || 0); } catch (e) { return 0; } }
 function livePullStamp_() { try { localStorage.setItem(LIVE_PULL_AT_KEY, String(Date.now())); } catch (e) {} }
  
-/* Cloudflare stores this preference once per shop; Firebase keeps the legacy
-   device-local behavior because it has no matching control endpoint here. */
-function liveSyncMode_() {
-  const mode = String((db && db.settings && db.settings.liveSyncMode) || 'live');
-  return ({ live: 'live', '1s': '1s', '1m': '1m', '1h': '1h', '1d': '1d' })[mode] || 'live';
-}
+/* Business data always uses live push. The old shop-wide interval can remain in
+   older saved settings; never let it gate a pull on this build. */
+function liveSyncMode_() { return 'live'; }
 function liveSyncModeApply_(mode, updatedAt) {
   if (!['live', '1s', '1m', '1h', '1d'].includes(mode)) return false;
-  const changed = liveSyncMode_() !== mode;
+  const changed = !db.settings || db.settings.liveSyncMode !== 'live';
   if (!db.settings) db.settings = {};
-  db.settings.liveSyncMode = mode;
+  db.settings.liveSyncMode = 'live';
   db.settings.liveSyncModeUpdatedAt = updatedAt || new Date().toISOString();
   if (changed) commit();
-  const el = document.getElementById('stLiveSyncMode');
-  if (el) el.value = mode;
-  const note = document.getElementById('liveSyncModeNote');
-  const shared = typeof cfBackendOn === 'function' && cfBackendOn();
-  if (note) note.textContent = mode === 'live'
-    ? (shared ? 'Live push is enabled for this shop. Connected devices receive updates as soon as the network and cloud deliver them; literal zero delay cannot be guaranteed.' : 'Live push is enabled on this device; a literal zero delay cannot be guaranteed.')
-    : (shared ? 'All connected devices check for cloud changes ' : 'This device checks for cloud changes ') + ({ '1s': 'every second', '1m': 'every minute', '1h': 'every hour', '1d': 'once a day' })[mode] + '. Sleeping browsers check when they resume.';
-  if (changed) liveSyncModeChanged_();
+  if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
   return true;
-}function liveSyncIntervalMs_() {
-  const mode = liveSyncMode_();
-  return mode === '1s' ? 1000 : mode === '1m' ? 60000 : mode === '1h' ? 3600000 : mode === '1d' ? 86400000 : null;
 }
+function liveSyncIntervalMs_() { return null; }
 var liveSyncTimer = null;
 function liveScheduleNext_() {
   if (liveSyncTimer) clearTimeout(liveSyncTimer);
@@ -139,20 +127,6 @@ function liveScheduleNext_() {
     liveScheduleNext_();
   }, liveDelay_());
 }
-function liveSyncModeChanged_() {
-  if (liveSyncTimer) { clearTimeout(liveSyncTimer); liveSyncTimer = null; }
-  const cf = typeof cfBackendOn === 'function' && cfBackendOn();
-  if (cf) {
-    // Keep the control socket connected in every mode so shop-wide changes propagate now.
-    if (typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
-  } else {
-    if (typeof fbRealtimeStop === 'function') fbRealtimeStop();
-    if (liveSyncMode_() === 'live' && typeof fbRealtimeStart === 'function') fbRealtimeStart().catch(function () {});
-  }
-  // A mode change must not itself fetch data: that would bypass a delay just selected.
-  liveScheduleNext_();
-}
-
 function liveNoteActivity_() { liveLastActivityAt = Date.now(); }
 /* Cadence depends on whether the push stream is carrying the load:
    - stream connected  -> calm poll (15 s) as a belt-and-braces net; the ~0.3 s push
@@ -641,15 +615,8 @@ function renderDashboard() {
     days.push(ymd_(d));
   }
   const per = days.map(d => {
-    let s = 0, pr = 0;
-    db.memos.forEach(x => {
-      if (x.date !== d) return;
-      const soldValue = (x.items || []).reduce((a, it) => a + num(it.qty) * num(it.rate), 0);
-      const ratio = soldValue > 0 ? Math.min(1, returnedValueOnMemo_(x) / soldValue) : 0;
-      s += round2(num(x.grandTotal) * (1 - ratio) - num(x.advance));
-      pr += round2(num(x.profit) * (1 - ratio));
-    });
-    return { d, s, pr };
+    const summary = plSummary(d, d);
+    return { d, s: summary.sales, pr: summary.grossProfit };
   });
   const maxS = Math.max(1, ...per.map(x => x.s));
   document.getElementById('dashChart').innerHTML = per.map(x =>
@@ -3233,8 +3200,6 @@ function renderSettings() {
   if (typeof cloudProvRender === 'function') cloudProvRender();
   const ap = document.getElementById('stAutoPull');
   if (ap) ap.checked = db.settings.autoPull !== false;
-  const lsm = document.getElementById('stLiveSyncMode');
-  if (lsm) lsm.value = liveSyncMode_();
   document.getElementById('stMemoPrefix').value = db.settings.memoPrefix || 'TXP/SM/';
   const dt = document.getElementById('stDeviceTag');
   if (dt) dt.value = db.settings.deviceTag || '';
@@ -3346,24 +3311,6 @@ function saveAutoPull() {
            : 'Auto-pull off — now it only pulls from the sheet when you press the button.');
 }
 
-
-async function saveLiveSyncMode() {
-  const el = document.getElementById('stLiveSyncMode');
-  const mode = el && el.value;
-  if (!['live', '1s', '1m', '1h', '1d'].includes(mode)) return;
-  if (typeof cfBackendOn === 'function' && cfBackendOn()) {
-    try {
-      const saved = await cfSetSyncControl(mode);
-      liveSyncModeApply_(saved.mode, saved.updatedAt);
-    } catch (e) {
-      const note = document.getElementById('liveSyncModeNote');
-      if (note) note.textContent = 'Could not save the shop-wide sync setting: ' + String(e.message || e);
-      el.value = liveSyncMode_();
-    }
-    return;
-  }
-  liveSyncModeApply_(mode);
-}
 
 /* ===================== cloud (Firestore) settings =====================
    The Firebase keys are baked into js/firebase-config.js, so there is no key field
